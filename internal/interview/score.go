@@ -89,7 +89,7 @@ func ParseScoresInput(path string) (*ScoresInput, error) {
 // later rounds run the deterministic math (dimension minima, weighted
 // ambiguity, ontology stability, weakest-target rotation, challenge
 // suggestions) and append the round record.
-func (e *Engine) Score(id string, in *ScoresInput) (*State, *Report, error) {
+func (e *Engine) Score(id string, in *ScoresInput, dryRun bool) (*State, *Report, error) {
 	s, err := e.Resolve(id)
 	if err != nil {
 		return nil, nil, err
@@ -105,17 +105,17 @@ func (e *Engine) Score(id string, in *ScoresInput) (*State, *Report, error) {
 	}
 	switch s.Phase {
 	case PhaseTopologyPending:
-		rep, err := e.lockTopology(s, in)
+		rep, err := e.lockTopology(s, in, dryRun)
 		return s, rep, err
 	case PhaseInterviewing:
-		rep, err := e.scoreRound(s, in)
+		rep, err := e.scoreRound(s, in, dryRun)
 		return s, rep, err
 	default:
 		return nil, nil, fmt.Errorf("%w: score is not legal in phase %s", ErrInterview, s.Phase)
 	}
 }
 
-func (e *Engine) lockTopology(s *State, in *ScoresInput) (*Report, error) {
+func (e *Engine) lockTopology(s *State, in *ScoresInput, dryRun bool) (*Report, error) {
 	if in.Round != 0 || in.Topology == nil {
 		return nil, fmt.Errorf("%w: phase topology_pending requires a round-0 input carrying topology", ErrInterview)
 	}
@@ -161,13 +161,15 @@ func (e *Engine) lockTopology(s *State, in *ScoresInput) (*Report, error) {
 	if err := s.transition(PhaseInterviewing); err != nil {
 		return nil, err
 	}
-	if err := e.save(s); err != nil {
-		return nil, err
+	if !dryRun {
+		if err := e.save(s); err != nil {
+			return nil, err
+		}
 	}
 	return &Report{Phase: s.Phase, Round: 0, Ambiguity: s.CurrentAmbiguity, Threshold: s.Threshold}, nil
 }
 
-func (e *Engine) scoreRound(s *State, in *ScoresInput) (*Report, error) {
+func (e *Engine) scoreRound(s *State, in *ScoresInput, dryRun bool) (*Report, error) {
 	if len(in.ComponentScores) == 0 {
 		return nil, fmt.Errorf("%w: component_scores required in phase interviewing", ErrInterview)
 	}
@@ -262,8 +264,10 @@ func (e *Engine) scoreRound(s *State, in *ScoresInput) (*Report, error) {
 		Scores: in.ComponentScores, Ambiguity: ambiguity,
 	})
 	s.CurrentAmbiguity = ambiguity
-	if err := e.save(s); err != nil {
-		return nil, err
+	if !dryRun {
+		if err := e.save(s); err != nil {
+			return nil, err
+		}
 	}
 
 	rep := &Report{
@@ -421,13 +425,14 @@ type GateResult struct {
 	Warnings  []string `json:"warnings,omitempty"`
 	Phase     string   `json:"phase"`
 	Waived    bool     `json:"waived,omitempty"`
+	Mutated   bool     `json:"-"` // a write happened (or would have, under --dry-run)
 }
 
 // Gate judges current_ambiguity ≤ threshold (exact equality passes).
 // Passing moves interviewing → gate_passed (idempotent when already
 // passed). waive records an early exit: interviewing → gate_waived with
 // the warning persisted.
-func (e *Engine) Gate(id string, waive bool, waiveReason string) (*State, *GateResult, error) {
+func (e *Engine) Gate(id string, waive bool, waiveReason string, dryRun bool) (*State, *GateResult, error) {
 	s, err := e.Resolve(id)
 	if err != nil {
 		return nil, nil, err
@@ -446,10 +451,12 @@ func (e *Engine) Gate(id string, waive bool, waiveReason string) (*State, *GateR
 		}
 		s.GateWaiver = fmt.Sprintf("waived at round %d with ambiguity %.3f > threshold %.3f: %s",
 			len(s.Rounds), s.CurrentAmbiguity, s.Threshold, waiveReason)
-		if err := e.save(s); err != nil {
-			return nil, nil, err
+		if !dryRun {
+			if err := e.save(s); err != nil {
+				return nil, nil, err
+			}
 		}
-		res.Phase, res.Waived = s.Phase, true
+		res.Phase, res.Waived, res.Mutated = s.Phase, true, true
 		return s, res, nil
 	}
 	res.Pass = s.CurrentAmbiguity <= s.Threshold
@@ -458,8 +465,11 @@ func (e *Engine) Gate(id string, waive bool, waiveReason string) (*State, *GateR
 			if err := s.transition(PhaseGatePassed); err != nil {
 				return nil, nil, err
 			}
-			if err := e.save(s); err != nil {
-				return nil, nil, err
+			res.Mutated = true
+			if !dryRun {
+				if err := e.save(s); err != nil {
+					return nil, nil, err
+				}
 			}
 		} else if s.Phase != PhaseGatePassed {
 			return nil, nil, fmt.Errorf("%w: gate is not legal in phase %s", ErrInterview, s.Phase)

@@ -73,16 +73,25 @@ func (l *Ledger) ResolvePair(explicit string, autoBind bool) (*Session, error) {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
-	active, err := l.ActivePairs()
+	// Auto-adopt iterates ALL pairs and fails closed on a corrupt
+	// candidate (same rule as workflow --id resolution, review 060
+	// blocker 2): silently skipping one could bind the wrong pair.
+	// Listing (pair list) stays lenient — it REPORTS corrupt rows.
+	all, err := l.AllPairs()
 	if err != nil {
 		return nil, err
 	}
-	mine := active[:0]
-	for _, slug := range active {
-		if s, err := l.LoadSession(slug); err == nil {
-			if _, perr := s.Peer(l.Identity.Author); perr == nil {
-				mine = append(mine, slug)
-			}
+	var mine []string
+	for _, slug := range all {
+		s, err := l.LoadSession(slug)
+		if err != nil {
+			return nil, fmt.Errorf("%w: cannot auto-bind: pair %s is unreadable: %v", ErrRelay, slug, err)
+		}
+		if s.Terminal() {
+			continue
+		}
+		if _, perr := s.Peer(l.Identity.Author); perr == nil {
+			mine = append(mine, slug)
 		}
 	}
 	switch len(mine) {

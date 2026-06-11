@@ -22,7 +22,7 @@ func testEngine(t *testing.T) *Engine {
 
 func mustStart(t *testing.T, e *Engine, typ string, threshold float64) *State {
 	t.Helper()
-	s, err := e.Start("t1", typ, threshold, "test", "idea", false)
+	s, err := e.Start("t1", typ, threshold, "test", "idea", false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +43,7 @@ func scoresInput(round int, scores map[string]map[string]float64) *ScoresInput {
 
 func mustScore(t *testing.T, e *Engine, in *ScoresInput) *Report {
 	t.Helper()
-	_, rep, err := e.Score("t1", in)
+	_, rep, err := e.Score("t1", in, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +78,7 @@ func TestBrownfieldAddsContextDimension(t *testing.T) {
 	// missing context must fail closed
 	_, _, err := e.Score("t1", scoresInput(1, map[string]map[string]float64{
 		"a": {"goal": 1, "constraints": 1, "criteria": 1},
-	}))
+	}), false)
 	if err == nil || !strings.Contains(err.Error(), `"context"`) {
 		t.Fatalf("missing context: err = %v", err)
 	}
@@ -100,7 +100,7 @@ func TestGateExactEqualityPasses(t *testing.T) {
 	mustScore(t, e, scoresInput(1, map[string]map[string]float64{
 		"a": {"goal": 0.8, "constraints": 0.8, "criteria": 0.8},
 	}))
-	_, res, err := e.Gate("t1", false, "")
+	_, res, err := e.Gate("t1", false, "", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +108,7 @@ func TestGateExactEqualityPasses(t *testing.T) {
 		t.Fatalf("exact-equality gate = %+v, want pass", res)
 	}
 	// Gate is idempotent once passed.
-	if _, res, err = e.Gate("t1", false, ""); err != nil || !res.Pass {
+	if _, res, err = e.Gate("t1", false, "", false); err != nil || !res.Pass {
 		t.Fatalf("repeat gate = %+v err=%v", res, err)
 	}
 }
@@ -120,7 +120,7 @@ func TestGateFailsWithMachineReadableReason(t *testing.T) {
 	mustScore(t, e, scoresInput(1, map[string]map[string]float64{
 		"a": {"goal": 0.5, "constraints": 0.5, "criteria": 0.5},
 	}))
-	_, res, err := e.Gate("t1", false, "")
+	_, res, err := e.Gate("t1", false, "", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,10 +142,10 @@ func TestGateWaiveRecordsWarning(t *testing.T) {
 	mustScore(t, e, scoresInput(1, map[string]map[string]float64{
 		"a": {"goal": 0.5, "constraints": 0.5, "criteria": 0.5},
 	}))
-	if _, _, err := e.Gate("t1", true, ""); err == nil {
+	if _, _, err := e.Gate("t1", true, "", false); err == nil {
 		t.Fatal("waive without reason must refuse")
 	}
-	s, res, err := e.Gate("t1", true, "user accepts the risk")
+	s, res, err := e.Gate("t1", true, "user accepts the risk", false)
 	if err != nil || !res.Waived || s.Phase != PhaseGateWaived {
 		t.Fatalf("waive = %+v err=%v", res, err)
 	}
@@ -158,19 +158,19 @@ func TestIllegalTransitionsTable(t *testing.T) {
 	// review 058 guardrail: every illegal edge refuses, table-driven.
 	type op func(e *Engine) error
 	score := func(e *Engine) error {
-		_, _, err := e.Score("t1", scoresInput(99, map[string]map[string]float64{"a": {"goal": 1, "constraints": 1, "criteria": 1}}))
+		_, _, err := e.Score("t1", scoresInput(99, map[string]map[string]float64{"a": {"goal": 1, "constraints": 1, "criteria": 1}}), false)
 		return err
 	}
-	topo := func(e *Engine) error { _, _, err := e.Score("t1", topologyInput("z")); return err }
-	gate := func(e *Engine) error { _, _, err := e.Gate("t1", false, ""); return err }
+	topo := func(e *Engine) error { _, _, err := e.Score("t1", topologyInput("z"), false); return err }
+	gate := func(e *Engine) error { _, _, err := e.Gate("t1", false, "", false); return err }
 	crystallize := func(e *Engine) error {
 		spec := filepath.Join(os.TempDir(), "spec.md")
 		_ = os.WriteFile(spec, []byte("s"), 0o600)
-		_, err := e.Crystallize("t1", spec)
+		_, err := e.Crystallize("t1", spec, false)
 		return err
 	}
-	complete := func(e *Engine) error { _, err := e.Complete("t1"); return err }
-	abort := func(e *Engine) error { _, err := e.Abort("t1"); return err }
+	complete := func(e *Engine) error { _, err := e.Complete("t1", false); return err }
+	abort := func(e *Engine) error { _, err := e.Abort("t1", false); return err }
 
 	// drive an interview to a given phase
 	advanceTo := func(t *testing.T, e *Engine, phase string) {
@@ -186,7 +186,7 @@ func TestIllegalTransitionsTable(t *testing.T) {
 		mustScore(t, e, scoresInput(1, map[string]map[string]float64{
 			"a": {"goal": 0.9, "constraints": 0.9, "criteria": 0.9},
 		}))
-		if _, _, err := e.Gate("t1", false, ""); err != nil {
+		if _, _, err := e.Gate("t1", false, "", false); err != nil {
 			t.Fatal(err)
 		}
 		if phase == PhaseGatePassed {
@@ -196,13 +196,13 @@ func TestIllegalTransitionsTable(t *testing.T) {
 		if err := os.WriteFile(spec, []byte("s"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := e.Crystallize("t1", spec); err != nil {
+		if _, err := e.Crystallize("t1", spec, false); err != nil {
 			t.Fatal(err)
 		}
 		if phase == PhaseCrystallized {
 			return
 		}
-		if _, err := e.Complete("t1"); err != nil {
+		if _, err := e.Complete("t1", false); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -245,10 +245,10 @@ func TestRoundReplayAndSkipRefused(t *testing.T) {
 	mustScore(t, e, topologyInput("a"))
 	in := scoresInput(1, map[string]map[string]float64{"a": {"goal": 0.5, "constraints": 0.5, "criteria": 0.5}})
 	mustScore(t, e, in)
-	if _, _, err := e.Score("t1", in); err == nil || !strings.Contains(err.Error(), "expected 2") {
+	if _, _, err := e.Score("t1", in, false); err == nil || !strings.Contains(err.Error(), "expected 2") {
 		t.Fatalf("replay round 1: err = %v", err)
 	}
-	if _, _, err := e.Score("t1", scoresInput(5, in.ComponentScores)); err == nil {
+	if _, _, err := e.Score("t1", scoresInput(5, in.ComponentScores), false); err == nil {
 		t.Fatal("skipping rounds must refuse")
 	}
 }
@@ -365,10 +365,10 @@ func TestRoundGuardWarnings(t *testing.T) {
 func TestStartRefusesExistingUnlessResume(t *testing.T) {
 	e := testEngine(t)
 	mustStart(t, e, "greenfield", 0.20)
-	if _, err := e.Start("t1", "greenfield", 0.20, "test", "idea", false); !errors.Is(err, ErrInterview) {
+	if _, err := e.Start("t1", "greenfield", 0.20, "test", "idea", false, false); !errors.Is(err, ErrInterview) {
 		t.Fatalf("duplicate start: err = %v", err)
 	}
-	s, err := e.Start("t1", "greenfield", 0.99, "other", "ignored", true)
+	s, err := e.Start("t1", "greenfield", 0.99, "other", "ignored", true, false)
 	if err != nil || s.Threshold != 0.20 {
 		t.Fatalf("resume must load untouched state: %+v err=%v", s, err)
 	}
@@ -398,10 +398,10 @@ func TestCorruptStateFailsClosedWithBak(t *testing.T) {
 
 func TestResolveAmbiguityRefused(t *testing.T) {
 	e := testEngine(t)
-	if _, err := e.Start("a1", "greenfield", 0.2, "t", "i", false); err != nil {
+	if _, err := e.Start("a1", "greenfield", 0.2, "t", "i", false, false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.Start("a2", "greenfield", 0.2, "t", "i", false); err != nil {
+	if _, err := e.Start("a2", "greenfield", 0.2, "t", "i", false, false); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := e.Resolve(""); err == nil || !strings.Contains(err.Error(), "a1, a2") {
@@ -421,7 +421,7 @@ func TestDeferredComponentsExcludedFromMath(t *testing.T) {
 	if _, _, err := e.Score("t1", scoresInput(1, map[string]map[string]float64{
 		"a":     {"goal": 1, "constraints": 1, "criteria": 1},
 		"later": {"goal": 0, "constraints": 0, "criteria": 0},
-	})); err == nil || !strings.Contains(err.Error(), "deferred") {
+	}), false); err == nil || !strings.Contains(err.Error(), "deferred") {
 		t.Fatalf("scoring deferred: err = %v", err)
 	}
 	rep := mustScore(t, e, scoresInput(1, map[string]map[string]float64{

@@ -127,7 +127,7 @@ func (e *Engine) path(id string) string { return filepath.Join(e.Dir, "interview
 
 // Start initializes a new interview (phase topology_pending). An existing
 // id is refused unless resume=true, which loads and returns it untouched.
-func (e *Engine) Start(id, typ string, threshold float64, source, idea string, resume bool) (*State, error) {
+func (e *Engine) Start(id, typ string, threshold float64, source, idea string, resume, dryRun bool) (*State, error) {
 	if id == "" {
 		id = e.Now().UTC().Format("20060102-150405")
 	}
@@ -155,8 +155,14 @@ func (e *Engine) Start(id, typ string, threshold float64, source, idea string, r
 		CurrentAmbiguity: 1.0,
 		Created:          now, Updated: now,
 	}
+	if dryRun {
+		return s, nil
+	}
 	return s, e.save(s)
 }
+
+// StatePath is the absolute state file for one id (dry-run reporting).
+func (e *Engine) StatePath(id string) string { return e.path(id) }
 
 // Load reads and validates one interview state (fail-closed on schema).
 func (e *Engine) Load(id string) (*State, error) {
@@ -195,7 +201,10 @@ func (e *Engine) Resolve(id string) (*State, error) {
 		base := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(m), "interview-"), ".json")
 		s, err := e.Load(base)
 		if err != nil {
-			continue // corrupt instances surface when addressed explicitly
+			// A corrupt or foreign-major candidate must fail the omitted-id
+			// resolution closed (review 060 blocker 2): silently skipping it
+			// could route a mutating command at the wrong instance.
+			return nil, fmt.Errorf("%w: cannot resolve --id: candidate %s is unreadable: %v", ErrInterview, filepath.Base(m), err)
 		}
 		if !s.Terminal() {
 			active = append(active, s)
@@ -235,7 +244,7 @@ func (s *State) transition(to string) error {
 }
 
 // Crystallize records the spec path (gate_passed|gate_waived → crystallized).
-func (e *Engine) Crystallize(id, specPath string) (*State, error) {
+func (e *Engine) Crystallize(id, specPath string, dryRun bool) (*State, error) {
 	s, err := e.Resolve(id)
 	if err != nil {
 		return nil, err
@@ -250,11 +259,14 @@ func (e *Engine) Crystallize(id, specPath string) (*State, error) {
 		return nil, err
 	}
 	s.SpecPath = specPath
+	if dryRun {
+		return s, nil
+	}
 	return s, e.save(s)
 }
 
 // Complete closes a crystallized interview.
-func (e *Engine) Complete(id string) (*State, error) {
+func (e *Engine) Complete(id string, dryRun bool) (*State, error) {
 	s, err := e.Resolve(id)
 	if err != nil {
 		return nil, err
@@ -262,11 +274,14 @@ func (e *Engine) Complete(id string) (*State, error) {
 	if err := s.transition(PhaseCompleted); err != nil {
 		return nil, err
 	}
+	if dryRun {
+		return s, nil
+	}
 	return s, e.save(s)
 }
 
 // Abort ends any non-terminal interview.
-func (e *Engine) Abort(id string) (*State, error) {
+func (e *Engine) Abort(id string, dryRun bool) (*State, error) {
 	s, err := e.Resolve(id)
 	if err != nil {
 		return nil, err
@@ -275,6 +290,9 @@ func (e *Engine) Abort(id string) (*State, error) {
 		return nil, fmt.Errorf("%w: interview %s is already %s", ErrInterview, s.ID, s.Phase)
 	}
 	s.Phase = PhaseAborted
+	if dryRun {
+		return s, nil
+	}
 	return s, e.save(s)
 }
 

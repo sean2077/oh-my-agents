@@ -73,7 +73,7 @@ func (e *Engine) path(id string) string { return filepath.Join(e.Dir, "ralph-"+i
 
 // Start initializes a loop. goal is required: it anchors the stop
 // semantics the agent reasons against.
-func (e *Engine) Start(id, goal string, maxRounds, stallWindow int) (*State, error) {
+func (e *Engine) Start(id, goal string, maxRounds, stallWindow int, dryRun bool) (*State, error) {
 	if strings.TrimSpace(goal) == "" {
 		return nil, fmt.Errorf("%w: --goal is required (it anchors the stop judgment)", ErrRalph)
 	}
@@ -99,8 +99,14 @@ func (e *Engine) Start(id, goal string, maxRounds, stallWindow int) (*State, err
 		Checks:  []Check{},
 		Created: now, Updated: now,
 	}
+	if dryRun {
+		return s, nil
+	}
 	return s, e.save(s)
 }
+
+// StatePath is the absolute state file for one id (dry-run reporting).
+func (e *Engine) StatePath(id string) string { return e.path(id) }
 
 // Load reads and validates one ralph state.
 func (e *Engine) Load(id string) (*State, error) {
@@ -139,7 +145,9 @@ func (e *Engine) Resolve(id string) (*State, error) {
 		base := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(m), "ralph-"), ".json")
 		s, err := e.Load(base)
 		if err != nil {
-			continue
+			// A corrupt or foreign-major candidate must fail the omitted-id
+			// resolution closed (review 060 blocker 2).
+			return nil, fmt.Errorf("%w: cannot resolve --id: candidate %s is unreadable: %v", ErrRalph, filepath.Base(m), err)
 		}
 		if !s.Terminal() {
 			active = append(active, s)
@@ -166,12 +174,13 @@ type Verdict struct {
 	Round    int    `json:"round"`
 	Continue bool   `json:"continue"`
 	Reason   string `json:"reason"`
+	Mutated  bool   `json:"-"` // a write happened (or would have, under --dry-run)
 }
 
 // Next advances the loop one round. Terminal states report stop with
 // their reason and stay unchanged (idempotent — review 058 guardrail);
 // crossing max_rounds flips to exhausted.
-func (e *Engine) Next(id string) (*State, *Verdict, error) {
+func (e *Engine) Next(id string, dryRun bool) (*State, *Verdict, error) {
 	s, err := e.Resolve(id)
 	if err != nil {
 		return nil, nil, err
@@ -182,23 +191,23 @@ func (e *Engine) Next(id string) (*State, *Verdict, error) {
 	s.Round++
 	if s.Round > s.MaxRounds {
 		s.Phase = PhaseExhausted
-		if err := e.save(s); err != nil {
+		if err := e.saveUnless(s, dryRun); err != nil {
 			return nil, nil, err
 		}
-		return s, &Verdict{Phase: s.Phase, Round: s.Round, Continue: false,
+		return s, &Verdict{Phase: s.Phase, Round: s.Round, Continue: false, Mutated: true,
 			Reason: fmt.Sprintf("exhausted: round %d exceeds max_rounds %d", s.Round, s.MaxRounds)}, nil
 	}
-	if err := e.save(s); err != nil {
+	if err := e.saveUnless(s, dryRun); err != nil {
 		return nil, nil, err
 	}
-	return s, &Verdict{Phase: s.Phase, Round: s.Round, Continue: true,
+	return s, &Verdict{Phase: s.Phase, Round: s.Round, Continue: true, Mutated: true,
 		Reason: fmt.Sprintf("round %d of %d", s.Round, s.MaxRounds)}, nil
 }
 
 // RecordCheck stores one verifier result. Exit 0 → passed. A run of
 // stall_window consecutive failures sharing the same non-empty note is a
 // stall (the note is the failure signature).
-func (e *Engine) RecordCheck(id string, verifierExit int, note string) (*State, *Verdict, error) {
+func (e *Engine) RecordCheck(id string, verifierExit int, note string, dryRun bool) (*State, *Verdict, error) {
 	s, err := e.Resolve(id)
 	if err != nil {
 		return nil, nil, err
@@ -213,10 +222,10 @@ func (e *Engine) RecordCheck(id string, verifierExit int, note string) (*State, 
 	case e.stalled(s):
 		s.Phase = PhaseStalled
 	}
-	if err := e.save(s); err != nil {
+	if err := e.saveUnless(s, dryRun); err != nil {
 		return nil, nil, err
 	}
-	v := &Verdict{Phase: s.Phase, Round: s.Round, Continue: s.Phase == PhaseRunning}
+	v := &Verdict{Phase: s.Phase, Round: s.Round, Continue: s.Phase == PhaseRunning, Mutated: true}
 	switch s.Phase {
 	case PhasePassed:
 		v.Reason = "verifier passed"
@@ -248,7 +257,7 @@ func (e *Engine) stalled(s *State) bool {
 }
 
 // Abort ends a running loop.
-func (e *Engine) Abort(id string) (*State, error) {
+func (e *Engine) Abort(id string, dryRun bool) (*State, error) {
 	s, err := e.Resolve(id)
 	if err != nil {
 		return nil, err
@@ -257,7 +266,19 @@ func (e *Engine) Abort(id string) (*State, error) {
 		return nil, fmt.Errorf("%w: loop %s is already %s", ErrRalph, s.ID, s.Phase)
 	}
 	s.Phase = PhaseAborted
+	if dryRun {
+		return s, nil
+	}
 	return s, e.save(s)
+}
+
+// saveUnless persists except under --dry-run (the full validation and
+// state computation above still ran — security-contract §1).
+func (e *Engine) saveUnless(s *State, dryRun bool) error {
+	if dryRun {
+		return nil
+	}
+	return e.save(s)
 }
 
 // save persists atomically with a single-generation .bak.

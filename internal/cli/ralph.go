@@ -34,14 +34,14 @@ func newRalphStartCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if DryRun() {
-				return nil
-			}
-			s, err := eng.Start(id, goal, maxRounds, stallWindow)
+			s, err := eng.Start(id, goal, maxRounds, stallWindow, DryRun())
 			if err != nil {
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "%s phase=%s max_rounds=%d stall_window=%d\n", s.ID, s.Phase, s.MaxRounds, s.StallWindow)
+			if DryRun() {
+				fmt.Fprintf(cmd.OutOrStdout(), "dry-run: would create %s\n", eng.StatePath(s.ID))
+			}
 			return nil
 		}),
 	}
@@ -65,12 +65,12 @@ func newRalphNextCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if DryRun() {
-				return nil
-			}
-			_, v, err := eng.Next(id)
+			st, v, err := eng.Next(id, DryRun())
 			if err != nil {
 				return err
+			}
+			if DryRun() && v.Mutated {
+				fmt.Fprintf(cmd.OutOrStdout(), "dry-run: would replace %s\n", eng.StatePath(st.ID))
 			}
 			if asJSON {
 				if err := printJSON(cmd, v); err != nil {
@@ -103,12 +103,12 @@ func newRalphCheckCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if DryRun() {
-				return nil
-			}
-			_, v, err := eng.RecordCheck(id, verifierExit, note)
+			st, v, err := eng.RecordCheck(id, verifierExit, note, DryRun())
 			if err != nil {
 				return err
+			}
+			if DryRun() {
+				fmt.Fprintf(cmd.OutOrStdout(), "dry-run: would replace %s\n", eng.StatePath(st.ID))
 			}
 			if asJSON {
 				if err := printJSON(cmd, v); err != nil {
@@ -142,14 +142,14 @@ func newRalphAbortCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if DryRun() {
-				return nil
-			}
-			s, err := eng.Abort(id)
+			s, err := eng.Abort(id, DryRun())
 			if err != nil {
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "%s phase=%s\n", s.ID, s.Phase)
+			if DryRun() {
+				fmt.Fprintf(cmd.OutOrStdout(), "dry-run: would replace %s\n", eng.StatePath(s.ID))
+			}
 			return nil
 		}),
 	}

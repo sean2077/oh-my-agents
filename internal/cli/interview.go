@@ -58,17 +58,16 @@ func newInterviewStartCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if DryRun() {
-				fmt.Fprintf(cmd.OutOrStdout(), "threshold: %.2f (source: %s)\n", cfg.Interview.Threshold, cfg.Interview.ThresholdSource)
-				return nil
-			}
-			s, err := eng.Start(id, typ, cfg.Interview.Threshold, cfg.Interview.ThresholdSource, idea, resume)
+			s, err := eng.Start(id, typ, cfg.Interview.Threshold, cfg.Interview.ThresholdSource, idea, resume, DryRun())
 			if err != nil {
 				return err
 			}
 			// Mandatory first line: threshold + provenance (workflows §1.3).
 			fmt.Fprintf(cmd.OutOrStdout(), "threshold: %.2f (source: %s)\n", s.Threshold, s.ThresholdSource)
 			fmt.Fprintf(cmd.OutOrStdout(), "interview: %s phase=%s type=%s\n", s.ID, s.Phase, s.Type)
+			if DryRun() && !resume {
+				fmt.Fprintf(cmd.OutOrStdout(), "dry-run: would create %s\n", eng.StatePath(s.ID))
+			}
 			return nil
 		}),
 	}
@@ -97,13 +96,12 @@ func newInterviewScoreCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if DryRun() {
-				fmt.Fprintln(cmd.OutOrStdout(), "input validated; nothing written (--dry-run)")
-				return nil
-			}
-			_, rep, err := eng.Score(id, in)
+			st, rep, err := eng.Score(id, in, DryRun())
 			if err != nil {
 				return err
+			}
+			if DryRun() {
+				fmt.Fprintf(cmd.OutOrStdout(), "dry-run: would replace %s\n", eng.StatePath(st.ID))
 			}
 			if asJSON {
 				return printJSON(cmd, rep)
@@ -140,13 +138,12 @@ func newInterviewGateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if DryRun() && waive {
-				fmt.Fprintln(cmd.OutOrStdout(), "would record a gate waiver; nothing written (--dry-run)")
-				return nil
-			}
-			_, res, err := eng.Gate(id, waive, reason)
+			st, res, err := eng.Gate(id, waive, reason, DryRun())
 			if err != nil {
 				return err
+			}
+			if DryRun() && res.Mutated {
+				fmt.Fprintf(cmd.OutOrStdout(), "dry-run: would replace %s\n", eng.StatePath(st.ID))
 			}
 			if asJSON {
 				if err := printJSON(cmd, res); err != nil {
@@ -185,14 +182,14 @@ func newInterviewCrystallizeCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if DryRun() {
-				return nil
-			}
-			s, err := eng.Crystallize(id, spec)
+			s, err := eng.Crystallize(id, spec, DryRun())
 			if err != nil {
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "%s phase=%s spec=%s\n", s.ID, s.Phase, s.SpecPath)
+			if DryRun() {
+				fmt.Fprintf(cmd.OutOrStdout(), "dry-run: would replace %s\n", eng.StatePath(s.ID))
+			}
 			return nil
 		}),
 	}
@@ -213,14 +210,14 @@ func newInterviewCompleteCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if DryRun() {
-				return nil
-			}
-			s, err := eng.Complete(id)
+			s, err := eng.Complete(id, DryRun())
 			if err != nil {
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "%s phase=%s\n", s.ID, s.Phase)
+			if DryRun() {
+				fmt.Fprintf(cmd.OutOrStdout(), "dry-run: would replace %s\n", eng.StatePath(s.ID))
+			}
 			return nil
 		}),
 	}
@@ -239,14 +236,14 @@ func newInterviewAbortCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if DryRun() {
-				return nil
-			}
-			s, err := eng.Abort(id)
+			s, err := eng.Abort(id, DryRun())
 			if err != nil {
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "%s phase=%s\n", s.ID, s.Phase)
+			if DryRun() {
+				fmt.Fprintf(cmd.OutOrStdout(), "dry-run: would replace %s\n", eng.StatePath(s.ID))
+			}
 			return nil
 		}),
 	}

@@ -168,6 +168,28 @@ func TestWaitDeliversUnconsumedDecisionAfterCloseArchive(t *testing.T) {
 	}
 }
 
+func TestResolvePairFailsClosedOnCorruptSession(t *testing.T) {
+	// review 060 blocker 2 applied consistently: auto-adopt must not
+	// silently skip a corrupt pair (it could bind the wrong one).
+	ck := newClock()
+	root, _ := initRoot(t, ck)
+	claude := testLedger(t, root, "claude", ck)
+	mustPair(t, claude, "good")
+	if err := os.Remove(claude.bindingPath()); err != nil {
+		t.Fatal(err)
+	}
+	badDir := filepath.Join(root, "20990101-bad")
+	if err := os.MkdirAll(badDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(badDir, "session.json"), []byte(`{"schema":"oma-relay/9"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := claude.ResolvePair("", true); err == nil || !strings.Contains(err.Error(), "20990101-bad") {
+		t.Fatalf("corrupt pair candidate: err = %v, want fail-closed naming it", err)
+	}
+}
+
 func TestDraftExplicitPairBeatsBindingState(t *testing.T) {
 	// review 054 blocker 1: an explicit --pair must never depend on
 	// binding or auto-disambiguation state.
