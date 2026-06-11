@@ -63,5 +63,6 @@ func newDoctorCmd() *cobra.Command {
 		}),
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable output")
+	cmd.AddCommand(newDoctorBudgetCmd())
 	return cmd
 }
