@@ -1,0 +1,211 @@
+package asset
+
+import (
+	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestInstallProjectsToBothAgents(t *testing.T) {
+	e := newTestEngine(t)
+	src := writeSkillSource(t, t.TempDir(), "x", "body")
+	rep := mustInstall(t, e, src, Options{})
+	if len(rep.Skips) != 0 {
+		t.Fatalf("unexpected skips: %+v", rep.Skips)
+	}
+	canonical := filepath.Join(e.Layout.CanonicalRoot(), "skills", "x")
+	for _, link := range []string{
+		filepath.Join(e.Layout.Home, ".claude", "skills", "x"),
+		filepath.Join(e.Layout.Home, ".codex", "skills", "x"),
+	} {
+		dest, err := os.Readlink(link)
+		if err != nil || dest != canonical {
+			t.Fatalf("projection %s -> %q err=%v, want %s", link, dest, err, canonical)
+		}
+	}
+	entries, _ := e.List()
+	if len(entries[0].Projections) != 2 {
+		t.Fatalf("registry projections = %+v", entries[0].Projections)
+	}
+}
+
+func TestAgentNarrowingIntersectsManifestTargets(t *testing.T) {
+	e := newTestEngine(t)
+	src := writeSkillSource(t, t.TempDir(), "x", "body")
+	rep := mustInstall(t, e, src, Options{Agents: []string{"claude"}})
+	if len(rep.Skips) != 0 {
+		t.Fatalf("narrowed install skips: %+v", rep.Skips)
+	}
+	if _, err := os.Lstat(filepath.Join(e.Layout.Home, ".codex", "skills", "x")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("codex projection must not exist when narrowed to claude")
+	}
+}
+
+func TestClaudeOnlySubagentSkipsCodexWithReason(t *testing.T) {
+	e := newTestEngine(t)
+	dir := t.TempDir()
+	manifest := `{"schema": "oma-asset/1", "name": "explorer", "type": "subagent",
+		"targets": ["claude"], "fallback": "codex explores inline"}`
+	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(manifest), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "explorer.md"), []byte("agent def"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	rep := mustInstall(t, e, dir, Options{})
+	if len(rep.Skips) != 1 || rep.Skips[0].Agent != "codex" {
+		t.Fatalf("want one codex skip, got %+v", rep.Skips)
+	}
+	link := filepath.Join(e.Layout.Home, ".claude", "agents", "explorer.md")
+	if _, err := os.Readlink(link); err != nil {
+		t.Fatalf("claude subagent projection missing: %v", err)
+	}
+}
+
+func TestProjectionConflictAbortsWithZeroWrites(t *testing.T) {
+	e := newTestEngine(t)
+	src := writeSkillSource(t, t.TempDir(), "x", "body")
+	foreign := filepath.Join(e.Layout.Home, ".claude", "skills", "x")
+	if err := os.MkdirAll(foreign, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	_, err := e.Install(src, Options{})
+	if !errors.Is(err, ErrProjectionConflict) {
+		t.Fatalf("err = %v, want ErrProjectionConflict", err)
+	}
+	if _, err := os.Lstat(filepath.Join(e.Layout.CanonicalRoot(), "skills", "x")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("canonical must not be placed when projection pre-check fails")
+	}
+	if _, err := os.Lstat(e.Layout.RegistryPath()); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("registry must not be written when projection pre-check fails")
+	}
+	// --force does not override projection conflicts (canonical-only semantics)
+	if _, err := e.Install(src, Options{Force: true}); !errors.Is(err, ErrProjectionConflict) {
+		t.Fatalf("force must not stomp projections: %v", err)
+	}
+}
+
+func TestReinstallRefreshesProjectionIdempotently(t *testing.T) {
+	e := newTestEngine(t)
+	src := writeSkillSource(t, t.TempDir(), "x", "v1")
+	mustInstall(t, e, src, Options{})
+	mustInstall(t, e, src, Options{}) // managed reinstall, same links
+	link := filepath.Join(e.Layout.Home, ".claude", "skills", "x")
+	if dest, err := os.Readlink(link); err != nil || dest != filepath.Join(e.Layout.CanonicalRoot(), "skills", "x") {
+		t.Fatalf("link after reinstall: %q err=%v", dest, err)
+	}
+}
+
+func TestRemoveDeletesOnlyOwnLinks(t *testing.T) {
+	e := newTestEngine(t)
+	src := writeSkillSource(t, t.TempDir(), "x", "body")
+	mustInstall(t, e, src, Options{})
+
+	// replace the codex projection with a foreign regular file
+	codexLink := filepath.Join(e.Layout.Home, ".codex", "skills", "x")
+	if err := os.Remove(codexLink); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(codexLink, []byte("user's own file"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	rep, err := e.Remove("x", Options{})
+	if err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	if len(rep.Warnings) != 1 {
+		t.Fatalf("want one warning for foreign file, got %+v", rep.Warnings)
+	}
+	if _, err := os.Stat(codexLink); err != nil {
+		t.Fatal("foreign file must be left intact")
+	}
+	if _, err := os.Lstat(filepath.Join(e.Layout.Home, ".claude", "skills", "x")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("own claude link must be removed")
+	}
+}
+
+func TestVerifyProjectionsDetectsBreakage(t *testing.T) {
+	e := newTestEngine(t)
+	src := writeSkillSource(t, t.TempDir(), "x", "body")
+	mustInstall(t, e, src, Options{})
+	entries, _ := e.List()
+	if ok, problems := e.VerifyProjections(&entries[0]); !ok {
+		t.Fatalf("fresh install must verify: %v", problems)
+	}
+	if err := os.Remove(filepath.Join(e.Layout.Home, ".claude", "skills", "x")); err != nil {
+		t.Fatal(err)
+	}
+	if ok, problems := e.VerifyProjections(&entries[0]); ok || len(problems) == 0 {
+		t.Fatal("broken projection must be detected")
+	}
+}
+
+// conformanceFixture describes the expected projection layout for one agent
+// (testdata/conformance/<agent>.json, docs/adapter-conformance.md §6).
+type conformanceFixture struct {
+	Agent string `json:"agent"`
+	Cases []struct {
+		Manifest    json.RawMessage `json:"manifest"`
+		PayloadFile string          `json:"payload_file"`
+		WantRelHome string          `json:"want_rel_home"` // "" = no projection expected
+	} `json:"cases"`
+}
+
+func TestConformanceFixtures(t *testing.T) {
+	for _, agent := range []string{"claude", "codex"} {
+		raw, err := os.ReadFile(filepath.Join("..", "..", "testdata", "conformance", agent+".json"))
+		if err != nil {
+			t.Fatalf("fixture %s: %v", agent, err)
+		}
+		var fx conformanceFixture
+		if err := json.Unmarshal(raw, &fx); err != nil {
+			t.Fatalf("fixture %s: %v", agent, err)
+		}
+		for _, c := range fx.Cases {
+			m, err := ParseManifest(c.Manifest)
+			if err != nil {
+				t.Fatalf("%s fixture manifest: %v", agent, err)
+			}
+			e := newTestEngine(t)
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "manifest.json"), c.Manifest, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, c.PayloadFile), []byte("payload"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			rep, err := e.Install(dir, Options{Agents: []string{agent}})
+			if err != nil {
+				t.Fatalf("%s/%s install: %v", agent, m.Name, err)
+			}
+			want := c.WantRelHome
+			if want == "" {
+				if len(rep.Skips) == 0 {
+					t.Errorf("%s/%s: expected a skip, got projections", agent, m.Name)
+				}
+				continue
+			}
+			link := filepath.Join(e.Layout.Home, filepath.FromSlash(want))
+			dest, err := os.Readlink(link)
+			if err != nil {
+				t.Errorf("%s/%s: expected projection at %s: %v", agent, m.Name, want, err)
+				continue
+			}
+			if filepath.Clean(dest) != filepath.Clean(filepath.Join(e.Layout.CanonicalRoot(), filepath.FromSlash(mustRel(t, e, m)))) {
+				t.Errorf("%s/%s: link target %s unexpected", agent, m.Name, dest)
+			}
+		}
+	}
+}
+
+func mustRel(t *testing.T, e *Engine, m *Manifest) string {
+	t.Helper()
+	rel, err := e.Layout.CanonicalRel(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return rel
+}

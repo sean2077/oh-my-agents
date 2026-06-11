@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/sean2077/oh-my-agents/internal/asset"
 	"github.com/spf13/cobra"
@@ -60,6 +61,12 @@ func printOps(cmd *cobra.Command, rep *asset.Report) {
 	for _, op := range rep.Ops {
 		fmt.Fprintf(cmd.OutOrStdout(), "%s%-7s %s\n", prefix, op.Kind, op.Path)
 	}
+	for _, sk := range rep.Skips {
+		fmt.Fprintf(cmd.OutOrStdout(), "%sskip    %s: %s\n", prefix, sk.Agent, sk.Reason)
+	}
+	for _, w := range rep.Warnings {
+		fmt.Fprintf(cmd.OutOrStdout(), "%swarn    %s\n", prefix, w)
+	}
 }
 
 func newAssetCmd() *cobra.Command {
@@ -74,6 +81,7 @@ func newAssetCmd() *cobra.Command {
 func newAssetInstallCmd() *cobra.Command {
 	var from string
 	var force bool
+	var agents []string
 	cmd := &cobra.Command{
 		Use:   "install <name>...",
 		Short: "Install assets to the canonical root and record them in the registry",
@@ -89,12 +97,20 @@ func newAssetInstallCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			requested := agents
+			if len(requested) == 0 {
+				cfg, err := loadConfig()
+				if err != nil {
+					return err
+				}
+				requested = cfg.Asset.DefaultAgents
+			}
 			for _, name := range args {
 				src, err := resolveSource(from, name)
 				if err != nil {
 					return err
 				}
-				rep, err := eng.Install(src, asset.Options{DryRun: DryRun(), Force: force, Source: "dir"})
+				rep, err := eng.Install(src, asset.Options{DryRun: DryRun(), Force: force, Source: "dir", Agents: requested})
 				if err != nil {
 					return Errf(ExitState, "install %s: %v", name, err)
 				}
@@ -105,14 +121,15 @@ func newAssetInstallCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&from, "from", "", "assets source root (e.g. a repo assets/ dir)")
 	cmd.Flags().BoolVar(&force, "force", false, "back up and replace unmanaged destinations")
+	cmd.Flags().StringSliceVar(&agents, "agent", nil, "narrow projection agents (final = manifest targets ∩ this; default from config asset.default_agents)")
 	return cmd
 }
 
 func newAssetListCmd() *cobra.Command {
-	var asJSON bool
+	var asJSON, installed bool
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List oma-managed assets",
+		Short: "List oma-managed assets (--installed verifies canonical + projections on disk)",
 		Args:  cobra.NoArgs,
 		RunE: run(func(cmd *cobra.Command, _ []string) error {
 			eng, err := newEngine()
@@ -123,18 +140,44 @@ func newAssetListCmd() *cobra.Command {
 			if err != nil {
 				return Errf(ExitState, "read registry: %v", err)
 			}
+			type row struct {
+				asset.Entry
+				Healthy  *bool    `json:"healthy,omitempty"`
+				Problems []string `json:"problems,omitempty"`
+			}
+			rows := make([]row, 0, len(entries))
+			for i := range entries {
+				r := row{Entry: entries[i]}
+				if installed {
+					ok, problems := eng.VerifyProjections(&entries[i])
+					r.Healthy, r.Problems = &ok, problems
+				}
+				rows = append(rows, r)
+			}
 			if asJSON {
 				enc := json.NewEncoder(cmd.OutOrStdout())
 				enc.SetIndent("", "  ")
-				return enc.Encode(map[string]any{"schema": "oma-cli/1", "assets": entries})
+				return enc.Encode(map[string]any{"schema": "oma-cli/1", "assets": rows})
 			}
-			for _, e := range entries {
-				fmt.Fprintf(cmd.OutOrStdout(), "%-24s %-9s %s\n", e.Name, e.Type, e.CanonicalPath)
+			for _, r := range rows {
+				status := ""
+				if installed {
+					status = " healthy"
+					if !*r.Healthy {
+						status = " BROKEN: " + strings.Join(r.Problems, "; ")
+					}
+				}
+				agents := make([]string, 0, len(r.Projections))
+				for _, pr := range r.Projections {
+					agents = append(agents, pr.Agent)
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "%-24s %-9s -> %-16s %s%s\n", r.Name, r.Type, strings.Join(agents, ","), r.CanonicalPath, status)
 			}
 			return nil
 		}),
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable output")
+	cmd.Flags().BoolVar(&installed, "installed", false, "verify canonical and projections on disk")
 	return cmd
 }
 

@@ -30,14 +30,17 @@ type Op struct {
 type Options struct {
 	DryRun bool
 	Force  bool
-	Source string // registry source label: dir | dev-link | release
+	Source string   // registry source label: dir | dev-link | release
+	Agents []string // requested projection agents; final = manifest.targets ∩ Agents (docs/config.md §4b)
 }
 
 // Report describes what an operation did (or would do, under --dry-run).
 type Report struct {
-	Ops    []Op   `json:"ops"`
-	Name   string `json:"name"`
-	DryRun bool   `json:"dry_run"`
+	Ops      []Op     `json:"ops"`
+	Skips    []Skip   `json:"skips,omitempty"`    // requested-but-unsupported projections, reported not silent
+	Warnings []string `json:"warnings,omitempty"` // non-fatal anomalies (foreign content left intact)
+	Name     string   `json:"name"`
+	DryRun   bool     `json:"dry_run"`
 }
 
 // Engine performs canonical-placement operations anchored at Home.
@@ -80,6 +83,18 @@ func (e *Engine) Install(srcDir string, opts Options) (*Report, error) {
 	rel, _ := e.Layout.CanonicalRel(m)
 
 	rep := &Report{Name: m.Name, DryRun: opts.DryRun}
+	plans, skips, err := e.planProjections(m, dest, opts.Agents)
+	if err != nil {
+		return nil, err
+	}
+	rep.Skips = skips
+	for _, p := range plans {
+		// Pre-check every projection destination before any write so a
+		// conflict aborts with zero filesystem changes.
+		if err := checkProjection(p); err != nil {
+			return nil, err
+		}
+	}
 	entry := Entry{
 		Name:          m.Name,
 		Type:          m.Type,
@@ -123,6 +138,9 @@ func (e *Engine) Install(srcDir string, opts Options) (*Report, error) {
 	default:
 		rep.Ops = append(rep.Ops, Op{"create", dest})
 	}
+	for _, p := range plans {
+		rep.Ops = append(rep.Ops, Op{"link", p.target.Path})
+	}
 	rep.Ops = append(rep.Ops, Op{"replace", e.Layout.RegistryPath()})
 
 	if opts.DryRun {
@@ -136,6 +154,12 @@ func (e *Engine) Install(srcDir string, opts Options) (*Report, error) {
 		return nil, fmt.Errorf("digest installed asset: %w", err)
 	}
 	entry.Digest = digest
+	for _, p := range plans {
+		if err := applyProjection(p); err != nil {
+			return nil, err
+		}
+		entry.Projections = append(entry.Projections, Projection{Agent: p.target.Agent, Path: p.target.Path, Kind: p.target.Kind})
+	}
 	reg.Upsert(entry)
 	if err := reg.Save(e.Layout.RegistryPath()); err != nil {
 		return nil, err
@@ -186,9 +210,17 @@ func (e *Engine) Remove(name string, opts Options) (*Report, error) {
 		}
 	}
 
+	for _, pr := range entry.Projections {
+		rep.Ops = append(rep.Ops, Op{"unlink", pr.Path})
+	}
 	rep.Ops = append(rep.Ops, Op{"delete", target}, Op{"replace", e.Layout.RegistryPath()})
 	if opts.DryRun {
 		return rep, nil
+	}
+	for _, pr := range entry.Projections {
+		if removed, warn := removeProjection(pr, target); !removed && warn != "" {
+			rep.Warnings = append(rep.Warnings, warn)
+		}
 	}
 	if err := os.RemoveAll(target); err != nil {
 		return nil, err

@@ -1,0 +1,25 @@
+{
+  "agent": "codex",
+  "cases": [
+    {
+      "manifest": {"schema": "oma-asset/1", "name": "sample-skill", "type": "skill", "targets": ["claude", "codex"]},
+      "payload_file": "SKILL.md",
+      "want_rel_home": ".codex/skills/sample-skill"
+    },
+    {
+      "manifest": {"schema": "oma-asset/1", "name": "sample-agent", "type": "subagent", "targets": ["claude"], "fallback": "codex runs inline"},
+      "payload_file": "sample-agent.md",
+      "want_rel_home": ""
+    },
+    {
+      "manifest": {"schema": "oma-asset/1", "name": "sample-prompt", "type": "prompt", "targets": ["claude", "codex"]},
+      "payload_file": "sample-prompt.md",
+      "want_rel_home": ".codex/prompts/sample-prompt.md"
+    },
+    {
+      "manifest": {"schema": "oma-asset/1", "name": "shared-only", "type": "skill", "targets": ["shared"]},
+      "payload_file": "SKILL.md",
+      "want_rel_home": ""
+    }
+  ]
+}
