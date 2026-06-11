@@ -66,6 +66,8 @@
 }
 ```
 
+- **round 0（拓扑锁定，B9 minor-additive）**：`{"schema":"oma-interview-scores/1","round":0,"topology":{"components":[{id,name,description,status,evidence?}],"deferrals":[{component_id,reason}]}}` —— phase topology_pending 仅接受此形态；锁定后进入 interviewing。评分轮从 1 起、必须连续（重放/跳轮拒绝）。
+
 ## 6. ralph 状态 `.oma/state/ralph-<id>.json`（`oma-ralph/1`）
 
 字段集见 workflows.md §2.1（id/phase/goal/max_rounds/round/checks[]/stall_window/created/updated）。

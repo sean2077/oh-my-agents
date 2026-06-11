@@ -51,20 +51,25 @@ oma doctor budget --agent claude --profile core4 --max-resident-tokens 2000 [--j
 ## 5. 工作流命令（实现语义见 docs/workflows.md）
 
 ```
-oma interview start [--threshold <0-1>|--depth quick|standard|deep] [--type greenfield|brownfield] [--id <id>]
+oma interview start [--threshold <0-1>|--depth quick|standard|deep] [--type greenfield|brownfield] [--id <id>] [--idea <text>] [--resume]
 oma interview score --input <scores.json> [--id <id>] [--json]
-oma interview gate [--id <id>] [--json]
+oma interview gate [--waive --reason <text>] [--id <id>] [--json]
+oma interview crystallize --spec <path> [--id <id>]
+oma interview complete [--id <id>]
+oma interview abort [--id <id>]
 oma interview status [--id <id>] [--json]
 
-oma ralph start --goal <text> [--max-rounds N] [--id <id>]
+oma ralph start --goal <text> [--max-rounds N] [--stall-window N] [--id <id>]
 oma ralph next [--id <id>] [--json]
 oma ralph check --verifier-exit <code> [--note <text>] [--id <id>] [--json]
+oma ralph abort [--id <id>]
 oma ralph status [--id <id>] [--json]
 ```
 
-- 状态落 `.oma/state/interview-<id>.json` / `.oma/state/ralph-<id>.json`；`--id` 省略时取该类型最近活跃实例，歧义则拒绝。
+- 状态落 `.oma/state/interview-<id>.json` / `.oma/state/ralph-<id>.json`；`--id` 省略时取该类型**唯一**非终态实例，歧义（>1 活跃）则拒绝并列候选。
 - `gate`/`next` 的判定输出必须包含：判定结果、依据数值、下一步建议（机器可读 + 人类可读双形态）。
 - **无 `oma autopilot *` 命令面**（autopilot 纯 markdown，用通用 `oma state`；重开 spec 才可改变）。
+- **B9/B10 修订记录**：状态机要求的迁移入口在原命令面缺失，补齐——interview 增 `crystallize`（gate_passed|gate_waived → crystallized，记录 spec 路径）、`complete`、`abort`、`gate --waive`（早退记录警示，对应 gate_waived 态）；ralph 增 `abort`。拓扑锁定（topology_pending → interviewing）经 `score` 的 round-0 输入承载（schemas.md §5），不增独立命令。
 
 ## 6. `oma relay` —— 结对账本（协议见 docs/relay-v2-protocol.md）
 

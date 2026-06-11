@@ -17,7 +17,7 @@ created ──start──▶ topology_pending ──(锁定拓扑)──▶ inte
 
 ### 1.2 持久化（`.oma/state/interview-<id>.json`，schema `oma-interview/1`）
 
-字段：`id, phase, type(greenfield|brownfield), threshold, threshold_source, initial_idea, topology{status, components[{id,name,description,status,evidence[],clarity_scores{goal,constraints,criteria,context?}}], deferrals[], last_targeted_component_id}, rounds[{round, component, dimension, question, answer, scores, ambiguity}], ontology_snapshots[{round, entities[], stability_ratio, matching_reasoning}], challenge_modes_used[], current_ambiguity, spec_path, created, updated`。
+字段：`id, phase, type(greenfield|brownfield), threshold, threshold_source, initial_idea, topology{status, components[{id,name,description,status,evidence[],clarity_scores{goal,constraints,criteria,context?}}], deferrals[], last_targeted_component_id}, rounds[{round, component, dimension, question, answer, scores, ambiguity}], ontology_snapshots[{round, entities[], stability_ratio, matching_reasoning}], challenge_modes_used[], current_ambiguity, gate_waiver?, spec_path, created, updated`。（B9 修订：增 `gate_waiver` 承载早退警示记录——状态机的 gate_waived(警示记录) 原无落点字段。）
 
 ### 1.3 命令语义
 
