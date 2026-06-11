@@ -1,0 +1,14 @@
+# build artifacts
+/oma
+/dist/
+*.test
+coverage.out
+
+# runtime state (oma v2 ledgers and workflow state live here)
+/.oma/
+
+# deep-interview ephemeral state (the spec under .omc/specs/ is tracked; state is not)
+/.omc/state/
+
+# agent-relay cross-review ledger (process artifact, not source)
+/.shared/
