@@ -273,6 +273,20 @@ func (e *Engine) VerifyProjections(entry *Entry) (ok bool, problems []string) {
 	if _, err := os.Lstat(entry.CanonicalPath); err != nil {
 		return false, []string{fmt.Sprintf("canonical missing: %s", entry.CanonicalPath)}
 	}
+	// An installed entry with ZERO projections while its manifest could
+	// project somewhere is inert — typically a TOCTOU-interrupted install
+	// checkpoint. Degrade explicitly instead of reporting healthy
+	// (review 048 adjacent hardening, approved in 050).
+	if len(entry.Projections) == 0 {
+		for _, agent := range []string{agentClaude, agentCodex} {
+			if !entry.Manifest.HasTarget(agent) {
+				continue
+			}
+			if _, supported, _ := agentdir.For(e.Layout.Home, agent, entry.Type, entry.Name); supported {
+				return false, []string{"installed but no projections applied (interrupted install? rerun install to converge)"}
+			}
+		}
+	}
 	for _, pr := range entry.Projections {
 		info, err := os.Lstat(pr.Path)
 		if err != nil {

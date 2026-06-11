@@ -63,6 +63,56 @@ func newDoctorCmd() *cobra.Command {
 		}),
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable output")
-	cmd.AddCommand(newDoctorBudgetCmd())
+	cmd.AddCommand(newDoctorBudgetCmd(), newDoctorRelayCmd())
+	return cmd
+}
+
+// newDoctorRelayCmd is the relay maintenance surface (docs/command-tree.md
+// §5): stale-residue cleanup and archive restore stay out of the public
+// relay command group.
+func newDoctorRelayCmd() *cobra.Command {
+	var cleanStale bool
+	var restore, ledgerRoot string
+	cmd := &cobra.Command{
+		Use:   "relay",
+		Short: "Relay ledger maintenance: --clean-stale residue, --restore archived pairs",
+		Args:  cobra.NoArgs,
+		RunE: run(func(cmd *cobra.Command, _ []string) error {
+			if !cleanStale && restore == "" {
+				// Plain error → ExitState: ExitUsage is reserved for cobra
+				// parse failures (B1 review finding 1).
+				return fmt.Errorf("nothing to do: pass --clean-stale and/or --restore <slug>")
+			}
+			l, err := relayLedger(ledgerRoot, true)
+			if err != nil {
+				return err
+			}
+			if restore != "" {
+				if err := l.Restore(restore, DryRun()); err != nil {
+					return err
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "restored %s\n", restore)
+			}
+			if cleanStale {
+				slugs, err := l.AllPairs()
+				if err != nil {
+					return err
+				}
+				for _, slug := range slugs {
+					actions, err := l.CleanStale(slug, DryRun())
+					if err != nil {
+						return err
+					}
+					for _, a := range actions {
+						fmt.Fprintf(cmd.OutOrStdout(), "%s: %s\n", slug, a)
+					}
+				}
+			}
+			return nil
+		}),
+	}
+	cmd.Flags().BoolVar(&cleanStale, "clean-stale", false, "remove safe residue (post-publish leftovers, stale abandoned intents)")
+	cmd.Flags().StringVar(&restore, "restore", "", "move an archived pair back to the active root (stays terminal)")
+	cmd.Flags().StringVar(&ledgerRoot, "ledger-root", "", "override the ledger root")
 	return cmd
 }

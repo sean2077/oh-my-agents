@@ -8,6 +8,7 @@ import (
 
 	"github.com/sean2077/oh-my-agents/internal/agentdir"
 	"github.com/sean2077/oh-my-agents/internal/asset"
+	"github.com/sean2077/oh-my-agents/internal/relay"
 )
 
 // InstallChecks builds the asset-domain doctor checks for one home/project.
@@ -19,10 +20,51 @@ func InstallChecks(home, projectRoot string, commands CommandSet) []Check {
 		{Name: "permissions", Run: func() []Finding { return permissions(eng) }},
 		{Name: "orphan-backups", Run: func() []Finding { return orphanBackups(eng) }},
 		{Name: "legacy-relay-v1", Run: func() []Finding { return legacyRelayV1(projectRoot) }},
+		{Name: "relay-v2-residue", Run: func() []Finding { return relayV2Residue(projectRoot) }},
 		{Name: "refcheck-installed", Run: func() []Finding {
 			return Refcheck(filepath.Join(eng.Layout.CanonicalRoot(), "skills"), commands)
 		}},
 	}
+}
+
+// relayV2Residue reports stale drafts, leftover reservations and unready
+// formal files across active v2 pairs (docs/command-tree.md §5: doctor
+// surfaces them; `oma doctor relay --clean-stale` removes them). Identity
+// is irrelevant for reading residue, so a fixed probe identity is used;
+// a missing/uninitialized ledger is silent (nothing to check).
+func relayV2Residue(projectRoot string) []Finding {
+	if projectRoot == "" {
+		return nil
+	}
+	id, err := relay.ResolveIdentity(func(k string) string {
+		if k == "OMA_RELAY_AUTHOR" {
+			return "doctor-probe"
+		}
+		return ""
+	})
+	if err != nil {
+		return nil
+	}
+	l := relay.NewLedger(filepath.Join(projectRoot, ".oma", "relay"), id)
+	if err := l.Open(); err != nil {
+		return nil // not initialized or not v2: the legacy check covers v1
+	}
+	slugs, err := l.AllPairs()
+	if err != nil {
+		return nil
+	}
+	var fs []Finding
+	for _, slug := range slugs {
+		actions, err := l.CleanStale(slug, true) // dry-run: report only
+		if err != nil {
+			fs = append(fs, Finding{Level: LevelWarn, Message: fmt.Sprintf("relay %s: %v", slug, err)})
+			continue
+		}
+		for _, a := range actions {
+			fs = append(fs, Finding{Level: LevelWarn, Message: fmt.Sprintf("relay %s: %s (oma doctor relay --clean-stale)", slug, a)})
+		}
+	}
+	return fs
 }
 
 // registryConsistency verifies every registry entry: canonical present,

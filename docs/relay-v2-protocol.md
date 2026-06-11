@@ -29,7 +29,7 @@
 │   ├── NNN-<author>-<kind>.md.sha256
 │   ├── NNN-<author>-<kind>.md.ready
 │   ├── .draft/NNN-<author>-<kind>.md   # 作者私有草稿（对端约定不读）
-│   ├── .seq/NNN.<author>          # 序号保留文件（O_EXCL）
+│   ├── .seq/NNN                   # 序号保留文件（O_EXCL；作者记录在文件内容首 token）
 │   └── .heartbeat/<author>        # 心跳文件（mtime 即活性）
 └── _archive/<pair-slug>/          # close 后整体移入
 ```
@@ -60,8 +60,9 @@
 
 ## 6. 序号分配与竞争（claim 内部化）
 
-- 序号保留：在 `.seq/` 下以 **O_EXCL** 创建 `NNN.<author>`，NNN = max(已发布最大 seq, .seq 中最大保留) + 1。
+- 序号保留：在 `.seq/` 下以 **O_EXCL** 创建 `NNN`（作者与时间戳写入文件内容），NNN = max(已发布最大 seq, .seq 中最大保留) + 1。
 - 竞争：O_EXCL 失败 → 取 NNN+1 重试（上限 10 次后报错）。两个并发 draft 永远得到不同 seq，无覆盖可能。
+- **B8 修订记录**：排他对象从 `NNN.<author>` 改为 `NNN`——带作者后缀的文件名使 O_EXCL 只在 (seq, author) 维度排他，双方并发可各自拿到同一 NNN（协议测试 7 实测复现）；作者归属移入文件内容，跨作者排他由裸 NNN 文件名保证。
 - `oma relay draft` 创建草稿 = 保留序号 + 建心跳文件；公开命令面无独立 `claim`（决策记录：claim 是 draft 的内部步骤，见 command-tree.md §relay）。草稿与 `.seq` 保留在发布事务完成（`.ready` 落盘）之前**一直存在**（§7）。
 - 保留过期：序号保留对应的草稿心跳 stale（§8）后，`oma doctor` 可清理保留与草稿；产生的序号空洞合法。
 

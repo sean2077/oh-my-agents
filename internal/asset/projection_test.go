@@ -296,6 +296,50 @@ func TestRemoveProjectionRevalidatesRecordedPath(t *testing.T) {
 	}
 }
 
+func TestZeroProjectionEntryDegradesHealth(t *testing.T) {
+	// review 048 adjacent hardening (approved in 050): an installed entry
+	// whose manifest could project somewhere but holds zero projections is
+	// inert and must not report healthy.
+	e := newTestEngine(t)
+	src := writeSkillSource(t, t.TempDir(), "x", "body")
+	mustInstall(t, e, src, Options{})
+	entries, _ := e.List()
+
+	reg, err := LoadRegistry(e.Layout.RegistryPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg.Find("x").Projections = nil // simulate a TOCTOU-interrupted checkpoint
+	if err := reg.Save(e.Layout.RegistryPath()); err != nil {
+		t.Fatal(err)
+	}
+	entries, _ = e.List()
+	ok, problems := e.VerifyProjections(&entries[0])
+	if ok || len(problems) == 0 || !strings.Contains(problems[0], "no projections applied") {
+		t.Fatalf("zero-projection entry: ok=%v problems=%v", ok, problems)
+	}
+
+	// shared-only assets legitimately project nowhere: stays healthy.
+	dir := t.TempDir()
+	manifest := `{"schema": "oma-asset/1", "name": "shared-thing", "type": "skill", "targets": ["shared"]}`
+	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(manifest), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("body"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mustInstall(t, e, dir, Options{})
+	entries, _ = e.List()
+	for i := range entries {
+		if entries[i].Name != "shared-thing" {
+			continue
+		}
+		if ok, problems := e.VerifyProjections(&entries[i]); !ok {
+			t.Fatalf("shared-only must stay healthy: %v", problems)
+		}
+	}
+}
+
 // conformanceFixture describes the expected projection layout for one agent
 // (testdata/conformance/<agent>.json, docs/adapter-conformance.md §6).
 type conformanceFixture struct {
