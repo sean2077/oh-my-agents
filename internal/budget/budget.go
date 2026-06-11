@@ -54,6 +54,11 @@ type Report struct {
 // command strings (lands with B4b injection). Only assets actually
 // projected to the agent contribute.
 func Measure(eng *asset.Engine, agent, profile string, max int) (*Report, error) {
+	// An unknown agent must fail closed: with a typo every projectsTo check
+	// is false and the gate would pass on a zero count (review 042 blocker).
+	if agent != "claude" && agent != "codex" {
+		return nil, fmt.Errorf("%w: unknown agent %q (want claude|codex)", ErrBudget, agent)
+	}
 	members, ok := Profiles[profile]
 	if !ok {
 		return nil, fmt.Errorf("%w: unknown profile %q (want core4|all)", ErrBudget, profile)
@@ -112,13 +117,15 @@ func residentSurface(e *asset.Entry) ([]Item, []string, error) {
 		if err != nil {
 			return nil, nil, fmt.Errorf("%w: %s: %v", ErrBudget, e.Name, err)
 		}
-		return fieldItems(e.Name, fm, "name", "description"), nil, nil
+		items, err := requiredFieldItems(e.Name, fm, "name", "description")
+		return items, nil, err
 	case asset.TypeSubagent:
 		fm, err := ReadFrontmatterFile(e.CanonicalPath)
 		if err != nil {
 			return nil, nil, fmt.Errorf("%w: %s: %v", ErrBudget, e.Name, err)
 		}
-		return fieldItems(e.Name, fm, "name", "description", "whenToUse"), nil, nil
+		items, err := requiredFieldItems(e.Name, fm, "name", "description", "whenToUse")
+		return items, nil, err
 	case asset.TypeHook:
 		return nil, []string{fmt.Sprintf("%s: hook command surface counts after B4b injection lands", e.Name)}, nil
 	default: // prompts are slash-invoked, not resident
@@ -126,12 +133,17 @@ func residentSurface(e *asset.Entry) ([]Item, []string, error) {
 	}
 }
 
-func fieldItems(assetName string, fm map[string]string, fields ...string) []Item {
+// requiredFieldItems counts the A4-defined resident fields; a missing or
+// blank counted field fails closed — an undercounted gate is worse than a
+// loud one (review 042 major).
+func requiredFieldItems(assetName string, fm map[string]string, fields ...string) ([]Item, error) {
 	var items []Item
 	for _, f := range fields {
-		if v, ok := fm[f]; ok && strings.TrimSpace(v) != "" {
-			items = append(items, Item{Asset: assetName, Field: f, Tokens: Tokens(v)})
+		v, ok := fm[f]
+		if !ok || strings.TrimSpace(v) == "" {
+			return nil, fmt.Errorf("%w: %s: frontmatter field %q is required for budget measurement (A4 §5)", ErrBudget, assetName, f)
 		}
+		items = append(items, Item{Asset: assetName, Field: f, Tokens: Tokens(v)})
 	}
-	return items
+	return items, nil
 }

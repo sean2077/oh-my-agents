@@ -147,3 +147,50 @@ func TestMeasureUnknownProfileFails(t *testing.T) {
 		t.Fatalf("unknown profile: err = %v", err)
 	}
 }
+
+func TestMeasureUnknownAgentFailsClosed(t *testing.T) {
+	// review 042 blocker: "--agent claud" must not pass on a zero count.
+	home := t.TempDir()
+	eng := installSkillWithFrontmatter(t, home, "deep-interview", "desc")
+	if _, err := Measure(eng, "claud", "core4", 2000); !errors.Is(err, ErrBudget) {
+		t.Fatalf("typo agent: err = %v, want ErrBudget", err)
+	}
+}
+
+func TestMissingRequiredFieldFailsClosed(t *testing.T) {
+	home := t.TempDir()
+	eng := asset.NewEngine(home)
+	base := time.Date(2026, 6, 11, 12, 0, 0, 0, time.UTC)
+	n := 0
+	eng.Now = func() time.Time { n++; return base.Add(time.Duration(n) * time.Second) }
+	src := filepath.Join(t.TempDir(), "deep-interview")
+	if err := os.MkdirAll(src, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	manifest := `{"schema":"oma-asset/1","name":"deep-interview","type":"skill","targets":["claude","codex"]}`
+	if err := os.WriteFile(filepath.Join(src, "manifest.json"), []byte(manifest), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// name present, description absent: the gate must not undercount
+	if err := os.WriteFile(filepath.Join(src, "SKILL.md"), []byte("---\nname: deep-interview\n---\nbody"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := eng.Install(src, asset.Options{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Measure(eng, "claude", "core4", 2000); !errors.Is(err, ErrBudget) {
+		t.Fatalf("missing description: err = %v, want ErrBudget", err)
+	}
+}
+
+func TestSequenceDescriptionFailsLoudly(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "SKILL.md")
+	md := "---\nname: x\ndescription:\n  - first\n  - second\n---\n"
+	if err := os.WriteFile(path, []byte(md), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadFrontmatterFile(path); err == nil || !strings.Contains(err.Error(), "unsupported YAML shape") {
+		t.Fatalf("sequence description: err = %v, want unsupported-shape failure", err)
+	}
+}

@@ -26,6 +26,7 @@ func ReadFrontmatterFile(path string) (map[string]string, error) {
 	}
 	fm := map[string]string{}
 	var lastKey string
+	var lastIsBlock bool
 	for sc.Scan() {
 		line := sc.Text()
 		if strings.TrimRight(line, " \t") == "---" {
@@ -33,9 +34,12 @@ func ReadFrontmatterFile(path string) (map[string]string, error) {
 		}
 		switch {
 		case strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t"):
-			// continuation of a folded value
-			if lastKey == "" {
-				return nil, fmt.Errorf("frontmatter continuation line without a key: %q", line)
+			// Indented lines are accepted ONLY as the body of an explicit
+			// block scalar (| > |- >-). A plain key followed by an indented
+			// block is a YAML sequence/mapping — outside the supported
+			// subset, fail loudly instead of mis-folding (review 042).
+			if lastKey == "" || !lastIsBlock {
+				return nil, fmt.Errorf("unsupported YAML shape under %q: indented block without |/> marker: %q", lastKey, strings.TrimSpace(line))
 			}
 			fm[lastKey] = strings.TrimSpace(fm[lastKey] + " " + strings.TrimSpace(line))
 		default:
@@ -45,8 +49,8 @@ func ReadFrontmatterFile(path string) (map[string]string, error) {
 			}
 			lastKey = strings.TrimSpace(key)
 			v := strings.TrimSpace(value)
-			// fold the common block-scalar markers into "value follows"
-			if v == "|" || v == ">" || v == ">-" || v == "|-" {
+			lastIsBlock = v == "|" || v == ">" || v == ">-" || v == "|-"
+			if lastIsBlock {
 				v = ""
 			}
 			fm[lastKey] = strings.Trim(v, `"'`)
