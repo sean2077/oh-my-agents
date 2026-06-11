@@ -34,6 +34,16 @@ func TestRealAssetsPassReleaseGates(t *testing.T) {
 			continue
 		}
 		src := filepath.Join(repoAssets, ent.Name())
+		m, err := asset.LoadManifest(filepath.Join(src, "manifest.json"))
+		if err != nil {
+			t.Fatalf("manifest %s: %v", ent.Name(), err)
+		}
+		// Core workflow skills must stay dual-agent (adapter-conformance
+		// §3); an accidental single-target drop fails the release gate
+		// (review 068 follow-up).
+		if !m.HasTarget("claude") || !m.HasTarget("codex") {
+			t.Fatalf("skill %s targets %v: core workflow skills must target both claude and codex", ent.Name(), m.Targets)
+		}
 		rep, err := eng.Install(src, asset.Options{})
 		if err != nil {
 			t.Fatalf("install %s: %v", ent.Name(), err)

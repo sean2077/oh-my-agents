@@ -513,3 +513,65 @@ func TestDryRunZeroWrites(t *testing.T) {
 		t.Fatal("dry-run publish must write nothing")
 	}
 }
+
+func TestSetLeadPersistsSwap(t *testing.T) {
+	// review 068 blocker 2: a confirmed swap must update
+	// session.json.roles.lead so later turns resolve the new authority.
+	ck := newClock()
+	root, _ := initRoot(t, ck)
+	claude := testLedger(t, root, "claude", ck)
+	s := mustPair(t, claude, "swap")
+	if s.Roles["lead"] != "claude" {
+		t.Fatalf("creator lead = %q", s.Roles["lead"])
+	}
+	if _, err := claude.SetLead(s.Pair, "stranger", false); err == nil {
+		t.Fatal("non-participant lead must refuse")
+	}
+	got, err := claude.SetLead(s.Pair, "codex", false)
+	if err != nil || got.Roles["lead"] != "codex" {
+		t.Fatalf("set-lead: %+v err=%v", got.Roles, err)
+	}
+	// Visible to a fresh load (pair show / status read this).
+	reloaded, err := claude.LoadSession(s.Pair)
+	if err != nil || reloaded.Roles["lead"] != "codex" {
+		t.Fatalf("persisted lead = %q err=%v", reloaded.Roles["lead"], err)
+	}
+	st, err := claude.Status(s.Pair, 0)
+	if err != nil || st.Session.Roles["lead"] != "codex" {
+		t.Fatalf("status lead = %q err=%v", st.Session.Roles["lead"], err)
+	}
+	// Dry-run computes but never writes.
+	if _, err := claude.SetLead(s.Pair, "claude", true); err != nil {
+		t.Fatal(err)
+	}
+	reloaded, _ = claude.LoadSession(s.Pair)
+	if reloaded.Roles["lead"] != "codex" {
+		t.Fatal("dry-run set-lead wrote state")
+	}
+	// Terminal pair refuses.
+	if err := claude.Close(s.Pair, "approve", "done", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := claude.SetLead(s.Pair, "claude", false); err == nil {
+		t.Fatal("set-lead on terminal pair must refuse")
+	}
+}
+
+func TestStatusArtifactsCarryAbsolutePaths(t *testing.T) {
+	// review 068 blocker 1: cold-orient reads latest.path directly.
+	ck := newClock()
+	root, _ := initRoot(t, ck)
+	claude := testLedger(t, root, "claude", ck)
+	s := mustPair(t, claude, "paths")
+	formal := mustPublish(t, claude, s.Pair, "plan", "body", "next")
+	st, err := claude.Status(s.Pair, 0)
+	if err != nil || st.Latest == nil {
+		t.Fatalf("status: %+v err=%v", st, err)
+	}
+	if st.Latest.Path != formal {
+		t.Fatalf("latest.path = %q, want %q", st.Latest.Path, formal)
+	}
+	if _, _, err := ReadArtifact(st.Latest.Path); err != nil {
+		t.Fatalf("latest.path not readable as-is: %v", err)
+	}
+}

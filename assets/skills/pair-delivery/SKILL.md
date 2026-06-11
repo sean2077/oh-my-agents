@@ -16,7 +16,7 @@ This skill is agent-neutral: the default path below is plain `oma relay` plus ma
 - Authority order: **user decision > lead's technical judgment > auxiliary's suggestions**. A user decision can never be overturned by review feedback — if a finding conflicts with one, escalate (`@user:` rule below) instead of adopting it.
 - The auxiliary's job is blind-spot finding: reviews, counter-examples, risks, omissions. Its conclusions do not bind the lead.
 - The lead must independently verify EVERY auxiliary finding and record a disposition (adopt / partially adopt / reject) with reasoning in the reply artifact. Never adopt wholesale; never drop without a recorded reason.
-- Role-swap trigger (rule-based, never vibes): if within one delivery gate the lead's output draws blocker-grade revise verdicts in 2 consecutive rounds, or a fix is rejected twice for the same reason, or the auxiliary finds substantive defects the lead missed in two consecutive gates — the lead's side MUST escalate with a line-start `@user:` asking whether to swap the lead. A swap is recorded as `kind: decision` and the pair continues without resetting gates.
+- Role-swap trigger (rule-based, never vibes): if within one delivery gate the lead's output draws blocker-grade revise verdicts in 2 consecutive rounds, or a fix is rejected twice for the same reason, or the auxiliary finds substantive defects the lead missed in two consecutive gates — the lead's side MUST escalate with a line-start `@user:` asking whether to swap the lead. A confirmed swap is BOTH recorded as `kind: decision` AND persisted with `oma relay pair set-lead <participant>` so every later turn resolves the new authority; the pair continues without resetting gates.
 
 ## Every turn: orient, then act
 
@@ -29,7 +29,7 @@ oma relay status --json
 Turn check on the latest artifact in `status --json`:
 
 - No artifacts yet and you created the pair → write the first `kind: plan`.
-- Latest artifact's author is the PEER → it is addressed to you: read it (the file path is in the status output), treat its `prompt_for_next` as your task, continue below.
+- Latest artifact's author is the PEER → it is addressed to you: read the file at `latest.path` from the `status --json` output, treat its `prompt_for_next` as your task, continue below.
 - Latest artifact is YOURS → nothing to do yet: run the wait step at the end of this loop.
 - Session status is terminal (`closed`/`cancelled`/`failed`) → report to the user and stop.
 

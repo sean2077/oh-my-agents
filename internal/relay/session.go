@@ -219,6 +219,31 @@ func (l *Ledger) NewPair(topic, peer, project string, dryRun bool) (*Session, er
 	return s, nil
 }
 
+// SetLead persists a user-confirmed lead swap (workflows.md §4.1: the
+// swap is recorded as kind: decision AND session.json.roles.lead is
+// updated so later turns resolve the new authority).
+func (l *Ledger) SetLead(slug, name string, dryRun bool) (*Session, error) {
+	s, err := l.LoadSession(slug)
+	if err != nil {
+		return nil, err
+	}
+	if s.Terminal() {
+		return nil, fmt.Errorf("%w: pair %s is %s", ErrRelay, slug, s.Status)
+	}
+	if _, err := s.Peer(name); err != nil {
+		return nil, fmt.Errorf("%w: lead %q is not a participant of %s (%v)", ErrRelay, name, slug, s.Participants)
+	}
+	s.Roles["lead"] = name
+	if dryRun {
+		return s, nil
+	}
+	if err := l.saveSession(s); err != nil {
+		return nil, err
+	}
+	l.touchHeartbeat(slug)
+	return s, nil
+}
+
 // Close ends a pair and archives it (protocol §9).
 func (l *Ledger) Close(slug, outcome, reason string, dryRun bool) error {
 	switch outcome {

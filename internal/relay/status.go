@@ -14,6 +14,7 @@ type ArtifactSummary struct {
 	Kind   string `json:"kind"`
 	Status string `json:"status"`
 	Name   string `json:"name"`
+	Path   string `json:"path"` // absolute path — cold-orient reads this (review 068)
 }
 
 // HeartbeatInfo reports one participant's liveness.
@@ -63,7 +64,7 @@ func (l *Ledger) Status(slug string, last int) (*PairStatus, error) {
 			st.Residue = append(st.Residue, fmt.Sprintf("%s: %v", name, readErr))
 			continue
 		}
-		st.Artifacts = append(st.Artifacts, ArtifactSummary{Seq: seq, Author: author, Kind: kind, Status: fm.Status, Name: name})
+		st.Artifacts = append(st.Artifacts, ArtifactSummary{Seq: seq, Author: author, Kind: kind, Status: fm.Status, Name: name, Path: filepath.Join(pairDir, name)})
 	}
 	if n := len(st.Artifacts); n > 0 {
 		latest := st.Artifacts[n-1]

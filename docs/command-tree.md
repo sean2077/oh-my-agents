@@ -80,6 +80,7 @@ oma relay pair ensure [--json]
 oma relay pair join <slug> [--json]
 oma relay pair show [--pair <slug>] [--json]
 oma relay pair list [--json]
+oma relay pair set-lead <participant> [--pair <slug>]
 oma relay draft --kind <kind> [--in-reply-to <seq>] [--corrects <seq>] [--pair <slug>] [--json]
 oma relay publish <draft> --body-file <f> --prompt-file <f> [--touched <path>]... [--status <s>] [--pair <slug>]
 oma relay wait [--timeout <sec>] [--pair <slug>] [--json]
@@ -87,6 +88,7 @@ oma relay status [--last N] [--pair <slug>] [--json]
 oma relay close --outcome <approve|reject|abandon> --reason <text> [--pair <slug>]
 ```
 
+- **C1 修订记录**：增 `pair set-lead`——workflows §4.1 要求确认对调后「更新 session.json.roles.lead」，原命令面无任何 roles 变更入口（评审 068）。
 - **B8 修订记录**：①新增 `pair new`——原命令面只有绑定语义（ensure/join），不存在任何创建 pair 的入口，实现期补此缺口；创建者默认成为 `roles.lead`（协议 §4），`--peer` 默认 claude↔codex 对端。②`draft` 增 `--corrects <seq>`——协议 §5 的 `corrects` 字段原无 CLI 入口，kind=correction 强制要求。
 
 - 公开子命令 7 组（≤10 目标达成）。**决策记录**：`claim` 与 `heartbeat` 为内部协议操作——claim 内化为 `draft` 的序号保留步骤；heartbeat 由任意 relay 子命令执行时自动刷新本方心跳文件；stale 诊断经 `oma relay status --json`（`last_heartbeat`/`stale` 字段）。

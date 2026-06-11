@@ -212,7 +212,31 @@ func newRelayPairCmd(rootFlag *string) *cobra.Command {
 	}
 	list.Flags().BoolVar(&listJSON, "json", false, "machine-readable output")
 
-	pair.AddCommand(pairNew, ensure, join, show, list)
+	var leadPair string
+	setLead := &cobra.Command{
+		Use:   "set-lead <participant>",
+		Short: "Persist a user-confirmed lead swap into session.json.roles.lead",
+		Args:  cobra.ExactArgs(1),
+		RunE: run(func(cmd *cobra.Command, args []string) error {
+			l, err := relayLedger(*rootFlag, true)
+			if err != nil {
+				return err
+			}
+			s, err := l.ResolvePair(leadPair, false)
+			if err != nil {
+				return err
+			}
+			s, err = l.SetLead(s.Pair, args[0], DryRun())
+			if err != nil {
+				return err
+			}
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s lead=%s\n", s.Pair, s.Roles["lead"])
+			return nil
+		}),
+	}
+	setLead.Flags().StringVar(&leadPair, "pair", "", "pair slug (default: resolved binding)")
+
+	pair.AddCommand(pairNew, ensure, join, show, list, setLead)
 	return pair
 }
 
