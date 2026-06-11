@@ -84,6 +84,29 @@ func TestMultilineShellSnippet(t *testing.T) {
 	}
 }
 
+func TestUnknownLeafWithDigitsFails(t *testing.T) {
+	// review 038 blocker 2: digits/underscores must not stop the token
+	// walk before validation sees the unknown leaf.
+	for _, md := range []string{"`oma bogus2`", "`oma relay pair typo_2`"} {
+		refs := refsFrom(md)
+		if len(refs) != 1 {
+			t.Fatalf("%s: refs = %v", md, refs)
+		}
+		if bad := validateRef(refs[0], fixtureSet()); bad == "" {
+			t.Fatalf("%s: unknown leaf with digits slipped through", md)
+		}
+	}
+}
+
+func TestArgumentsWithSlashesAndExtensionsValid(t *testing.T) {
+	for _, md := range []string{"`oma state set wf/phase planning`", "`oma relay publish draft.md`"} {
+		refs := refsFrom(md)
+		if bad := validateRef(refs[0], fixtureSet()); bad != "" {
+			t.Fatalf("%s rejected: %q", md, bad)
+		}
+	}
+}
+
 func TestUnknownTopGroupFails(t *testing.T) {
 	md := "`oma autopilot step`"
 	refs := refsFrom(md)

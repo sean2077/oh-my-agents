@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/sean2077/oh-my-agents/internal/agentdir"
 	"github.com/sean2077/oh-my-agents/internal/asset"
 )
 
@@ -44,14 +45,23 @@ func registryConsistency(eng *asset.Engine) []Finding {
 		if ok, problems := eng.VerifyProjections(e); !ok {
 			fs = append(fs, Finding{Level: LevelWarn, Message: fmt.Sprintf("%s: %s", e.Name, strings.Join(problems, "; "))})
 		}
+		// trusted-root drift after install is fail-grade (review 038)
+		for _, p := range eng.VerifyProjectionSecurity(e) {
+			fs = append(fs, Finding{Level: LevelFail, Message: fmt.Sprintf("%s: %s", e.Name, p)})
+		}
 	}
 	return fs
 }
 
-// permissions reports mode drift on oma-owned roots (0700 dirs).
+// permissions reports mode drift on oma-owned roots and agent trusted
+// roots (world-writable anywhere here is fail-grade).
 func permissions(eng *asset.Engine) []Finding {
 	var fs []Finding
-	for _, dir := range []string{eng.Layout.CanonicalRoot(), eng.Layout.ConfigDir()} {
+	dirs := []string{eng.Layout.CanonicalRoot(), eng.Layout.ConfigDir()}
+	for _, agent := range []string{"claude", "codex"} {
+		dirs = append(dirs, agentdir.AgentRoot(eng.Layout.Home, agent))
+	}
+	for _, dir := range dirs {
 		info, err := os.Stat(dir)
 		if os.IsNotExist(err) {
 			continue

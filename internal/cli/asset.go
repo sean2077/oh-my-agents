@@ -150,6 +150,10 @@ func newAssetListCmd() *cobra.Command {
 				r := row{Entry: entries[i]}
 				if installed {
 					ok, problems := eng.VerifyProjections(&entries[i])
+					if sec := eng.VerifyProjectionSecurity(&entries[i]); len(sec) > 0 {
+						ok = false
+						problems = append(problems, sec...)
+					}
 					r.Healthy, r.Problems = &ok, problems
 				}
 				rows = append(rows, r)

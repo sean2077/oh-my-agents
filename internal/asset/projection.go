@@ -195,6 +195,25 @@ func (e *Engine) removeProjection(entry *Entry, pr Projection, canonical string)
 	return true, ""
 }
 
+// VerifyProjectionSecurity re-runs the trusted-root constraints over an
+// entry's recorded projections, catching drift introduced AFTER install
+// (review 038 blocker 1): swapped intermediate symlinks, world-writable
+// roots, or tampered recorded paths. Violations are fail-grade.
+func (e *Engine) VerifyProjectionSecurity(entry *Entry) []string {
+	var problems []string
+	for _, pr := range entry.Projections {
+		expected, ok, _ := agentdir.For(e.Layout.Home, pr.Agent, entry.Type, entry.Name)
+		if !ok || filepath.Clean(pr.Path) != expected.Path {
+			problems = append(problems, fmt.Sprintf("%s: recorded projection %s does not match expected path", pr.Agent, pr.Path))
+			continue
+		}
+		if err := e.checkProjectionRoot(pr.Agent, expected.Path); err != nil {
+			problems = append(problems, fmt.Sprintf("%s: %v", pr.Agent, err))
+		}
+	}
+	return problems
+}
+
 // VerifyProjections reports per-projection health for an entry (used by
 // list --installed now, doctor in B6).
 func (e *Engine) VerifyProjections(entry *Entry) (ok bool, problems []string) {

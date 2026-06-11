@@ -92,7 +92,11 @@ func ExtractOmaRefs(md string) [][]string {
 					}
 					ref := []string{"oma"}
 					for _, t := range toks[i+1:] {
-						if !subcommandToken(t) {
+						// stop only at flags; every other token reaches
+						// longest-prefix validation so unknown leaves with
+						// digits/underscores cannot slip through
+						// (review 038 blocker 2)
+						if strings.HasPrefix(t, "-") {
 							break
 						}
 						ref = append(ref, t)
@@ -109,14 +113,6 @@ func ExtractOmaRefs(md string) [][]string {
 // splitCommands cuts a line at shell separators: ; | & && || > < $( )
 func splitCommands(line string) []string {
 	return regexp.MustCompile(`[;|&<>()]`).Split(line, -1)
-}
-
-// subcommandToken matches plain lowercase command words; flags, paths,
-// placeholders and arguments stop the walk.
-var subTokRe = regexp.MustCompile(`^[a-z][a-z-]*$`)
-
-func subcommandToken(t string) bool {
-	return subTokRe.MatchString(t) && !strings.HasPrefix(t, "-")
 }
 
 // validateRef resolves the longest registered prefix. Empty return = valid.
