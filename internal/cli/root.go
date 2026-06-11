@@ -64,7 +64,7 @@ func newRootCmd() *cobra.Command {
 		SilenceErrors: true,
 	}
 	root.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "report exact paths that would change, write nothing")
-	root.AddCommand(newVersionCmd(), newAssetCmd())
+	root.AddCommand(newVersionCmd(), newAssetCmd(), newConfigCmd())
 	return root
 }
 

@@ -20,6 +20,7 @@ var Schemas = map[string]string{
 	"interview_scores": "oma-interview-scores/1",
 	"ralph":            "oma-ralph/1",
 	"asset":            "oma-asset/1",
+	"config":           "oma-config/1",
 }
 
 // Algorithms registers pinned algorithm versions that affect reproducible

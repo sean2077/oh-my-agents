@@ -70,7 +70,13 @@
 
 字段集见 workflows.md §2.1（id/phase/goal/max_rounds/round/checks[]/stall_window/created/updated）。
 
-## 7. dogfood 日志 `.oma/dogfood-log.md`
+## 7. 用户配置 `config.toml`（`oma-config/1`）
+
+- 位置与优先级链见 docs/config.md（A7）：`~/.config/oma/config.toml`（用户）与 `<worktree>/.oma/config.toml`（项目，默认 private/local）。
+- TOML 根级可含 `schema = "oma-config/1"`：缺失视为当前 major（容忍手写遗漏）；存在但 major ≠ 1 → fail-closed。
+- 它是用户意图配置而非运行时状态：由 viper 限定承载（config.md §1 边界），不走本档其余 schema 的 encoding/json 读取层，但 schema 串的 major fail-closed 语义一致；登记入 `version.Schemas["config"]`。
+
+## 8. dogfood 日志 `.oma/dogfood-log.md`
 
 - 自由 markdown + 必填头部：开始日期、OMC 处置方式（disable/blocklist 命令原文）、**确切回退命令**。
 - 每条记录：日期 + 事件（使用了哪个工作流 / 遇到的问题 / 是否动用回退）。

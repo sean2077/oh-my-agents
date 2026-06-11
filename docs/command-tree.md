@@ -90,6 +90,10 @@ oma relay close --outcome <approve|reject|abandon> --reason <text> [--pair <slug
 ## 7. 其他
 
 ```
+oma config show [--json]       # 打印生效配置 + 每键来源（flag/env/项目/用户/默认）；纯读
+oma config path [--json]       # 打印用户/项目配置文件解析位置；纯读
 oma self-update [--check]      # --check 严格只读（仅版本比对）；--dry-run 遵循全局契约（披露将下载/替换的路径）；流程与安全要求见 security-contract.md §5
 oma version [--json]           # 版本、commit、schema 版本汇总
 ```
+
+`oma config` 为查询命令组（纯读、零写盘）；配置层完整语义见 docs/config.md（A7）：优先级链、per-key 来源映射、与 schema 数据的严格边界。`config show`/`config path` 均支持 `--json`，解析失败走 `ExitState(3)`。
