@@ -1,6 +1,7 @@
 package asset
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -204,19 +205,27 @@ func TestBackupCollisionFailsClosed(t *testing.T) {
 }
 
 func TestRegistrySaveKeepsSingleGenerationBak(t *testing.T) {
+	// schemas.md §1 contract is per-WRITE: every Save backs up the
+	// immediately prior file. Install saves twice (managed checkpoint,
+	// then projections — review 030 blocker 2), so .bak holds the
+	// checkpoint generation: a valid registry one write back.
 	e := newTestEngine(t)
 	src := writeSkillSource(t, t.TempDir(), "x", "v1")
 	mustInstall(t, e, src, Options{})
-	first, err := os.ReadFile(e.Layout.RegistryPath())
-	if err != nil {
-		t.Fatal(err)
-	}
 	mustInstall(t, e, src, Options{}) // managed reinstall rewrites registry
 	bak, err := os.ReadFile(e.Layout.RegistryPath() + ".bak")
 	if err != nil {
 		t.Fatalf("registry .bak missing: %v", err)
 	}
-	if string(bak) != string(first) {
-		t.Fatal(".bak must hold the previous generation")
+	cur, err := os.ReadFile(e.Layout.RegistryPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var prev Registry
+	if err := json.Unmarshal(bak, &prev); err != nil {
+		t.Fatalf(".bak must be a valid registry one write back: %v", err)
+	}
+	if prev.Schema != RegistrySchema || string(bak) == string(cur) {
+		t.Fatal(".bak must hold a valid prior write, distinct from current")
 	}
 }

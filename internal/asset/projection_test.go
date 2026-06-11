@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -140,6 +141,104 @@ func TestVerifyProjectionsDetectsBreakage(t *testing.T) {
 	}
 	if ok, problems := e.VerifyProjections(&entries[0]); ok || len(problems) == 0 {
 		t.Fatal("broken projection must be detected")
+	}
+}
+
+func TestProjectionRootSymlinkEscapeRefused(t *testing.T) {
+	e := newTestEngine(t)
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(e.Layout.Home, ".claude")); err != nil {
+		t.Skip("symlinks unavailable")
+	}
+	src := writeSkillSource(t, t.TempDir(), "x", "body")
+	_, err := e.Install(src, Options{Agents: []string{"claude"}})
+	if err == nil || !strings.Contains(err.Error(), "outside home") {
+		t.Fatalf("symlinked agent root: err = %v, want outside-home refusal", err)
+	}
+	entries, _ := os.ReadDir(outside)
+	if len(entries) != 0 {
+		t.Fatal("nothing may be written through the escaping root")
+	}
+}
+
+func TestProjectionRootWorldWritableRefused(t *testing.T) {
+	e := newTestEngine(t)
+	claudeRoot := filepath.Join(e.Layout.Home, ".claude")
+	if err := os.MkdirAll(claudeRoot, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(claudeRoot, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	src := writeSkillSource(t, t.TempDir(), "x", "body")
+	_, err := e.Install(src, Options{Agents: []string{"claude"}})
+	if err == nil || !strings.Contains(err.Error(), "world-writable") {
+		t.Fatalf("world-writable nearest ancestor: err = %v, want refusal", err)
+	}
+}
+
+func TestPartialProjectionConvergesToManaged(t *testing.T) {
+	e := newTestEngine(t)
+	codexRoot := filepath.Join(e.Layout.Home, ".codex")
+	if err := os.MkdirAll(codexRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(codexRoot, 0o500); err != nil { // not writable: codex projection will fail
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(codexRoot, 0o700) })
+
+	src := writeSkillSource(t, t.TempDir(), "x", "body")
+	_, err := e.Install(src, Options{})
+	if err == nil || !strings.Contains(err.Error(), "rerun install to converge") {
+		t.Fatalf("partial projection: err = %v, want converge hint", err)
+	}
+	// canonical must be registry-owned despite the failure
+	entries, lerr := e.List()
+	if lerr != nil || len(entries) != 1 {
+		t.Fatalf("registry after partial apply: %+v err=%v", entries, lerr)
+	}
+	// rerun converges once the obstacle is removed
+	if err := os.Chmod(codexRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Install(src, Options{}); err != nil {
+		t.Fatalf("converging reinstall: %v", err)
+	}
+	entries, _ = e.List()
+	if len(entries[0].Projections) != 2 {
+		t.Fatalf("after convergence projections = %+v", entries[0].Projections)
+	}
+}
+
+func TestRemoveProjectionRevalidatesRecordedPath(t *testing.T) {
+	e := newTestEngine(t)
+	src := writeSkillSource(t, t.TempDir(), "x", "body")
+	mustInstall(t, e, src, Options{})
+
+	outside := filepath.Join(t.TempDir(), "outside-link")
+	canonical := filepath.Join(e.Layout.CanonicalRoot(), "skills", "x")
+	if err := os.Symlink(canonical, outside); err != nil {
+		t.Skip("symlinks unavailable")
+	}
+	reg, err := LoadRegistry(e.Layout.RegistryPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg.Find("x").Projections = []Projection{{Agent: "claude", Path: outside, Kind: "symlink"}}
+	if err := reg.Save(e.Layout.RegistryPath()); err != nil {
+		t.Fatal(err)
+	}
+
+	rep, err := e.Remove("x", Options{})
+	if err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	if len(rep.Warnings) == 0 {
+		t.Fatalf("tampered projection path must warn, got %+v", rep)
+	}
+	if _, err := os.Lstat(outside); err != nil {
+		t.Fatal("outside link must be left intact")
 	}
 }
 

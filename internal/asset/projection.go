@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/sean2077/oh-my-agents/internal/agentdir"
 )
@@ -53,9 +54,57 @@ func (e *Engine) planProjections(m *Manifest, canonical string, requested []stri
 		if !pathWithin(tgt.Path, agentdir.AgentRoot(e.Layout.Home, agent)) {
 			return nil, nil, fmt.Errorf("%w: projection %q escapes agent root", ErrInvalid, tgt.Path)
 		}
+		// Resolved trusted-root + ancestor-permission checks: the lexical
+		// check above is not enough when the agent root is a symlink or a
+		// world-writable directory (review 030 blocker 1).
+		if err := e.checkProjectionRoot(agent, tgt.Path); err != nil {
+			return nil, nil, err
+		}
 		plans = append(plans, plannedProjection{target: tgt, canonical: canonical})
 	}
 	return plans, skips, nil
+}
+
+// checkProjectionRoot enforces the resolved trusted-root constraints for
+// one agent's projection area: the agent root must not resolve outside the
+// home directory (symlinked ~/.claude → elsewhere is refused), and the
+// nearest existing ancestor of the target must not be world-writable.
+func (e *Engine) checkProjectionRoot(agent, target string) error {
+	home, err := resolveExisting(e.Layout.Home)
+	if err != nil {
+		return err
+	}
+	root, err := resolveExisting(agentdir.AgentRoot(e.Layout.Home, agent))
+	if err != nil {
+		return err
+	}
+	if root != home && !strings.HasPrefix(root+string(filepath.Separator), home+string(filepath.Separator)) {
+		return fmt.Errorf("%w: agent root for %s resolves outside home: %s", ErrInvalid, agent, root)
+	}
+	return checkAncestorWritable(filepath.Dir(target))
+}
+
+// checkAncestorWritable walks up to the nearest existing ancestor and
+// refuses world-writable directories (the direct parent may not exist yet
+// when projection dirs are created on demand).
+func checkAncestorWritable(dir string) error {
+	for {
+		info, err := os.Stat(dir)
+		if err == nil {
+			if info.Mode().Perm()&0o002 != 0 {
+				return fmt.Errorf("%w: directory %s is world-writable", ErrInvalid, dir)
+			}
+			return nil
+		}
+		if !os.IsNotExist(err) {
+			return err
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return nil
+		}
+		dir = parent
+	}
 }
 
 // checkProjection pre-validates one destination: free, or already the
@@ -97,25 +146,35 @@ func applyProjection(p plannedProjection) error {
 	return os.Symlink(p.canonical, p.target.Path)
 }
 
-// removeProjection deletes a recorded projection only when it is still the
-// expected oma symlink; foreign content is left intact with a warning.
-func removeProjection(pr Projection, canonical string) (removed bool, warn string) {
-	info, err := os.Lstat(pr.Path)
+// removeProjection deletes a recorded projection only when the recorded
+// path matches the expected projection path recomputed from the entry's
+// manifest (registry content is persisted untrusted input — review 030
+// blocker 3, same lesson as canonical paths in B3) and the link still
+// points at canonical. Anything else is left intact with a warning.
+func (e *Engine) removeProjection(entry *Entry, pr Projection, canonical string) (removed bool, warn string) {
+	expected, ok, _ := agentdir.For(e.Layout.Home, pr.Agent, entry.Type, entry.Name)
+	if !ok || filepath.Clean(pr.Path) != expected.Path {
+		return false, fmt.Sprintf("recorded projection %s does not match expected path; left intact", pr.Path)
+	}
+	if err := e.checkProjectionRoot(pr.Agent, expected.Path); err != nil {
+		return false, fmt.Sprintf("projection root check failed for %s: %v", expected.Path, err)
+	}
+	info, err := os.Lstat(expected.Path)
 	if errors.Is(err, os.ErrNotExist) {
 		return false, ""
 	}
 	if err != nil {
-		return false, fmt.Sprintf("%s: %v", pr.Path, err)
+		return false, fmt.Sprintf("%s: %v", expected.Path, err)
 	}
 	if info.Mode()&os.ModeSymlink == 0 {
-		return false, fmt.Sprintf("%s is not a symlink; left intact", pr.Path)
+		return false, fmt.Sprintf("%s is not a symlink; left intact", expected.Path)
 	}
-	dest, err := os.Readlink(pr.Path)
+	dest, err := os.Readlink(expected.Path)
 	if err != nil || filepath.Clean(dest) != filepath.Clean(canonical) {
-		return false, fmt.Sprintf("%s points elsewhere; left intact", pr.Path)
+		return false, fmt.Sprintf("%s points elsewhere; left intact", expected.Path)
 	}
-	if err := os.Remove(pr.Path); err != nil {
-		return false, fmt.Sprintf("%s: %v", pr.Path, err)
+	if err := os.Remove(expected.Path); err != nil {
+		return false, fmt.Sprintf("%s: %v", expected.Path, err)
 	}
 	return true, ""
 }

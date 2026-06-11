@@ -154,15 +154,27 @@ func (e *Engine) Install(srcDir string, opts Options) (*Report, error) {
 		return nil, fmt.Errorf("digest installed asset: %w", err)
 	}
 	entry.Digest = digest
+	// Managed checkpoint before projections (review 030 blocker 2): if a
+	// projection fails mid-way the canonical content is already registry-
+	// owned, so a rerun converges instead of leaving unmanaged state.
+	reg.Upsert(entry)
+	if err := reg.Save(e.Layout.RegistryPath()); err != nil {
+		return nil, err
+	}
+	var projErr error
 	for _, p := range plans {
 		if err := applyProjection(p); err != nil {
-			return nil, err
+			projErr = err
+			break
 		}
 		entry.Projections = append(entry.Projections, Projection{Agent: p.target.Agent, Path: p.target.Path, Kind: p.target.Kind})
 	}
 	reg.Upsert(entry)
 	if err := reg.Save(e.Layout.RegistryPath()); err != nil {
 		return nil, err
+	}
+	if projErr != nil {
+		return nil, fmt.Errorf("projection incomplete (canonical is managed; rerun install to converge): %w", projErr)
 	}
 	return rep, nil
 }
@@ -218,7 +230,7 @@ func (e *Engine) Remove(name string, opts Options) (*Report, error) {
 		return rep, nil
 	}
 	for _, pr := range entry.Projections {
-		if removed, warn := removeProjection(pr, target); !removed && warn != "" {
+		if removed, warn := e.removeProjection(entry, pr, target); !removed && warn != "" {
 			rep.Warnings = append(rep.Warnings, warn)
 		}
 	}
