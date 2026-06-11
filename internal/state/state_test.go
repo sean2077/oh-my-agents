@@ -83,6 +83,72 @@ func TestUnknownSchemaMajorFailsClosed(t *testing.T) {
 	}
 }
 
+func TestNamespaceMismatchFailsClosed(t *testing.T) {
+	s := newStore(t)
+	path := filepath.Join(s.ProjectRoot, ".oma", "state", "autopilot.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	body := `{"schema":"oma-state/1","namespace":"other","data":{"phase":"wrong"},"updated":"2026-06-11T12:00:00Z"}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.Get("autopilot/phase", ""); !errors.Is(err, ErrState) {
+		t.Fatalf("namespace mismatch: err = %v, want ErrState", err)
+	}
+}
+
+func TestBadUpdatedTimestampFailsClosed(t *testing.T) {
+	s := newStore(t)
+	path := filepath.Join(s.ProjectRoot, ".oma", "state", "ns.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	body := `{"schema":"oma-state/1","namespace":"ns","data":{},"updated":"yesterday"}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.Get("ns/x", ""); !errors.Is(err, ErrState) {
+		t.Fatalf("bad updated: err = %v, want ErrState", err)
+	}
+}
+
+func TestDryRunValidatesExistingFile(t *testing.T) {
+	s := newStore(t)
+	path := filepath.Join(s.ProjectRoot, ".oma", "state", "ns.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{"schema":"oma-state/9"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Set("ns/x", "v", "", true); !errors.Is(err, ErrState) {
+		t.Fatalf("dry-run over bad file: err = %v, want ErrState (validation must run)", err)
+	}
+}
+
+func TestOverwriteKeepsSingleGenerationBak(t *testing.T) {
+	s := newStore(t)
+	if _, err := s.Set("ns/x", "one", "", false); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(s.ProjectRoot, ".oma", "state", "ns.json")
+	first, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Set("ns/x", "two", "", false); err != nil {
+		t.Fatal(err)
+	}
+	bak, err := os.ReadFile(path + ".bak")
+	if err != nil {
+		t.Fatalf(".bak missing: %v", err)
+	}
+	if string(bak) != string(first) {
+		t.Fatal(".bak must hold the prior generation")
+	}
+}
+
 func TestNoProjectRootRequiresFile(t *testing.T) {
 	s := New("") // no project
 	s.Now = func() time.Time { return time.Unix(0, 0) }

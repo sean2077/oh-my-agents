@@ -89,6 +89,16 @@ func load(path, ns string) (*File, error) {
 	if major, ok := schemaMajor(f.Schema, "oma-state"); !ok || major != 1 {
 		return nil, fmt.Errorf("%w: %s schema %q, want %s", ErrState, path, f.Schema, Schema)
 	}
+	// namespace and updated are part of the oma-state/1 contract: a file
+	// whose namespace disagrees with its key (or whose timestamp is not
+	// RFC3339) is corrupt state, not a soft default (B5 review 036).
+	if f.Namespace != ns {
+		return nil, fmt.Errorf("%w: %s namespace %q does not match key namespace %q (corrupt or misplaced state file)",
+			ErrState, path, f.Namespace, ns)
+	}
+	if _, terr := time.Parse(time.RFC3339, f.Updated); terr != nil {
+		return nil, fmt.Errorf("%w: %s updated %q is not RFC3339: %v", ErrState, path, f.Updated, terr)
+	}
 	if f.Data == nil {
 		f.Data = map[string]string{}
 	}
@@ -124,12 +134,15 @@ func (s *Store) Set(key, value, override string, dryRun bool) (path string, err 
 	if err != nil {
 		return "", err
 	}
-	if dryRun {
-		return path, nil
-	}
+	// Validation runs before the dry-run return: --dry-run performs the
+	// full computation/validation path and only skips writes
+	// (docs/security-contract.md §1; B5 review 036).
 	f, err := load(path, ns)
 	if err != nil {
 		return "", err
+	}
+	if dryRun {
+		return path, nil
 	}
 	f.Schema, f.Namespace = Schema, ns
 	f.Data[field] = value
@@ -143,6 +156,12 @@ func (s *Store) Set(key, value, override string, dryRun bool) (path string, err 
 func writeAtomic(path string, f *File) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("%w: %v", ErrState, err)
+	}
+	// single-generation .bak of the prior file (docs/schemas.md §1)
+	if prev, err := os.ReadFile(path); err == nil {
+		if err := os.WriteFile(path+".bak", prev, 0o600); err != nil {
+			return fmt.Errorf("%w: write %s.bak: %v", ErrState, path, err)
+		}
 	}
 	raw, err := json.MarshalIndent(f, "", "  ")
 	if err != nil {
