@@ -206,7 +206,7 @@ func (e *Engine) VerifyProjections(entry *Entry) (ok bool, problems []string) {
 		info, err := os.Lstat(pr.Path)
 		if err != nil {
 			ok = false
-			problems = append(problems, fmt.Sprintf("%s/%s missing", pr.Agent, pr.Path))
+			problems = append(problems, fmt.Sprintf("%s projection missing: %s", pr.Agent, pr.Path))
 			continue
 		}
 		if pr.Kind != agentdir.KindSymlink {
