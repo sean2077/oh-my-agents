@@ -15,7 +15,17 @@ oma state set autopilot/goal "<one-line goal>"
 oma state set autopilot/plan-path <path>
 ```
 
-On EVERY session start: `oma state get autopilot/phase` — a value other than `done` means an autopilot run is in flight; read `autopilot/goal` and `autopilot/plan-path` and continue from that phase instead of starting over. Set the phase key at each transition, never retroactively.
+On EVERY session start, probe for an in-flight run — and note that `oma state get` on a missing key exits 3 by design (fail-closed), which here just means "no run yet":
+
+```
+oma state get autopilot/phase
+```
+
+- **Missing key (exit 3) or `done`** → no active run. For a new authorized task, initialize before any work: `oma state set autopilot/goal "<one-line goal>"`, then `oma state set autopilot/phase clarify`.
+- **Any other value** → resume from that phase. `autopilot/goal` must exist (read it); `autopilot/plan-path` is phase-dependent — not expected during `clarify`, expected from the moment `plan` has produced the file onward (`implement`/`verify`/`deliver`).
+- **A key the current phase depends on is missing** (e.g. phase `implement` but no `plan-path`) → that is recoverable corrupt workflow state: tell the user what is inconsistent and how to repair it (re-set the key or restart the phase); never restart from scratch silently.
+
+Set the phase key at each transition, never retroactively.
 
 ## Phases
 
