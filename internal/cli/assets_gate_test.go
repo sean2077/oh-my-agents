@@ -83,5 +83,10 @@ func TestRealAssetsPassReleaseGates(t *testing.T) {
 	if rep.Total > 2000 {
 		t.Fatalf("core4 resident budget %d > 2000", rep.Total)
 	}
-	t.Logf("core4 resident budget: %d tokens (missing: %v)", rep.Total, rep.Missing)
+	// Phase C complete: every core4 member ships — a missing one is a
+	// release blocker, not a pre-completion note (review 074).
+	if len(rep.Missing) != 0 {
+		t.Fatalf("core4 members missing from assets/: %v", rep.Missing)
+	}
+	t.Logf("core4 resident budget: %d tokens, all members present", rep.Total)
 }
