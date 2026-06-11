@@ -1,6 +1,6 @@
 # oma 实现计划 v2.1（终态版）
 
-> 依据：`.omc/specs/deep-interview-oh-my-agents.md` **rev 3.1**（v2.1 采纳计划评审 `006` 全部 7 条发现）。
+> 依据：`docs/spec.md` **rev 3.1**（v2.1 采纳计划评审 `006` 全部 7 条发现）。
 > 状态：pending review（第二道 Codex 评审门）；通过 + 用户确认后开始实现。
 > 流程：Claude 编写本计划 → Codex 评审 → 用户确认 → Claude 实现 → Codex 代码评审。
 

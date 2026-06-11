@@ -7,8 +7,9 @@ coverage.out
 # runtime state (oma v2 ledgers and workflow state live here)
 /.oma/
 
-# deep-interview ephemeral state (the spec under .omc/specs/ is tracked; state is not)
-/.omc/state/
+# OMC-era local workspace (interview state, transcript) — never tracked;
+# the spec and implementation plan it once held live in docs/
+/.omc/
 
 # agent-relay cross-review ledger (process artifact, not source)
 /.shared/
