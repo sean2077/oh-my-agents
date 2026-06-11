@@ -50,6 +50,13 @@ func (o obj) drop(key string) obj {
 
 // parseObj decodes one JSON object preserving member order; values are
 // captured raw. Trailing data after the closing brace is rejected.
+//
+// Duplicate member names are rejected (review 046 blocker 1): the ordered
+// tree resolves lookups first-wins while JSON runtimes (encoding/json, jq,
+// the agents themselves) resolve last-wins, so tolerating duplicates lets
+// oma verify/count a hook tree the runtime never consumes. Comparison
+// happens on DECODED names — Token() unescapes, so a plain key and its
+// unicode-escaped spelling collide here exactly as they do at runtime.
 func parseObj(raw []byte) (obj, error) {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	tok, err := dec.Token()
@@ -60,6 +67,7 @@ func parseObj(raw []byte) (obj, error) {
 		return nil, fmt.Errorf("expected object, got %v", tok)
 	}
 	var o obj
+	seen := map[string]bool{}
 	for dec.More() {
 		keyTok, err := dec.Token()
 		if err != nil {
@@ -69,6 +77,10 @@ func parseObj(raw []byte) (obj, error) {
 		if !ok {
 			return nil, fmt.Errorf("expected object key, got %v", keyTok)
 		}
+		if seen[key] {
+			return nil, fmt.Errorf("duplicate object key %q (first-wins/last-wins ambiguity; fail-closed)", key)
+		}
+		seen[key] = true
 		var v json.RawMessage
 		if err := dec.Decode(&v); err != nil {
 			return nil, err

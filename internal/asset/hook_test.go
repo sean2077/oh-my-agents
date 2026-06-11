@@ -226,6 +226,88 @@ func TestHookRollbackReinjectsRestoredCommands(t *testing.T) {
 	}
 }
 
+func TestHookRemoveFailsClosedOnCorruptHost(t *testing.T) {
+	// review 046 blocker 2: a failed uninject must not orphan oma residue
+	// by dropping canonical/registry state, and --dry-run must run the
+	// same validation instead of advertising success.
+	e := newTestEngine(t)
+	src := writeHookSource(t, t.TempDir(), "relay-watch", "cmd")
+	mustInstall(t, e, src, Options{})
+	claude, _ := hostPaths(e)
+	if err := os.WriteFile(claude, []byte(`{"hooks": {`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := e.Remove("relay-watch", Options{DryRun: true}); err == nil {
+		t.Fatal("dry-run remove must fail the same host validation")
+	}
+	if _, err := e.Remove("relay-watch", Options{}); err == nil {
+		t.Fatal("remove must fail closed on corrupt host")
+	}
+	// Management state intact: canonical still placed, registry still owns.
+	if _, err := os.Stat(filepath.Join(e.Layout.CanonicalRoot(), "hooks", "relay-watch")); err != nil {
+		t.Fatal("canonical must be left intact after failed uninject")
+	}
+	entries, _ := e.List()
+	if len(entries) != 1 {
+		t.Fatalf("registry after failed remove: %+v", entries)
+	}
+	// Fix the host file: remove now converges (codex side already stripped
+	// on the failed attempt is fine — hookcfg.Remove is idempotent).
+	if err := os.WriteFile(claude, []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Remove("relay-watch", Options{}); err != nil {
+		t.Fatalf("remove after fixing host: %v", err)
+	}
+	entries, _ = e.List()
+	if len(entries) != 0 {
+		t.Fatalf("registry after converged remove: %+v", entries)
+	}
+}
+
+func TestHookRemoveFailsClosedOnSymlinkedHost(t *testing.T) {
+	e := newTestEngine(t)
+	src := writeHookSource(t, t.TempDir(), "relay-watch", "cmd")
+	mustInstall(t, e, src, Options{})
+	claude, _ := hostPaths(e)
+	real := filepath.Join(t.TempDir(), "elsewhere.json")
+	if err := os.Rename(claude, real); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(real, claude); err != nil {
+		t.Skip("symlinks unavailable")
+	}
+	for _, dry := range []bool{true, false} {
+		if _, err := e.Remove("relay-watch", Options{DryRun: dry}); err == nil || !strings.Contains(err.Error(), "symlink") {
+			t.Fatalf("dry=%v: err = %v, want symlink refusal", dry, err)
+		}
+	}
+	entries, _ := e.List()
+	if len(entries) != 1 {
+		t.Fatal("registry must keep the entry after refused remove")
+	}
+}
+
+func TestHookRemoveFailsClosedOnDuplicateKeyHost(t *testing.T) {
+	e := newTestEngine(t)
+	src := writeHookSource(t, t.TempDir(), "relay-watch", "cmd")
+	mustInstall(t, e, src, Options{})
+	claude, _ := hostPaths(e)
+	dup := `{"hooks": {"Stop": [{"command": "a", "_oma_asset": "relay-watch"}]}, "hooks": {"Stop": [{"command": "runtime-last"}]}}`
+	if err := os.WriteFile(claude, []byte(dup), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Remove("relay-watch", Options{}); err == nil || !strings.Contains(err.Error(), "duplicate object key") {
+		t.Fatalf("duplicate-key host: err = %v, want duplicate refusal", err)
+	}
+	// And the health gate must report the problem, not health.
+	entries, _ := e.List()
+	if ok, problems := e.VerifyProjections(&entries[0]); ok || len(problems) == 0 {
+		t.Fatal("duplicate-key host must fail projection verification")
+	}
+}
+
 func TestVerifyProjectionsDetectsInjectionDrift(t *testing.T) {
 	e := newTestEngine(t)
 	src := writeHookSource(t, t.TempDir(), "relay-watch", "cmd")

@@ -26,7 +26,7 @@
 | prompt | `~/.agents/prompts/<name>.md` | （按需）`~/.claude/commands/` | `~/.codex/prompts/<name>.md` |
 
 - 投影一律软链优先；无法软链的注入型（hook fragment）走「读-合并-写 tmp-rename + .oma-bak」原子流程，字节契约与失败语义见 security-contract §4。
-- 卸载 = 移除投影 + 移除规范位条目 + registry 去账；fragment 注入可干净反向移除（条目级 `_oma_asset` 标记，仅过滤己有条目）。
+- 卸载 = 移除投影 + 移除规范位条目 + registry 去账；fragment 注入可干净反向移除（条目级 `_oma_asset` 标记，仅过滤己有条目）。注入投影移除失败 → **硬失败且不去账**（security-contract §4 移除 fail-closed），修复宿主后重跑收敛。
 - hook 资产内容 = `manifest.json` + `fragment.json`（schema `oma-hook-fragment/1`）：顶层按 agent 分节（`claude`/`codex`），节内 `event → [宿主原生形态条目…]`；manifest targets 中的每个投影端必须有对应分节（缺节 fail-closed）；条目不得自带 `_oma_asset`（保留键）、必须含至少一个 `command` 字符串（预算面要求）。
 - codex 侧具体路径以常量表维护（`internal/agentdir`；本机无 codex 时以文件断言验证，见 §6）。
 

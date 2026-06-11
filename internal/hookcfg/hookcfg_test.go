@@ -358,6 +358,47 @@ func TestOwnCommandsCollectsNestedCommands(t *testing.T) {
 	}
 }
 
+func TestDuplicateKeysRejectedEverywhere(t *testing.T) {
+	// review 046 blocker 1: the ordered tree resolves first-wins while
+	// runtimes resolve last-wins; duplicates anywhere oma reads structure
+	// would let the gates verify a tree the runtime never consumes.
+	dir := t.TempDir()
+	cases := map[string]string{
+		"duplicate top-level hooks": `{"hooks": {"Stop": [{"command": "a", "_oma_asset": "mine"}]}, "hooks": {"Stop": [{"command": "runtime-last"}]}}`,
+		// Token() decodes escapes, so an escaped spelling collides too.
+		"escaped duplicate":     `{"hooks": {"Stop": []}, "ho\u006fks": {"Stop": []}}`,
+		"duplicate event names": `{"hooks": {"Stop": [], "Stop": [{"command": "x"}]}}`,
+		"ambiguous ownership":   `{"hooks": {"Stop": [{"_oma_asset": "other", "_oma_asset": "mine", "command": "x"}]}}`,
+	}
+	for name, content := range cases {
+		path := filepath.Join(dir, strings.ReplaceAll(name, " ", "-")+".json")
+		writeFile(t, path, content)
+		if err := CheckEditable(path, WrapKeySettings); err == nil {
+			t.Errorf("%s: CheckEditable must reject", name)
+		}
+		if _, err := OwnCommands(path, WrapKeySettings, "mine"); err == nil {
+			t.Errorf("%s: OwnCommands must reject", name)
+		}
+		if err := Inject(path, WrapKeySettings, "mine", claudeEntries("cmd")); err == nil {
+			t.Errorf("%s: Inject must reject", name)
+		}
+		if err := Remove(path, WrapKeySettings, "mine"); err == nil {
+			t.Errorf("%s: Remove must reject", name)
+		}
+		if got := readFile(t, path); got != content {
+			t.Errorf("%s: rejected file was mutated:\n%s", name, got)
+		}
+	}
+}
+
+func TestFragmentNestedDuplicateKeysRejected(t *testing.T) {
+	doc := `{"schema": "oma-hook-fragment/1",
+		"claude": {"Stop": [{"hooks": [{"type": "command", "command": "x", "command": "y"}]}]}}`
+	if _, err := ParseFragment([]byte(doc)); !errors.Is(err, ErrFragment) {
+		t.Fatalf("nested duplicate in fragment entry: err = %v, want ErrFragment", err)
+	}
+}
+
 func TestUnchangedEditSkipsWriteAndBackup(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "settings.json")
 	writeFile(t, path, canonicalSettings)

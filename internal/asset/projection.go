@@ -197,41 +197,50 @@ func applyProjection(p plannedProjection) error {
 // manifest (registry content is persisted untrusted input — review 030
 // blocker 3, same lesson as canonical paths in B3) and the link still
 // points at canonical. Anything else is left intact with a warning.
-func (e *Engine) removeProjection(entry *Entry, pr Projection, canonical string) (removed bool, warn string) {
+func (e *Engine) removeProjection(entry *Entry, pr Projection, canonical string) (removed bool, warn string, err error) {
 	expected, ok, _ := agentdir.For(e.Layout.Home, pr.Agent, entry.Type, entry.Name)
 	if !ok || filepath.Clean(pr.Path) != expected.Path {
-		return false, fmt.Sprintf("recorded projection %s does not match expected path; left intact", pr.Path)
+		if pr.Kind == agentdir.KindInject || expected.Kind == agentdir.KindInject {
+			// Inject residue must never be orphaned (review 046 blocker 2).
+			return false, "", fmt.Errorf("%w: recorded inject projection %s does not match expected path %s", ErrInvalid, pr.Path, expected.Path)
+		}
+		return false, fmt.Sprintf("recorded projection %s does not match expected path; left intact", pr.Path), nil
 	}
-	if err := e.checkProjectionRoot(pr.Agent, expected.Path); err != nil {
-		return false, fmt.Sprintf("projection root check failed for %s: %v", expected.Path, err)
+	if rootErr := e.checkProjectionRoot(pr.Agent, expected.Path); rootErr != nil {
+		if expected.Kind == agentdir.KindInject {
+			return false, "", rootErr
+		}
+		return false, fmt.Sprintf("projection root check failed for %s: %v", expected.Path, rootErr), nil
 	}
 	if expected.Kind == agentdir.KindInject {
 		// Own-marker filtering IS the ownership verification: only entries
 		// stamped "_oma_asset": <name> leave the host file; foreign hooks
-		// and other assets' entries are byte-untouched.
-		if err := hookcfg.Remove(expected.Path, agentdir.HookWrapKey(pr.Agent), entry.Name); err != nil {
-			return false, fmt.Sprintf("%s: %v", expected.Path, err)
+		// and other assets' entries are byte-untouched. Failure here is a
+		// hard error, never a warning: the caller must keep canonical and
+		// registry state so a rerun can converge (review 046 blocker 2).
+		if rmErr := hookcfg.Remove(expected.Path, agentdir.HookWrapKey(pr.Agent), entry.Name); rmErr != nil {
+			return false, "", fmt.Errorf("%s: %w", expected.Path, rmErr)
 		}
-		return true, ""
+		return true, "", nil
 	}
-	info, err := os.Lstat(expected.Path)
-	if errors.Is(err, os.ErrNotExist) {
-		return false, ""
+	info, statErr := os.Lstat(expected.Path)
+	if errors.Is(statErr, os.ErrNotExist) {
+		return false, "", nil
 	}
-	if err != nil {
-		return false, fmt.Sprintf("%s: %v", expected.Path, err)
+	if statErr != nil {
+		return false, fmt.Sprintf("%s: %v", expected.Path, statErr), nil
 	}
 	if info.Mode()&os.ModeSymlink == 0 {
-		return false, fmt.Sprintf("%s is not a symlink; left intact", expected.Path)
+		return false, fmt.Sprintf("%s is not a symlink; left intact", expected.Path), nil
 	}
-	dest, err := os.Readlink(expected.Path)
-	if err != nil || filepath.Clean(dest) != filepath.Clean(canonical) {
-		return false, fmt.Sprintf("%s points elsewhere; left intact", expected.Path)
+	dest, linkErr := os.Readlink(expected.Path)
+	if linkErr != nil || filepath.Clean(dest) != filepath.Clean(canonical) {
+		return false, fmt.Sprintf("%s points elsewhere; left intact", expected.Path), nil
 	}
-	if err := os.Remove(expected.Path); err != nil {
-		return false, fmt.Sprintf("%s: %v", expected.Path, err)
+	if rmErr := os.Remove(expected.Path); rmErr != nil {
+		return false, fmt.Sprintf("%s: %v", expected.Path, rmErr), nil
 	}
-	return true, ""
+	return true, "", nil
 }
 
 // VerifyProjectionSecurity re-runs the trusted-root constraints over an

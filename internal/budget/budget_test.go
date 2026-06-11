@@ -228,6 +228,22 @@ func TestMeasureCountsInjectedHookCommands(t *testing.T) {
 	}
 }
 
+func TestMeasureDuplicateKeyHostFailsClosed(t *testing.T) {
+	// review 046 blocker 1: with duplicate keys the runtime reads the LAST
+	// hooks object while oma's tree reads the FIRST — the budget gate must
+	// refuse to count rather than report a surface the runtime never loads.
+	home := t.TempDir()
+	eng := installHookAsset(t, home, "relay-watch", "cmd")
+	settings := filepath.Join(home, ".claude", "settings.json")
+	dup := `{"hooks": {"Stop": [{"command": "cmd", "_oma_asset": "relay-watch"}]}, "hooks": {"Stop": [{"command": "runtime-last"}]}}`
+	if err := os.WriteFile(settings, []byte(dup), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Measure(eng, "claude", "all", 2000); !errors.Is(err, ErrBudget) {
+		t.Fatalf("duplicate-key host: err = %v, want ErrBudget", err)
+	}
+}
+
 func TestMeasureHookDriftFailsClosed(t *testing.T) {
 	home := t.TempDir()
 	eng := installHookAsset(t, home, "relay-watch", "cmd")

@@ -30,6 +30,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -110,6 +111,13 @@ func ParseFragment(raw []byte) (*Fragment, error) {
 				if _, found := o.find(Marker); found {
 					return nil, fmt.Errorf("%w: %s.%s[%d] carries reserved key %q", ErrFragment, agent, event, i, Marker)
 				}
+				// Fragment entries are content oma will WRITE into host
+				// files: duplicate names at any depth are rejected so oma
+				// never authors first-wins/last-wins ambiguity itself
+				// (review 046 blocker 1).
+				if err := validateUniqueKeys(entry); err != nil {
+					return nil, fmt.Errorf("%w: %s.%s[%d]: %v", ErrFragment, agent, event, i, err)
+				}
 				if len(CommandStrings(entry)) == 0 {
 					return nil, fmt.Errorf("%w: %s.%s[%d] has no command string (budget surface requires one, docs/adapter-conformance.md §5)", ErrFragment, agent, event, i)
 				}
@@ -129,7 +137,10 @@ func ParseFragment(raw []byte) (*Fragment, error) {
 // byte-identical result skips the write entirely (no .oma-bak churn).
 func Inject(path, wrapKey, asset string, events map[string][]json.RawMessage) error {
 	return edit(path, wrapKey, func(ev obj) (obj, error) {
-		ev = stripOwn(ev, asset)
+		ev, err := stripOwn(ev, asset)
+		if err != nil {
+			return nil, err
+		}
 		for _, event := range sortedKeys(events) {
 			items, err := eventItems(ev, event)
 			if err != nil {
@@ -157,7 +168,7 @@ func Remove(path, wrapKey, asset string) error {
 		return nil // nothing injected anywhere
 	}
 	return edit(path, wrapKey, func(ev obj) (obj, error) {
-		return stripOwn(ev, asset), nil
+		return stripOwn(ev, asset)
 	})
 }
 
@@ -183,12 +194,29 @@ func OwnCommands(path, wrapKey, asset string) ([]string, error) {
 			continue // non-array event value: foreign layout, not ours to read
 		}
 		for _, item := range items {
-			if owner, ok := entryOwner(item); ok && owner == asset {
+			owner, owned, err := entryOwner(item)
+			if err != nil {
+				return nil, fmt.Errorf("event %q: %w", m.key, err)
+			}
+			if owned && owner == asset {
 				cmds = append(cmds, CommandStrings(item)...)
 			}
 		}
 	}
 	return cmds, nil
+}
+
+// CheckEditable validates that the host file can be safely edited and
+// attributed: absent, or a regular non-symlink file whose document,
+// event map and entry ownership all parse strictly (duplicate keys
+// anywhere on those boundaries fail). It is the shared zero-write
+// precheck for install, remove and rollback (review 046 blocker 2:
+// dry-run and real destructive paths must run the same validation).
+func CheckEditable(path, wrapKey string) error {
+	// An empty asset name matches no marker (validated names are
+	// non-empty), so this walks every probe without attributing.
+	_, err := OwnCommands(path, wrapKey, "")
+	return err
 }
 
 // CommandStrings recursively collects every string value under a
@@ -309,8 +337,9 @@ func joinDoc(doc, events obj, wrapKey string) []byte {
 
 // stripOwn filters out entries marked for asset; events emptied by the
 // strip are dropped. Foreign entries and other assets' marked entries
-// are byte-untouched.
-func stripOwn(ev obj, asset string) obj {
+// are byte-untouched. An entry whose ownership cannot be attributed
+// unambiguously aborts the whole edit (review 046 blocker 1).
+func stripOwn(ev obj, asset string) (obj, error) {
 	var out obj
 	for _, m := range ev {
 		items, err := parseArr(m.raw)
@@ -321,7 +350,11 @@ func stripOwn(ev obj, asset string) obj {
 		kept := items[:0]
 		removed := false
 		for _, item := range items {
-			if owner, ok := entryOwner(item); ok && owner == asset {
+			owner, owned, err := entryOwner(item)
+			if err != nil {
+				return nil, fmt.Errorf("event %q: %w", m.key, err)
+			}
+			if owned && owner == asset {
 				removed = true
 				continue
 			}
@@ -334,7 +367,7 @@ func stripOwn(ev obj, asset string) obj {
 			out = append(out, member{m.key, renderArrRaw(kept)})
 		}
 	}
-	return out
+	return out, nil
 }
 
 // eventItems returns the entry list for one event, creating it when
@@ -367,15 +400,31 @@ func markEntry(entry json.RawMessage, asset string) (json.RawMessage, error) {
 	return renderObjRaw(o), nil
 }
 
-// entryOwner probes one entry for the ownership marker.
-func entryOwner(entry json.RawMessage) (string, bool) {
-	var probe struct {
-		Owner *string `json:"_oma_asset"`
+// entryOwner probes one entry for the ownership marker via the same
+// ordered parser used everywhere else — never json.Unmarshal, whose
+// last-wins duplicate resolution would disagree with the tree's
+// first-wins view (review 046 blocker 1). Non-object elements cannot
+// carry a marker and are reported as unowned; an OBJECT entry that fails
+// strict parsing (duplicate keys) has ambiguous ownership and is a hard
+// error.
+func entryOwner(entry json.RawMessage) (owner string, owned bool, err error) {
+	trimmed := bytes.TrimSpace(entry)
+	if len(trimmed) == 0 || trimmed[0] != '{' {
+		return "", false, nil // scalar/array element: foreign, unowned
 	}
-	if err := json.Unmarshal(entry, &probe); err != nil || probe.Owner == nil {
-		return "", false
+	o, err := parseObj(entry)
+	if err != nil {
+		return "", false, fmt.Errorf("%w: hook entry unsafe to attribute: %v", ErrHost, err)
 	}
-	return *probe.Owner, true
+	raw, found := o.find(Marker)
+	if !found {
+		return "", false, nil
+	}
+	var name string
+	if err := json.Unmarshal(raw, &name); err != nil {
+		return "", false, fmt.Errorf("%w: %s marker is not a string: %v", ErrHost, Marker, err)
+	}
+	return name, true, nil
 }
 
 // writeAtomic writes out via tmp+rename (0600) with a single-generation
@@ -404,6 +453,62 @@ func writeAtomic(path string, prev, out []byte) error {
 		_ = d.Close()
 	}
 	return nil
+}
+
+// validateUniqueKeys walks one JSON value and rejects duplicate object
+// member names at ANY depth (decoded comparison, same rule as parseObj).
+func validateUniqueKeys(raw json.RawMessage) error {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	type frame struct {
+		isObj     bool
+		expectKey bool
+		seen      map[string]bool
+	}
+	var stack []*frame
+	top := func() *frame {
+		if len(stack) == 0 {
+			return nil
+		}
+		return stack[len(stack)-1]
+	}
+	valueDone := func() {
+		if f := top(); f != nil && f.isObj {
+			f.expectKey = true
+		}
+	}
+	for {
+		tok, err := dec.Token()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		switch t := tok.(type) {
+		case json.Delim:
+			switch t {
+			case '{':
+				stack = append(stack, &frame{isObj: true, expectKey: true, seen: map[string]bool{}})
+			case '[':
+				stack = append(stack, &frame{isObj: false})
+			default: // '}' or ']'
+				stack = stack[:len(stack)-1]
+				valueDone()
+			}
+		case string:
+			if f := top(); f != nil && f.isObj && f.expectKey {
+				if f.seen[t] {
+					return fmt.Errorf("duplicate object key %q", t)
+				}
+				f.seen[t] = true
+				f.expectKey = false
+			} else {
+				valueDone()
+			}
+		default:
+			valueDone()
+		}
+	}
 }
 
 func sortedKeys(m map[string][]json.RawMessage) []string {

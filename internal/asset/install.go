@@ -1,6 +1,7 @@
 package asset
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -229,6 +230,21 @@ func (e *Engine) Remove(name string, opts Options) (*Report, error) {
 		}
 	}
 
+	// Pre-validate every projection removal before any mutation; --dry-run
+	// runs the same checks (review 046 blocker 2). Inject projections fail
+	// HARD here: a failed uninject with canonical/registry dropped anyway
+	// would orphan oma's own residue inside the host file with no record
+	// left to converge from. Symlink obstacles stay warnings (foreign
+	// files at projection paths are not oma residue).
+	for _, pr := range entry.Projections {
+		warn, err := e.precheckRemoveProjection(entry, pr)
+		if err != nil {
+			return nil, err
+		}
+		if opts.DryRun && warn != "" {
+			rep.Warnings = append(rep.Warnings, warn)
+		}
+	}
 	for _, pr := range entry.Projections {
 		rep.Ops = append(rep.Ops, Op{removalOpKind(pr.Kind), pr.Path})
 	}
@@ -237,7 +253,11 @@ func (e *Engine) Remove(name string, opts Options) (*Report, error) {
 		return rep, nil
 	}
 	for _, pr := range entry.Projections {
-		if removed, warn := e.removeProjection(entry, pr, target); !removed && warn != "" {
+		removed, warn, err := e.removeProjection(entry, pr, target)
+		if err != nil {
+			return nil, fmt.Errorf("projection removal failed, canonical and registry left intact (fix the host file and rerun remove to converge): %w", err)
+		}
+		if !removed && warn != "" {
 			rep.Warnings = append(rep.Warnings, warn)
 		}
 	}
@@ -249,6 +269,34 @@ func (e *Engine) Remove(name string, opts Options) (*Report, error) {
 		return nil, err
 	}
 	return rep, nil
+}
+
+// precheckRemoveProjection runs the zero-write validation for removing
+// one projection. Inject kind: recorded-path mismatch, root-check failure
+// or an uneditable host file are hard errors (oma residue must never be
+// orphaned). Symlink kind: the same conditions degrade to the warning the
+// apply path would emit (no residue at stake; canonical deletion is the
+// real removal).
+func (e *Engine) precheckRemoveProjection(entry *Entry, pr Projection) (warn string, err error) {
+	expected, ok, _ := agentdir.For(e.Layout.Home, pr.Agent, entry.Type, entry.Name)
+	if !ok || filepath.Clean(pr.Path) != expected.Path {
+		if pr.Kind == agentdir.KindInject || expected.Kind == agentdir.KindInject {
+			return "", fmt.Errorf("%w: recorded inject projection %s does not match expected path %s (corrupt or tampered registry)", ErrInvalid, pr.Path, expected.Path)
+		}
+		return fmt.Sprintf("recorded projection %s does not match expected path; left intact", pr.Path), nil
+	}
+	if rootErr := e.checkProjectionRoot(pr.Agent, expected.Path); rootErr != nil {
+		if expected.Kind == agentdir.KindInject {
+			return "", rootErr
+		}
+		return fmt.Sprintf("projection root check failed for %s: %v", expected.Path, rootErr), nil
+	}
+	if expected.Kind == agentdir.KindInject {
+		if editErr := hookcfg.CheckEditable(expected.Path, agentdir.HookWrapKey(pr.Agent)); editErr != nil {
+			return "", fmt.Errorf("cannot remove injected hooks from %s: %w", expected.Path, editErr)
+		}
+	}
+	return "", nil
 }
 
 // Rollback restores a recorded backup over the canonical path. It refuses
@@ -293,8 +341,46 @@ func (e *Engine) Rollback(name, backupID string, opts Options) (*Report, error) 
 		}
 	}
 
+	// Pre-validate hook re-injection before any mutation; --dry-run runs
+	// the same checks (review 046 blocker 2). Symlink projections track
+	// the restored content automatically (same canonical path); injected
+	// hook entries are copies and must be re-injected from the restored
+	// fragment — read here from the backup payload, the exact bytes
+	// place() will restore.
+	type reinject struct {
+		path, wrapKey string
+		events        map[string][]json.RawMessage
+	}
+	var reinjects []reinject
+	if entry.Type == TypeHook {
+		frag, fragErr := e.loadFragment(b.Path, &entry.Manifest)
+		if fragErr != nil {
+			return nil, fmt.Errorf("backup payload: %w", fragErr)
+		}
+		for _, pr := range entry.Projections {
+			if pr.Kind != agentdir.KindInject {
+				continue
+			}
+			expected, ok, _ := agentdir.For(e.Layout.Home, pr.Agent, entry.Type, entry.Name)
+			if !ok || filepath.Clean(pr.Path) != expected.Path {
+				return nil, fmt.Errorf("%w: recorded inject projection %s does not match expected path", ErrInvalid, pr.Path)
+			}
+			if err := e.checkProjectionRoot(pr.Agent, expected.Path); err != nil {
+				return nil, err
+			}
+			wrap := agentdir.HookWrapKey(pr.Agent)
+			if err := hookcfg.CheckEditable(expected.Path, wrap); err != nil {
+				return nil, fmt.Errorf("cannot re-inject restored hooks into %s: %w", expected.Path, err)
+			}
+			reinjects = append(reinjects, reinject{expected.Path, wrap, frag.Events[pr.Agent]})
+		}
+	}
+
 	rep := &Report{Name: name, DryRun: opts.DryRun}
 	rep.Ops = append(rep.Ops, Op{"restore", target}, Op{"replace", e.Layout.RegistryPath()})
+	for _, ri := range reinjects {
+		rep.Ops = append(rep.Ops, Op{"inject", ri.path})
+	}
 	if opts.DryRun {
 		return rep, nil
 	}
@@ -310,28 +396,9 @@ func (e *Engine) Rollback(name, backupID string, opts Options) (*Report, error) 
 	if err := reg.Save(e.Layout.RegistryPath()); err != nil {
 		return nil, err
 	}
-	// Symlink projections track the restored content automatically (same
-	// canonical path); injected hook entries are copies and must be
-	// re-injected from the restored fragment (replace-own semantics).
-	if entry.Type == TypeHook {
-		frag, err := e.loadFragment(target, &entry.Manifest)
-		if err != nil {
-			return nil, fmt.Errorf("restored hook asset: %w", err)
-		}
-		for _, pr := range entry.Projections {
-			if pr.Kind != agentdir.KindInject {
-				continue
-			}
-			expected, ok, _ := agentdir.For(e.Layout.Home, pr.Agent, entry.Type, entry.Name)
-			if !ok || filepath.Clean(pr.Path) != expected.Path {
-				return nil, fmt.Errorf("%w: recorded projection %s does not match expected path", ErrInvalid, pr.Path)
-			}
-			if err := e.checkProjectionRoot(pr.Agent, expected.Path); err != nil {
-				return nil, err
-			}
-			if err := hookcfg.Inject(expected.Path, agentdir.HookWrapKey(pr.Agent), entry.Name, frag.Events[pr.Agent]); err != nil {
-				return nil, fmt.Errorf("re-inject restored hooks: %w", err)
-			}
+	for _, ri := range reinjects {
+		if err := hookcfg.Inject(ri.path, ri.wrapKey, entry.Name, ri.events); err != nil {
+			return nil, fmt.Errorf("re-inject restored hooks (registry intact; rerun rollback to converge): %w", err)
 		}
 	}
 	return rep, nil
