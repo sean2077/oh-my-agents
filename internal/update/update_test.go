@@ -27,8 +27,7 @@ type fakeRelease struct {
 func serveRelease(t *testing.T, fr fakeRelease) *httptest.Server {
 	t.Helper()
 	mux := http.NewServeMux()
-	var srv *httptest.Server
-	srv = httptest.NewServer(mux)
+	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
 	assetName := fmt.Sprintf("oma_%s_linux_amd64", fr.tag)
@@ -44,14 +43,14 @@ func serveRelease(t *testing.T, fr fakeRelease) *httptest.Server {
 		if !fr.noSums {
 			assets += fmt.Sprintf(`,{"name":"checksums.txt","browser_download_url":%q}`, srv.URL+"/dl/checksums.txt")
 		}
-		fmt.Fprintf(w, `{"tag_name":%q,"assets":[%s]}`, fr.tag, assets)
+		_, _ = fmt.Fprintf(w, `{"tag_name":%q,"assets":[%s]}`, fr.tag, assets)
 	})
 	mux.HandleFunc("/dl/"+assetName, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write(fr.binary)
 	})
 	mux.HandleFunc("/dl/checksums.txt", func(w http.ResponseWriter, _ *http.Request) {
 		sum := sha256.Sum256(fr.sumOf)
-		fmt.Fprintf(w, "%s  %s\n", hex.EncodeToString(sum[:]), assetName)
+		_, _ = fmt.Fprintf(w, "%s  %s\n", hex.EncodeToString(sum[:]), assetName)
 	})
 	return srv
 }
@@ -171,22 +170,106 @@ func TestUnwritableTargetDegradesToInstructions(t *testing.T) {
 	}
 }
 
-func TestInterruptedUpdateLeavesRecoverySiblingAndRefusesRerun(t *testing.T) {
-	// §5 matrix: interrupted replace → a pre-existing .old is recovery
-	// state; a rerun must fail closed instead of destroying it.
+func TestInterruptedSwapRefusedOnlyWhenBinaryMissing(t *testing.T) {
+	// §5 matrix: interrupted replace → .old is RECOVERY state only when
+	// the binary itself is gone (the kill window between the two
+	// renames); refuse with a restore hint and leave it intact
+	// (review 064 blocker 2 narrowed the fatal case to exactly this).
 	newBin := []byte("NEW")
 	srv := serveRelease(t, fakeRelease{tag: "v0.0.9", binary: newBin, sumOf: newBin})
 	u, bin := testUpdater(t, srv, "v0.0.9")
 	if err := os.WriteFile(bin+".old", []byte("interrupted recovery copy"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Remove(bin); err != nil { // the kill window: binary gone
+		t.Fatal(err)
+	}
 	rel, _, _ := u.Check()
-	if err := u.Apply(rel, false); !errors.Is(err, ErrUpdate) || !strings.Contains(err.Error(), "recovery sibling") {
+	if err := u.Apply(rel, false); !errors.Is(err, ErrUpdate) || !strings.Contains(err.Error(), "interrupted swap") {
 		t.Fatalf("err = %v", err)
 	}
 	old, _ := os.ReadFile(bin + ".old")
 	if string(old) != "interrupted recovery copy" {
 		t.Fatal("recovery sibling must be left intact")
+	}
+}
+
+func TestTwoSuccessiveUpdatesRotateBackup(t *testing.T) {
+	// review 064 blocker 2: a successful update must not block the next
+	// one — .old from a previous success is rotated, not fatal.
+	bin9 := []byte("NEW BINARY v9")
+	srv := serveRelease(t, fakeRelease{tag: "v0.0.9", binary: bin9, sumOf: bin9})
+	u, bin := testUpdater(t, srv, "v0.0.9")
+	rel, _, _ := u.Check()
+	if err := u.Apply(rel, false); err != nil {
+		t.Fatalf("first update: %v", err)
+	}
+
+	bin10 := []byte("NEW BINARY v10")
+	srv2 := serveRelease(t, fakeRelease{tag: "v0.0.10", binary: bin10, sumOf: bin10})
+	u.APIBase, u.Client = srv2.URL, srv2.Client()
+	u.Current = "v0.0.9"
+	u.SelfCheck = func(string) (string, error) { return "v0.0.10", nil }
+	rel2, _, _ := u.Check()
+	if err := u.Apply(rel2, false); err != nil {
+		t.Fatalf("second update must rotate the backup, got: %v", err)
+	}
+	got, _ := os.ReadFile(bin)
+	if string(got) != "NEW BINARY v10" {
+		t.Fatalf("binary = %q", got)
+	}
+	old, _ := os.ReadFile(bin + ".old")
+	if string(old) != "NEW BINARY v9" {
+		t.Fatalf(".old after rotation = %q, want the v9 binary", old)
+	}
+}
+
+func TestNoProbeFileEverCreated(t *testing.T) {
+	// review 064 blocker 1: the writability check must not create
+	// anything. Canary: a pre-existing file at the old probe path would
+	// have made the O_EXCL probe misreport "unwritable"; the Access-based
+	// check ignores it and never touches it.
+	newBin := []byte("NEW")
+	srv := serveRelease(t, fakeRelease{tag: "v0.0.9", binary: newBin, sumOf: newBin})
+	u, bin := testUpdater(t, srv, "v0.0.9")
+	canary := filepath.Join(filepath.Dir(bin), ".oma-writable-probe")
+	if err := os.WriteFile(canary, []byte("canary"), 0o400); err != nil {
+		t.Fatal(err)
+	}
+	rel, _, _ := u.Check()
+	var out strings.Builder
+	u.Out = &out
+	if err := u.Apply(rel, true); err != nil {
+		t.Fatalf("dry-run with canary present: %v", err)
+	}
+	raw, err := os.ReadFile(canary)
+	if err != nil || string(raw) != "canary" {
+		t.Fatal("canary file was touched by the writability check")
+	}
+	if err := u.Apply(rel, false); err != nil {
+		t.Fatalf("real apply with canary present: %v", err)
+	}
+}
+
+func TestDryRunOnUnwritableDirValidatesWithZeroWrites(t *testing.T) {
+	// Dry-run runs the SAME validation: an unwritable target is reported
+	// (manual instructions + error) and the tree stays byte-identical.
+	newBin := []byte("NEW")
+	srv := serveRelease(t, fakeRelease{tag: "v0.0.9", binary: newBin, sumOf: newBin})
+	u, bin := testUpdater(t, srv, "v0.0.9")
+	var out strings.Builder
+	u.Out = &out
+	if err := os.Chmod(filepath.Dir(bin), 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(filepath.Dir(bin), 0o700) })
+	before := dirFingerprint(t, filepath.Dir(bin))
+	rel, _, _ := u.Check()
+	if err := u.Apply(rel, true); !errors.Is(err, ErrUpdate) || !strings.Contains(err.Error(), "not writable") {
+		t.Fatalf("dry-run on unwritable dir: err = %v", err)
+	}
+	if got := dirFingerprint(t, filepath.Dir(bin)); got != before {
+		t.Fatal("dry-run validation wrote to the directory")
 	}
 }
 

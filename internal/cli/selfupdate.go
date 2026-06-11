@@ -24,10 +24,10 @@ func newSelfUpdateCmd() *cobra.Command {
 				return err
 			}
 			if !differs {
-				fmt.Fprintf(cmd.OutOrStdout(), "oma %s is up to date\n", version.Version)
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "oma %s is up to date\n", version.Version)
 				return nil
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "update available: %s -> %s\n", version.Version, rel.TagName)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "update available: %s -> %s\n", version.Version, rel.TagName)
 			if check {
 				return nil // strictly read-only: report and stop
 			}

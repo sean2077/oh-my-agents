@@ -155,16 +155,26 @@ func (u *Updater) Apply(rel *Release, dryRun bool) error {
 	dir := filepath.Dir(u.BinaryPath)
 	tmp := u.BinaryPath + ".oma-update-tmp"
 	old := u.BinaryPath + ".old"
-	if !dirWritable(dir) {
-		fmt.Fprintf(u.Out, "binary directory %s is not writable; update manually:\n", dir)
-		fmt.Fprintf(u.Out, "  1. download %s\n  2. verify against checksums.txt\n  3. replace %s\n", binAsset.URL, u.BinaryPath)
+	// Zero-write validation path, shared by dry-run and real execution
+	// (review 064 blocker 1: the old probe-file check WROTE during
+	// --dry-run; canWriteDir never creates anything).
+	if !canWriteDir(dir) {
+		_, _ = fmt.Fprintf(u.Out, "binary directory %s is not writable; update manually:\n", dir)
+		_, _ = fmt.Fprintf(u.Out, "  1. download %s\n  2. verify against checksums.txt\n  3. replace %s\n", binAsset.URL, u.BinaryPath)
 		return fmt.Errorf("%w: %s not writable (manual instructions printed; oma never elevates)", ErrUpdate, dir)
 	}
-	if _, err := os.Lstat(old); err == nil {
-		return fmt.Errorf("%w: recovery sibling %s already exists (a previous update was interrupted; inspect and remove it first)", ErrUpdate, old)
+	// .old plays two roles and only ONE is fatal (review 064 blocker 2):
+	// with the binary itself missing, .old is the interrupted-swap
+	// recovery copy — refuse and point at it. With the binary present,
+	// .old is just the previous successful backup and gets rotated.
+	if _, err := os.Lstat(u.BinaryPath); err != nil {
+		if _, oldErr := os.Lstat(old); oldErr == nil {
+			return fmt.Errorf("%w: %s is missing but %s exists (interrupted swap; restore it manually: mv %s %s)", ErrUpdate, u.BinaryPath, old, old, u.BinaryPath)
+		}
+		return fmt.Errorf("%w: %s does not exist", ErrUpdate, u.BinaryPath)
 	}
 	if dryRun {
-		fmt.Fprintf(u.Out, "would download %s\nwould verify against %s\nwould write %s\nwould backup %s -> %s\nwould replace %s\n",
+		_, _ = fmt.Fprintf(u.Out, "would download %s\nwould verify against %s\nwould write %s\nwould backup %s -> %s (rotating any previous backup)\nwould replace %s\n",
 			binAsset.URL, sumAsset.URL, tmp, u.BinaryPath, old, u.BinaryPath)
 		return nil
 	}
@@ -193,7 +203,8 @@ func (u *Updater) Apply(rel *Release, dryRun bool) error {
 		return fmt.Errorf("%w: downloaded binary failed self-check (version %q err=%v); current binary untouched", ErrUpdate, got, err)
 	}
 
-	// Swap: current -> .old, tmp -> current; verify; roll back on failure.
+	// Swap: current -> .old (atomically rotating a previous successful
+	// backup), tmp -> current; verify; roll back on failure.
 	if err := os.Rename(u.BinaryPath, old); err != nil {
 		_ = os.Remove(tmp)
 		return err
@@ -209,7 +220,7 @@ func (u *Updater) Apply(rel *Release, dryRun bool) error {
 		_ = os.Remove(tmp)
 		return fmt.Errorf("%w: post-replace self-check failed (version %q err=%v); previous binary rolled back", ErrUpdate, got, err)
 	}
-	fmt.Fprintf(u.Out, "updated %s -> %s (previous kept at %s)\n", u.Current, rel.TagName, old)
+	_, _ = fmt.Fprintf(u.Out, "updated %s -> %s (previous kept at %s)\n", u.Current, rel.TagName, old)
 	return nil
 }
 
@@ -299,17 +310,6 @@ func (u *Updater) downloadTo(path, rawURL, wantHex string) error {
 		return fmt.Errorf("%w: checksum mismatch for %s (got %s, want %s); current binary untouched", ErrUpdate, filepath.Base(path), got, wantHex)
 	}
 	return nil
-}
-
-func dirWritable(dir string) bool {
-	probe := filepath.Join(dir, ".oma-writable-probe")
-	f, err := os.OpenFile(probe, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		return false
-	}
-	_ = f.Close()
-	_ = os.Remove(probe)
-	return true
 }
 
 // runVersionProbe asks a binary for its version via `version --json`.
