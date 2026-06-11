@@ -1,0 +1,83 @@
+name: Release Assets
+
+on:
+  push:
+    tags:
+      - v*
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build release assets
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+
+      - name: Setup Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: gofmt
+        run: |
+          out="$(gofmt -l .)"
+          if [ -n "$out" ]; then
+            echo "files need gofmt:" >&2
+            echo "$out" >&2
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
+
+      # github.ref_name is referenced only through the runner-provided
+      # $GITHUB_REF_NAME env var, never template-interpolated into run:
+      # text — tag names may legally contain shell metacharacters.
+      - name: Build assets
+        run: scripts/build-release.sh "$GITHUB_REF_NAME"
+
+      # Tag version gate (plan B11): the binary must report exactly the
+      # tag it was built from, or self-update's version comparison breaks.
+      - name: Verify version stamp matches tag
+        run: |
+          binary="dist/oma_${GITHUB_REF_NAME}_linux_amd64"
+          got="$("$binary" version --json | jq -r '.version')"
+          if [ "$got" != "$GITHUB_REF_NAME" ]; then
+            echo "version stamp mismatch: got '$got' want '$GITHUB_REF_NAME' (check the -ldflags -X path in scripts/build-release.sh)" >&2
+            exit 1
+          fi
+          echo "version stamp OK: $got"
+
+      - name: Verify checksums manifest
+        run: |
+          cd dist
+          sha256sum --check checksums.txt
+          count="$(ls oma_"${GITHUB_REF_NAME}"_* | wc -l)"
+          if [ "$count" -ne 6 ]; then
+            echo "expected 6 platform binaries, found $count" >&2
+            exit 1
+          fi
+
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release edit "$tag" --title "$tag" --generate-notes --verify-tag
+          else
+            gh release create "$tag" --title "$tag" --generate-notes --verify-tag
+          fi
+
+      - name: Upload assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" dist/* --clobber

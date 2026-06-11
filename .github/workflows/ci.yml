@@ -1,26 +1,74 @@
-name: ci
+name: CI
+
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+    tags:
+      - v*
   pull_request:
+
+permissions:
+  contents: read
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    name: Go test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Windows is build-target only for now: the test suite exercises
+        # symlink projections and Unix permission-bit refusals (0o002
+        # world-writable, chmod-based fixtures) whose semantics differ on
+        # Windows runners. Release builds still cross-compile windows
+        # binaries; enabling the windows test leg is a deliberate
+        # follow-up, not a matrix toggle.
+        os:
+          - ubuntu-latest
+          - macos-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+
+      - name: Setup Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
         with:
-          go-version: '1.25'
-      - run: go vet ./...
-      - run: go build ./...
-      - run: go test ./...
+          go-version-file: go.mod
+          cache: true
+
+      - name: gofmt
+        if: runner.os != 'Windows'
+        run: |
+          out="$(gofmt -l .)"
+          if [ -n "$out" ]; then
+            echo "files need gofmt:" >&2
+            echo "$out" >&2
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
+
+      - name: Build
+        run: go build ./...
 
   lint:
+    name: golangci-lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+
+      - name: Setup Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
         with:
-          go-version: '1.25'
-      - uses: golangci/golangci-lint-action@v6
+          go-version-file: go.mod
+          cache: true
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
