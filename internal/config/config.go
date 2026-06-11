@@ -113,11 +113,17 @@ func Load(home, projectRoot string) (*Config, error) {
 		}
 		il := interviewLayer{source: fl.source}
 		if v.IsSet("interview.threshold") {
-			t := v.GetFloat64("interview.threshold")
+			t, terr := strictFloat(v.Get("interview.threshold"), "interview.threshold")
+			if terr != nil {
+				return nil, fmt.Errorf("%w: %s: %v", ErrConfig, fl.path, terr)
+			}
 			il.threshold, il.thresholdKey = &t, "interview.threshold"
 		}
 		if v.IsSet("interview.depth") {
-			d := v.GetString("interview.depth")
+			d, derr := strictString(v.Get("interview.depth"), "interview.depth")
+			if derr != nil {
+				return nil, fmt.Errorf("%w: %s: %v", ErrConfig, fl.path, derr)
+			}
 			il.depth, il.depthKey = &d, "interview.depth"
 		}
 		layers = append(layers, il)
@@ -169,14 +175,23 @@ func readFileLayer(path string) (*viper.Viper, bool, error) {
 
 // applyFileLayer copies known keys from one file layer into cfg, recording
 // the source for each key it sets. Unknown keys are tolerated
-// (minor-additive read policy).
+// (minor-additive read policy); known keys with wrong TOML types are
+// fail-closed — never weakly coerced (Bcfg review 028 blocker).
 func applyFileLayer(cfg *Config, v *viper.Viper, src Source) error {
 	if v.IsSet("relay.ledger_root") {
-		cfg.Relay.LedgerRoot = v.GetString("relay.ledger_root")
+		raw, err := strictString(v.Get("relay.ledger_root"), "relay.ledger_root")
+		if err != nil {
+			return err
+		}
+		cfg.Relay.LedgerRoot = raw
 		cfg.Sources["relay.ledger_root"] = src
 	}
 	if v.IsSet("relay.stale_after") {
-		d, err := parseDuration(v.GetString("relay.stale_after"))
+		raw, err := strictString(v.Get("relay.stale_after"), "relay.stale_after")
+		if err != nil {
+			return err
+		}
+		d, err := parseDuration(raw)
 		if err != nil {
 			return fmt.Errorf("relay.stale_after: %v", err)
 		}
@@ -184,7 +199,11 @@ func applyFileLayer(cfg *Config, v *viper.Viper, src Source) error {
 		cfg.Sources["relay.stale_after"] = src
 	}
 	if v.IsSet("relay.wait_timeout") {
-		d, err := parseDuration(v.GetString("relay.wait_timeout"))
+		raw, err := strictString(v.Get("relay.wait_timeout"), "relay.wait_timeout")
+		if err != nil {
+			return err
+		}
+		d, err := parseDuration(raw)
 		if err != nil {
 			return fmt.Errorf("relay.wait_timeout: %v", err)
 		}
@@ -192,11 +211,19 @@ func applyFileLayer(cfg *Config, v *viper.Viper, src Source) error {
 		cfg.Sources["relay.wait_timeout"] = src
 	}
 	if v.IsSet("budget.max_resident_tokens") {
-		cfg.Budget.MaxResidentTokens = v.GetInt("budget.max_resident_tokens")
+		n, err := strictInt(v.Get("budget.max_resident_tokens"), "budget.max_resident_tokens")
+		if err != nil {
+			return err
+		}
+		cfg.Budget.MaxResidentTokens = n
 		cfg.Sources["budget.max_resident_tokens"] = src
 	}
 	if v.IsSet("asset.default_agents") {
-		cfg.Asset.DefaultAgents = v.GetStringSlice("asset.default_agents")
+		list, err := strictStringSlice(v.Get("asset.default_agents"), "asset.default_agents")
+		if err != nil {
+			return err
+		}
+		cfg.Asset.DefaultAgents = list
 		cfg.Sources["asset.default_agents"] = src
 	}
 	if v.IsSet("relay.author") {
@@ -205,6 +232,56 @@ func applyFileLayer(cfg *Config, v *viper.Viper, src Source) error {
 		return fmt.Errorf("relay.author is not configurable via config files (identity is platform/env only)")
 	}
 	return nil
+}
+
+// strictString / strictInt / strictFloat / strictStringSlice enforce exact
+// TOML types: no string-as-number, no scalar-as-list weak coercion.
+func strictString(raw any, key string) (string, error) {
+	s, ok := raw.(string)
+	if !ok {
+		return "", fmt.Errorf("%s: want string, got %T", key, raw)
+	}
+	return s, nil
+}
+
+func strictInt(raw any, key string) (int, error) {
+	switch n := raw.(type) {
+	case int64:
+		return int(n), nil
+	case int:
+		return n, nil
+	default:
+		return 0, fmt.Errorf("%s: want integer, got %T", key, raw)
+	}
+}
+
+func strictFloat(raw any, key string) (float64, error) {
+	switch n := raw.(type) {
+	case float64:
+		return n, nil
+	case int64: // a bare integer is a genuine number, not weak coercion
+		return float64(n), nil
+	case int:
+		return float64(n), nil
+	default:
+		return 0, fmt.Errorf("%s: want number, got %T", key, raw)
+	}
+}
+
+func strictStringSlice(raw any, key string) ([]string, error) {
+	arr, ok := raw.([]any)
+	if !ok {
+		return nil, fmt.Errorf("%s: want array of strings, got %T", key, raw)
+	}
+	out := make([]string, 0, len(arr))
+	for _, item := range arr {
+		s, ok := item.(string)
+		if !ok {
+			return nil, fmt.Errorf("%s: want array of strings, element is %T", key, item)
+		}
+		out = append(out, s)
+	}
+	return out, nil
 }
 
 // applyEnvLayer reads the explicit OMA_* variables (docs/config.md §4).
@@ -312,6 +389,63 @@ func validate(cfg *Config) error {
 		return fmt.Errorf("%w: asset.default_agents must not be empty", ErrConfig)
 	}
 	return nil
+}
+
+// FlagOverrides carries command-line values the user explicitly set
+// (cobra Changed semantics — unset flags stay nil and never override).
+// Flags are the topmost layer of the A7 chain.
+type FlagOverrides struct {
+	LedgerRoot        *string
+	StaleAfter        *time.Duration
+	WaitTimeout       *time.Duration
+	MaxResidentTokens *int
+	Threshold         *float64
+	Depth             *string
+	Agents            []string // nil = not set
+}
+
+// ApplyFlags applies explicit flag values as the highest-priority layer,
+// updates per-key provenance, and re-validates. Interview keys follow §4a:
+// flag threshold beats flag depth, and either beats every lower source.
+func (c *Config) ApplyFlags(f FlagOverrides) error {
+	if f.LedgerRoot != nil {
+		c.Relay.LedgerRoot = *f.LedgerRoot
+		c.Sources["relay.ledger_root"] = SourceFlag
+	}
+	if f.StaleAfter != nil {
+		c.Relay.StaleAfter = *f.StaleAfter
+		c.Sources["relay.stale_after"] = SourceFlag
+	}
+	if f.WaitTimeout != nil {
+		c.Relay.WaitTimeout = *f.WaitTimeout
+		c.Sources["relay.wait_timeout"] = SourceFlag
+	}
+	if f.MaxResidentTokens != nil {
+		c.Budget.MaxResidentTokens = *f.MaxResidentTokens
+		c.Sources["budget.max_resident_tokens"] = SourceFlag
+	}
+	if f.Agents != nil {
+		c.Asset.DefaultAgents = f.Agents
+		c.Sources["asset.default_agents"] = SourceFlag
+	}
+	switch {
+	case f.Threshold != nil:
+		c.Interview.Threshold = *f.Threshold
+		c.Interview.ThresholdSource = "flag --threshold"
+		if f.Depth != nil {
+			c.Interview.ThresholdSource += " (depth ignored: threshold is more precise)"
+		}
+		c.Sources["interview.threshold"] = SourceFlag
+	case f.Depth != nil:
+		t, ok := depthThresholds[*f.Depth]
+		if !ok {
+			return fmt.Errorf("%w: --depth %q not in {quick,standard,deep}", ErrConfig, *f.Depth)
+		}
+		c.Interview.Threshold = t
+		c.Interview.ThresholdSource = fmt.Sprintf("flag --depth=%s", *f.Depth)
+		c.Sources["interview.threshold"] = SourceFlag
+	}
+	return validate(c)
 }
 
 // parseDuration accepts Go duration strings and bare integer seconds (env

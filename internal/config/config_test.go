@@ -114,6 +114,107 @@ func TestRangeViolationsFailClosed(t *testing.T) {
 	}
 }
 
+func TestTOMLTypeMismatchesFailClosed(t *testing.T) {
+	// viper's coercive getters must never weakly coerce (review 028 blocker):
+	// string-as-int, string-as-float, scalar-as-list, number-as-string.
+	cases := []string{
+		"[budget]\nmax_resident_tokens = \"2500\"\n",
+		"[interview]\nthreshold = \"0.42\"\n",
+		"[asset]\ndefault_agents = \"claude\"\n",
+		"[asset]\ndefault_agents = [1, 2]\n",
+		"[relay]\nledger_root = 42\n",
+		"[relay]\nstale_after = 15\n", // TOML int for a duration-string key
+		"[interview]\ndepth = 2\n",
+	}
+	for _, content := range cases {
+		home := t.TempDir()
+		writeUserConfig(t, home, content)
+		if _, err := Load(home, ""); !errors.Is(err, ErrConfig) {
+			t.Errorf("content %q: err = %v, want ErrConfig (strict type)", content, err)
+		}
+	}
+}
+
+func TestIntegerThresholdIsGenuineNumber(t *testing.T) {
+	// A bare TOML integer for a float key is a real number, not coercion.
+	home := t.TempDir()
+	writeUserConfig(t, home, "[interview]\nthreshold = 1\n")
+	cfg, err := Load(home, "")
+	if err != nil {
+		t.Fatalf("integer threshold: %v", err)
+	}
+	if cfg.Interview.Threshold != 1.0 {
+		t.Fatalf("threshold = %v, want 1.0", cfg.Interview.Threshold)
+	}
+}
+
+func TestFlagLayerBeatsEverything(t *testing.T) {
+	home, project := t.TempDir(), t.TempDir()
+	writeProjectConfig(t, project, "[relay]\nwait_timeout = \"30m\"\n[asset]\ndefault_agents = [\"claude\"]\n")
+	t.Setenv("OMA_RELAY_WAIT_TIMEOUT", "45m")
+	cfg, err := Load(home, project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wt := 5 * time.Minute
+	lr := "/tmp/elsewhere"
+	if err := cfg.ApplyFlags(FlagOverrides{WaitTimeout: &wt, LedgerRoot: &lr, Agents: []string{"codex"}}); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Relay.WaitTimeout != 5*time.Minute || cfg.Sources["relay.wait_timeout"] != SourceFlag {
+		t.Fatalf("flag timeout: %v %s", cfg.Relay.WaitTimeout, cfg.Sources["relay.wait_timeout"])
+	}
+	if cfg.Relay.LedgerRoot != lr || cfg.Sources["relay.ledger_root"] != SourceFlag {
+		t.Fatalf("flag ledger root: %v", cfg.Relay.LedgerRoot)
+	}
+	if len(cfg.Asset.DefaultAgents) != 1 || cfg.Asset.DefaultAgents[0] != "codex" || cfg.Sources["asset.default_agents"] != SourceFlag {
+		t.Fatalf("flag agents: %v", cfg.Asset.DefaultAgents)
+	}
+}
+
+func TestFlagDepthBeatsEnvThreshold(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("OMA_INTERVIEW_THRESHOLD", "0.42")
+	cfg, err := Load(home, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	depth := "deep"
+	if err := cfg.ApplyFlags(FlagOverrides{Depth: &depth}); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Interview.Threshold != 0.10 || cfg.Sources["interview.threshold"] != SourceFlag {
+		t.Fatalf("flag depth must beat env threshold: %v (%s)", cfg.Interview.Threshold, cfg.Interview.ThresholdSource)
+	}
+}
+
+func TestFlagThresholdBeatsFlagDepth(t *testing.T) {
+	home := t.TempDir()
+	cfg, err := Load(home, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	th, depth := 0.25, "deep"
+	if err := cfg.ApplyFlags(FlagOverrides{Threshold: &th, Depth: &depth}); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Interview.Threshold != 0.25 || !strings.Contains(cfg.Interview.ThresholdSource, "depth ignored") {
+		t.Fatalf("same-layer flags: %v %s", cfg.Interview.Threshold, cfg.Interview.ThresholdSource)
+	}
+}
+
+func TestApplyFlagsRevalidates(t *testing.T) {
+	home := t.TempDir()
+	cfg, err := Load(home, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bad := 1.5
+	if err := cfg.ApplyFlags(FlagOverrides{Threshold: &bad}); !errors.Is(err, ErrConfig) {
+		t.Fatalf("out-of-range flag: err = %v, want ErrConfig", err)
+	}
+}
+
 func TestRelayAuthorInConfigFileRefused(t *testing.T) {
 	home := t.TempDir()
 	writeUserConfig(t, home, "[relay]\nauthor = \"codex\"\n")
