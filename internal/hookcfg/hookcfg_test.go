@@ -399,6 +399,36 @@ func TestFragmentNestedDuplicateKeysRejected(t *testing.T) {
 	}
 }
 
+func TestCheckInjectableRejectsNonArrayTargetEvent(t *testing.T) {
+	// review 048: OwnCommands tolerates non-array event values as foreign
+	// layout, but an event the fragment INJECTS INTO must fail the
+	// zero-write precheck, not the post-checkpoint apply.
+	path := filepath.Join(t.TempDir(), "settings.json")
+	writeFile(t, path, `{"hooks": {"Stop": {}}}`)
+
+	stop := map[string][]json.RawMessage{
+		"Stop": {json.RawMessage(`{"command": "x"}`)},
+	}
+	if err := CheckInjectable(path, WrapKeySettings, "mine", stop); err == nil || !strings.Contains(err.Error(), "not an array") {
+		t.Fatalf("non-array target event: err = %v, want shape refusal", err)
+	}
+	// Inject itself must agree with the precheck verdict.
+	if err := Inject(path, WrapKeySettings, "mine", stop); err == nil {
+		t.Fatal("Inject must also refuse the non-array target event")
+	}
+	// Precision: a non-array event the fragment does NOT target stays
+	// tolerated foreign layout.
+	other := map[string][]json.RawMessage{
+		"PreToolUse": {json.RawMessage(`{"command": "x"}`)},
+	}
+	if err := CheckInjectable(path, WrapKeySettings, "mine", other); err != nil {
+		t.Fatalf("untargeted non-array event must stay tolerated: %v", err)
+	}
+	if err := Inject(path, WrapKeySettings, "mine", other); err != nil {
+		t.Fatalf("inject into a different event must succeed: %v", err)
+	}
+}
+
 func TestUnchangedEditSkipsWriteAndBackup(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "settings.json")
 	writeFile(t, path, canonicalSettings)

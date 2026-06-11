@@ -146,7 +146,11 @@ func checkAncestorWritable(dir string) error {
 // (review 044 forward note).
 func checkProjection(p plannedProjection) error {
 	if p.target.Kind == agentdir.KindInject {
-		if _, err := hookcfg.OwnCommands(p.target.Path, p.wrapKey, p.asset); err != nil {
+		// Same validation Inject will run, zero-write: strict parse,
+		// ownership attribution, AND array shape of every planned target
+		// event — a "Stop": {} host must fail here, before dry-run reports
+		// success or canonical/registry state exists (review 048).
+		if err := hookcfg.CheckInjectable(p.target.Path, p.wrapKey, p.asset, p.events); err != nil {
 			return fmt.Errorf("%w: %s: %v", ErrProjectionConflict, p.target.Path, err)
 		}
 		return checkParentWritable(filepath.Dir(p.target.Path))

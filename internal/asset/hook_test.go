@@ -226,6 +226,42 @@ func TestHookRollbackReinjectsRestoredCommands(t *testing.T) {
 	}
 }
 
+func TestHookInstallNonArrayTargetEventFailsClosedZeroWrites(t *testing.T) {
+	// review 048: a host event targeted by the fragment but shaped as a
+	// non-array must fail BOTH dry-run and real install before any
+	// canonical or registry write — never a post-checkpoint apply error
+	// leaving an installed entry with projections=[].
+	e := newTestEngine(t)
+	claude, codex := hostPaths(e)
+	if err := os.MkdirAll(filepath.Dir(claude), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	host := `{"hooks": {"Stop": {}}}`
+	if err := os.WriteFile(claude, []byte(host), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	src := writeHookSource(t, t.TempDir(), "relay-watch", "cmd")
+
+	for _, dry := range []bool{true, false} {
+		_, err := e.Install(src, Options{DryRun: dry})
+		if err == nil || !strings.Contains(err.Error(), "not an array") {
+			t.Fatalf("dry=%v: err = %v, want non-array target refusal", dry, err)
+		}
+	}
+	if _, err := os.Lstat(filepath.Join(e.Layout.CanonicalRoot(), "hooks", "relay-watch")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("canonical must not be placed")
+	}
+	if _, err := os.Lstat(e.Layout.RegistryPath()); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("registry must not be written — no installed entry with projections=[]")
+	}
+	if _, err := os.Lstat(codex); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("codex host must not be created")
+	}
+	if raw, _ := os.ReadFile(claude); string(raw) != host {
+		t.Fatalf("claude host mutated: %q", raw)
+	}
+}
+
 func TestHookRemoveFailsClosedOnCorruptHost(t *testing.T) {
 	// review 046 blocker 2: a failed uninject must not orphan oma residue
 	// by dropping canonical/registry state, and --dry-run must run the

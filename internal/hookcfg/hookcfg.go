@@ -210,13 +210,44 @@ func OwnCommands(path, wrapKey, asset string) ([]string, error) {
 // attributed: absent, or a regular non-symlink file whose document,
 // event map and entry ownership all parse strictly (duplicate keys
 // anywhere on those boundaries fail). It is the shared zero-write
-// precheck for install, remove and rollback (review 046 blocker 2:
-// dry-run and real destructive paths must run the same validation).
+// precheck for remove and rollback (review 046 blocker 2: dry-run and
+// real destructive paths must run the same validation).
 func CheckEditable(path, wrapKey string) error {
 	// An empty asset name matches no marker (validated names are
 	// non-empty), so this walks every probe without attributing.
 	_, err := OwnCommands(path, wrapKey, "")
 	return err
+}
+
+// CheckInjectable validates — with zero writes — that
+// Inject(path, wrapKey, asset, events) would succeed: everything
+// CheckEditable covers, PLUS every planned target event must be absent
+// or an array. OwnCommands deliberately tolerates non-array event values
+// as foreign layout, but an event the fragment injects INTO is not
+// foreign: it must fail the install precheck and dry-run, never the
+// post-checkpoint apply (review 048). This mirrors Inject exactly:
+// stripOwn's attribution walk plus eventItems on each planned event.
+func CheckInjectable(path, wrapKey, asset string, events map[string][]json.RawMessage) error {
+	raw, err := readHost(path)
+	if err != nil {
+		return err
+	}
+	if raw == nil {
+		return nil
+	}
+	_, ev, err := splitDoc(raw, wrapKey)
+	if err != nil {
+		return err
+	}
+	if _, err := stripOwn(ev, asset); err != nil {
+		return err
+	}
+	for _, event := range sortedKeys(events) {
+		if _, err := eventItems(ev, event); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // CommandStrings recursively collects every string value under a
