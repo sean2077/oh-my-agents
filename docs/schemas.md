@@ -76,7 +76,13 @@
 - TOML 根级可含 `schema = "oma-config/1"`：缺失视为当前 major（容忍手写遗漏）；存在但 major ≠ 1 → fail-closed。
 - 它是用户意图配置而非运行时状态：由 viper 限定承载（config.md §1 边界），不走本档其余 schema 的 encoding/json 读取层，但 schema 串的 major fail-closed 语义一致；登记入 `version.Schemas["config"]`。
 
-## 8. dogfood 日志 `.oma/dogfood-log.md`
+## 8. hook fragment `assets/hooks/<name>/fragment.json`（`oma-hook-fragment/1`）
+
+- hook 资产的注入内容描述：顶层 `schema` + 按 agent 分节（`claude`/`codex`），节内 `event → [宿主原生形态条目…]`（形态与校验规则见 adapter-conformance.md §2）。
+- major fail-closed 同通则；登记入 `version.Schemas["hook_fragment"]`。
+- 与其他 schema 的差异：它描述**写入外部宿主文件**的内容，故校验最严——manifest 投影端缺对应分节、条目缺 `command`、条目自带保留键 `_oma_asset`、非对象条目均拒绝安装（security-contract §4）。
+
+## 9. dogfood 日志 `.oma/dogfood-log.md`
 
 - 自由 markdown + 必填头部：开始日期、OMC 处置方式（disable/blocklist 命令原文）、**确切回退命令**。
 - 每条记录：日期 + 事件（使用了哪个工作流 / 遇到的问题 / 是否动用回退）。

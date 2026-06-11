@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/sean2077/oh-my-agents/internal/agentdir"
+	"github.com/sean2077/oh-my-agents/internal/hookcfg"
 )
 
 func TestInstallProjectsToBothAgents(t *testing.T) {
@@ -298,9 +301,11 @@ func TestRemoveProjectionRevalidatesRecordedPath(t *testing.T) {
 type conformanceFixture struct {
 	Agent string `json:"agent"`
 	Cases []struct {
-		Manifest    json.RawMessage `json:"manifest"`
-		PayloadFile string          `json:"payload_file"`
-		WantRelHome string          `json:"want_rel_home"` // "" = no projection expected
+		Manifest       json.RawMessage `json:"manifest"`
+		PayloadFile    string          `json:"payload_file"`
+		PayloadContent string          `json:"payload_content"` // "" = placeholder bytes
+		WantRelHome    string          `json:"want_rel_home"`   // "" = no projection expected
+		WantKind       string          `json:"want_kind"`       // "" = symlink
 	} `json:"cases"`
 }
 
@@ -324,7 +329,11 @@ func TestConformanceFixtures(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(dir, "manifest.json"), c.Manifest, 0o600); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(filepath.Join(dir, c.PayloadFile), []byte("payload"), 0o600); err != nil {
+			content := c.PayloadContent
+			if content == "" {
+				content = "payload"
+			}
+			if err := os.WriteFile(filepath.Join(dir, c.PayloadFile), []byte(content), 0o600); err != nil {
 				t.Fatal(err)
 			}
 			rep, err := e.Install(dir, Options{Agents: []string{agent}})
@@ -339,6 +348,13 @@ func TestConformanceFixtures(t *testing.T) {
 				continue
 			}
 			link := filepath.Join(e.Layout.Home, filepath.FromSlash(want))
+			if c.WantKind == agentdir.KindInject {
+				cmds, err := hookcfg.OwnCommands(link, agentdir.HookWrapKey(agent), m.Name)
+				if err != nil || len(cmds) == 0 {
+					t.Errorf("%s/%s: expected injected entries in %s: cmds=%v err=%v", agent, m.Name, want, cmds, err)
+				}
+				continue
+			}
 			dest, err := os.Readlink(link)
 			if err != nil {
 				t.Errorf("%s/%s: expected projection at %s: %v", agent, m.Name, want, err)

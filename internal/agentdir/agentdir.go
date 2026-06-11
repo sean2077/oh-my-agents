@@ -9,7 +9,7 @@ import "path/filepath"
 // Projection kinds.
 const (
 	KindSymlink = "symlink"
-	KindInject  = "inject" // hook fragments (B4b)
+	KindInject  = "inject" // hook fragments merged into the agent's host config
 )
 
 // Target describes where one asset projects for one agent.
@@ -38,7 +38,7 @@ func For(home, agent, assetType, assetName string) (Target, bool, string) {
 		case "prompt":
 			return t(agent, home, KindSymlink, ".claude", "commands", assetName+".md"), true, ""
 		case "hook":
-			return Target{}, false, "claude hook fragments land in B4b (settings.json injection)"
+			return t(agent, home, KindInject, ".claude", "settings.json"), true, ""
 		}
 	case "codex":
 		switch assetType {
@@ -49,10 +49,20 @@ func For(home, agent, assetType, assetName string) (Target, bool, string) {
 		case "subagent":
 			return Target{}, false, "codex has no subagent mechanism (manifest fallback applies)"
 		case "hook":
-			return Target{}, false, "codex hook fragments land in B4b (hooks config injection)"
+			return t(agent, home, KindInject, ".codex", "hooks.json"), true, ""
 		}
 	}
 	return Target{}, false, "unknown agent or asset type"
+}
+
+// HookWrapKey returns the JSON key wrapping the event map in the agent's
+// host config file: claude keeps events under settings.json's "hooks"
+// key; codex's hooks.json root IS the event map ("").
+func HookWrapKey(agent string) string {
+	if agent == "claude" {
+		return "hooks"
+	}
+	return ""
 }
 
 // AgentRoot is the trusted root for one agent's projections; projection

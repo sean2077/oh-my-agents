@@ -183,6 +183,65 @@ func TestMissingRequiredFieldFailsClosed(t *testing.T) {
 	}
 }
 
+func installHookAsset(t *testing.T, home, name, command string) *asset.Engine {
+	t.Helper()
+	eng := asset.NewEngine(home)
+	base := time.Date(2026, 6, 11, 12, 0, 0, 0, time.UTC)
+	n := 0
+	eng.Now = func() time.Time { n++; return base.Add(time.Duration(n) * time.Second) }
+	src := filepath.Join(t.TempDir(), name)
+	if err := os.MkdirAll(src, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	manifest := `{"schema":"oma-asset/1","name":"` + name + `","type":"hook","targets":["claude","codex"]}`
+	fragment := `{"schema":"oma-hook-fragment/1",
+		"claude":{"Stop":[{"hooks":[{"type":"command","command":"` + command + `"}]}]},
+		"codex":{"Stop":[{"command":"` + command + `"}]}}`
+	if err := os.WriteFile(filepath.Join(src, "manifest.json"), []byte(manifest), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "fragment.json"), []byte(fragment), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := eng.Install(src, asset.Options{}); err != nil {
+		t.Fatalf("install hook: %v", err)
+	}
+	return eng
+}
+
+func TestMeasureCountsInjectedHookCommands(t *testing.T) {
+	home := t.TempDir()
+	cmd := strings.Repeat("c", 40) // 40 bytes → 10 tokens
+	eng := installHookAsset(t, home, "relay-watch", cmd)
+
+	rep, err := Measure(eng, "claude", "all", 2000)
+	if err != nil {
+		t.Fatalf("measure: %v", err)
+	}
+	if rep.Total != 10 || len(rep.Items) != 1 || rep.Items[0].Field != "command" {
+		t.Fatalf("hook surface = %+v (total %d), want one 10-token command", rep.Items, rep.Total)
+	}
+	// The injected command string is the surface — read from the host
+	// file, not the fragment (review 044 forward note).
+	if rep.Items[0].Asset != "relay-watch" {
+		t.Fatalf("item asset = %q", rep.Items[0].Asset)
+	}
+}
+
+func TestMeasureHookDriftFailsClosed(t *testing.T) {
+	home := t.TempDir()
+	eng := installHookAsset(t, home, "relay-watch", "cmd")
+	// Hand-strip the injected entries: a registered injection with zero
+	// marked entries is drift and must not undercount silently.
+	settings := filepath.Join(home, ".claude", "settings.json")
+	if err := os.WriteFile(settings, []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Measure(eng, "claude", "all", 2000); !errors.Is(err, ErrBudget) {
+		t.Fatalf("drifted hook: err = %v, want ErrBudget", err)
+	}
+}
+
 func TestSequenceDescriptionFailsLoudly(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "SKILL.md")

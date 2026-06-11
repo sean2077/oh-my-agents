@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/sean2077/oh-my-agents/internal/agentdir"
 	"github.com/sean2077/oh-my-agents/internal/asset"
+	"github.com/sean2077/oh-my-agents/internal/hookcfg"
 )
 
 // AlgoVersion pins the token approximation; it is reported in every output
@@ -51,8 +53,8 @@ type Report struct {
 // Measure computes the resident surface for one agent and profile.
 // Counted per docs/adapter-conformance.md §5 (claude profile): skill
 // frontmatter name+description; subagent name+description+whenToUse; hook
-// command strings (lands with B4b injection). Only assets actually
-// projected to the agent contribute.
+// command strings actually injected into the agent's host config. Only
+// assets actually projected to the agent contribute.
 func Measure(eng *asset.Engine, agent, profile string, max int) (*Report, error) {
 	// An unknown agent must fail closed: with a typo every projectsTo check
 	// is false and the gate would pass on a zero count (review 042 blocker).
@@ -87,12 +89,11 @@ func Measure(eng *asset.Engine, agent, profile string, max int) (*Report, error)
 		if !projectsTo(e, agent) {
 			continue
 		}
-		items, notes, err := residentSurface(e)
+		items, err := residentSurface(eng, e, agent)
 		if err != nil {
 			return nil, err
 		}
 		rep.Items = append(rep.Items, items...)
-		rep.Notes = append(rep.Notes, notes...)
 	}
 	for _, it := range rep.Items {
 		rep.Total += it.Tokens
@@ -110,27 +111,51 @@ func projectsTo(e *asset.Entry, agent string) bool {
 }
 
 // residentSurface extracts the always-loaded fields for one entry.
-func residentSurface(e *asset.Entry) ([]Item, []string, error) {
+func residentSurface(eng *asset.Engine, e *asset.Entry, agent string) ([]Item, error) {
 	switch e.Type {
 	case asset.TypeSkill:
 		fm, err := ReadFrontmatterFile(e.CanonicalPath + "/SKILL.md")
 		if err != nil {
-			return nil, nil, fmt.Errorf("%w: %s: %v", ErrBudget, e.Name, err)
+			return nil, fmt.Errorf("%w: %s: %v", ErrBudget, e.Name, err)
 		}
-		items, err := requiredFieldItems(e.Name, fm, "name", "description")
-		return items, nil, err
+		return requiredFieldItems(e.Name, fm, "name", "description")
 	case asset.TypeSubagent:
 		fm, err := ReadFrontmatterFile(e.CanonicalPath)
 		if err != nil {
-			return nil, nil, fmt.Errorf("%w: %s: %v", ErrBudget, e.Name, err)
+			return nil, fmt.Errorf("%w: %s: %v", ErrBudget, e.Name, err)
 		}
-		items, err := requiredFieldItems(e.Name, fm, "name", "description", "whenToUse")
-		return items, nil, err
+		return requiredFieldItems(e.Name, fm, "name", "description", "whenToUse")
 	case asset.TypeHook:
-		return nil, []string{fmt.Sprintf("%s: hook command surface counts after B4b injection lands", e.Name)}, nil
+		return hookSurface(eng, e, agent)
 	default: // prompts are slash-invoked, not resident
-		return nil, nil, nil
+		return nil, nil
 	}
+}
+
+// hookSurface counts the command strings of the entries this asset
+// actually injected into the agent's host config — the real resident
+// surface, deduped by the same ownership marker install/remove use
+// (review 044 forward note). The host path is recomputed from the
+// manifest, never read from the registry (untrusted-record rule). A
+// registered injection with zero marked entries is drift: fail closed
+// rather than undercount (review 042 lesson).
+func hookSurface(eng *asset.Engine, e *asset.Entry, agent string) ([]Item, error) {
+	target, ok, reason := agentdir.For(eng.Layout.Home, agent, e.Type, e.Name)
+	if !ok {
+		return nil, fmt.Errorf("%w: %s: %s", ErrBudget, e.Name, reason)
+	}
+	cmds, err := hookcfg.OwnCommands(target.Path, agentdir.HookWrapKey(agent), e.Name)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s: %v", ErrBudget, e.Name, err)
+	}
+	if len(cmds) == 0 {
+		return nil, fmt.Errorf("%w: %s: no injected hook entries in %s (projection drift; reinstall to converge)", ErrBudget, e.Name, target.Path)
+	}
+	items := make([]Item, 0, len(cmds))
+	for _, c := range cmds {
+		items = append(items, Item{Asset: e.Name, Field: "command", Tokens: Tokens(c)})
+	}
+	return items, nil
 }
 
 // requiredFieldItems counts the A4-defined resident fields; a missing or

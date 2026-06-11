@@ -7,6 +7,9 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/sean2077/oh-my-agents/internal/agentdir"
+	"github.com/sean2077/oh-my-agents/internal/hookcfg"
 )
 
 // ErrUnmanagedTarget marks a destination that exists but is not owned by
@@ -22,7 +25,7 @@ var ErrRollbackConflict = errors.New("rollback conflict: current content is not 
 // Op is one planned filesystem operation; --dry-run prints these and
 // writes nothing (docs/security-contract.md §1).
 type Op struct {
-	Kind string `json:"kind"` // create | replace | backup | delete | restore
+	Kind string `json:"kind"` // create | replace | backup | delete | restore | link | unlink | inject | uninject
 	Path string `json:"path"`
 }
 
@@ -83,7 +86,11 @@ func (e *Engine) Install(srcDir string, opts Options) (*Report, error) {
 	rel, _ := e.Layout.CanonicalRel(m)
 
 	rep := &Report{Name: m.Name, DryRun: opts.DryRun}
-	plans, skips, err := e.planProjections(m, dest, opts.Agents)
+	frag, err := e.loadFragment(srcDir, m)
+	if err != nil {
+		return nil, err
+	}
+	plans, skips, err := e.planProjections(m, dest, opts.Agents, frag)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +146,7 @@ func (e *Engine) Install(srcDir string, opts Options) (*Report, error) {
 		rep.Ops = append(rep.Ops, Op{"create", dest})
 	}
 	for _, p := range plans {
-		rep.Ops = append(rep.Ops, Op{"link", p.target.Path})
+		rep.Ops = append(rep.Ops, Op{projectionOpKind(p.target.Kind), p.target.Path})
 	}
 	rep.Ops = append(rep.Ops, Op{"replace", e.Layout.RegistryPath()})
 
@@ -223,7 +230,7 @@ func (e *Engine) Remove(name string, opts Options) (*Report, error) {
 	}
 
 	for _, pr := range entry.Projections {
-		rep.Ops = append(rep.Ops, Op{"unlink", pr.Path})
+		rep.Ops = append(rep.Ops, Op{removalOpKind(pr.Kind), pr.Path})
 	}
 	rep.Ops = append(rep.Ops, Op{"delete", target}, Op{"replace", e.Layout.RegistryPath()})
 	if opts.DryRun {
@@ -303,6 +310,30 @@ func (e *Engine) Rollback(name, backupID string, opts Options) (*Report, error) 
 	if err := reg.Save(e.Layout.RegistryPath()); err != nil {
 		return nil, err
 	}
+	// Symlink projections track the restored content automatically (same
+	// canonical path); injected hook entries are copies and must be
+	// re-injected from the restored fragment (replace-own semantics).
+	if entry.Type == TypeHook {
+		frag, err := e.loadFragment(target, &entry.Manifest)
+		if err != nil {
+			return nil, fmt.Errorf("restored hook asset: %w", err)
+		}
+		for _, pr := range entry.Projections {
+			if pr.Kind != agentdir.KindInject {
+				continue
+			}
+			expected, ok, _ := agentdir.For(e.Layout.Home, pr.Agent, entry.Type, entry.Name)
+			if !ok || filepath.Clean(pr.Path) != expected.Path {
+				return nil, fmt.Errorf("%w: recorded projection %s does not match expected path", ErrInvalid, pr.Path)
+			}
+			if err := e.checkProjectionRoot(pr.Agent, expected.Path); err != nil {
+				return nil, err
+			}
+			if err := hookcfg.Inject(expected.Path, agentdir.HookWrapKey(pr.Agent), entry.Name, frag.Events[pr.Agent]); err != nil {
+				return nil, fmt.Errorf("re-inject restored hooks: %w", err)
+			}
+		}
+	}
 	return rep, nil
 }
 
@@ -313,6 +344,36 @@ func (e *Engine) List() ([]Entry, error) {
 		return nil, err
 	}
 	return reg.Assets, nil
+}
+
+// loadFragment reads fragment.json for hook assets (nil for other types).
+// Validation happens here — before any write — so a broken fragment fails
+// the whole install closed.
+func (e *Engine) loadFragment(dir string, m *Manifest) (*hookcfg.Fragment, error) {
+	if m.Type != TypeHook {
+		return nil, nil
+	}
+	frag, err := hookcfg.LoadFragment(filepath.Join(dir, "fragment.json"))
+	if err != nil {
+		return nil, fmt.Errorf("%w: hook asset %s: %v", ErrInvalid, m.Name, err)
+	}
+	return frag, nil
+}
+
+// projectionOpKind / removalOpKind label the planned operation for
+// --dry-run and reports.
+func projectionOpKind(kind string) string {
+	if kind == agentdir.KindInject {
+		return "inject"
+	}
+	return "link"
+}
+
+func removalOpKind(kind string) string {
+	if kind == agentdir.KindInject {
+		return "uninject"
+	}
+	return "unlink"
 }
 
 // payloadPath resolves what gets copied: directory assets ship the whole

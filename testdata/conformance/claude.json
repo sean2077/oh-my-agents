@@ -17,6 +17,13 @@
       "want_rel_home": ".claude/commands/sample-prompt.md"
     },
     {
+      "manifest": {"schema": "oma-asset/1", "name": "sample-hook", "type": "hook", "targets": ["claude", "codex"]},
+      "payload_file": "fragment.json",
+      "payload_content": "{\"schema\": \"oma-hook-fragment/1\", \"claude\": {\"Stop\": [{\"hooks\": [{\"type\": \"command\", \"command\": \"oma state get demo\"}]}]}, \"codex\": {\"Stop\": [{\"command\": \"oma state get demo\"}]}}",
+      "want_rel_home": ".claude/settings.json",
+      "want_kind": "inject"
+    },
+    {
       "manifest": {"schema": "oma-asset/1", "name": "shared-only", "type": "skill", "targets": ["shared"]},
       "payload_file": "SKILL.md",
       "want_rel_home": ""
