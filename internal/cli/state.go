@@ -38,7 +38,7 @@ func newStateGetCmd() *cobra.Command {
 				enc.SetIndent("", "  ")
 				return enc.Encode(map[string]any{"schema": "oma-cli/1", "key": args[0], "value": value})
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), value)
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), value)
 			return nil
 		}),
 	}
@@ -63,7 +63,7 @@ func newStateSetCmd() *cobra.Command {
 			if DryRun() {
 				prefix = "[dry-run] "
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%swrite %s\n", prefix, path)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%swrite %s\n", prefix, path)
 			return nil
 		}),
 	}

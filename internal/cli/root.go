@@ -76,7 +76,7 @@ func executeWith(root *cobra.Command, errOut io.Writer) int {
 	if err == nil {
 		return ExitOK
 	}
-	fmt.Fprintln(errOut, "oma:", err)
+	_, _ = fmt.Fprintln(errOut, "oma:", err)
 	var coded *codedError
 	if errors.As(err, &coded) {
 		return coded.code

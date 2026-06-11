@@ -43,15 +43,15 @@ func newDoctorBudgetCmd() *cobra.Command {
 				}
 			} else {
 				for _, it := range rep.Items {
-					fmt.Fprintf(cmd.OutOrStdout(), "%-24s %-12s %5d\n", it.Asset, it.Field, it.Tokens)
+					_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%-24s %-12s %5d\n", it.Asset, it.Field, it.Tokens)
 				}
 				for _, m := range rep.Missing {
-					fmt.Fprintf(cmd.OutOrStdout(), "%-24s %-12s     - (not installed)\n", m, "")
+					_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%-24s %-12s     - (not installed)\n", m, "")
 				}
 				for _, n := range rep.Notes {
-					fmt.Fprintf(cmd.OutOrStdout(), "note: %s\n", n)
+					_, _ = fmt.Fprintf(cmd.OutOrStdout(), "note: %s\n", n)
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "total %d / max %d (%s, agent=%s, profile=%s)\n",
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "total %d / max %d (%s, agent=%s, profile=%s)\n",
 					rep.Total, rep.Max, rep.Algo, rep.Agent, rep.Profile)
 			}
 			if rep.Total > rep.Max {

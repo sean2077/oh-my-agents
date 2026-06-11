@@ -38,9 +38,9 @@ func newRalphStartCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s phase=%s max_rounds=%d stall_window=%d\n", s.ID, s.Phase, s.MaxRounds, s.StallWindow)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s phase=%s max_rounds=%d stall_window=%d\n", s.ID, s.Phase, s.MaxRounds, s.StallWindow)
 			if DryRun() {
-				fmt.Fprintf(cmd.OutOrStdout(), "dry-run: would create %s\n", eng.StatePath(s.ID))
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "dry-run: would create %s\n", eng.StatePath(s.ID))
 			}
 			return nil
 		}),
@@ -70,14 +70,14 @@ func newRalphNextCmd() *cobra.Command {
 				return err
 			}
 			if DryRun() && v.Mutated {
-				fmt.Fprintf(cmd.OutOrStdout(), "dry-run: would replace %s\n", eng.StatePath(st.ID))
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "dry-run: would replace %s\n", eng.StatePath(st.ID))
 			}
 			if asJSON {
 				if err := printJSON(cmd, v); err != nil {
 					return err
 				}
 			} else {
-				fmt.Fprintf(cmd.OutOrStdout(), "%s round=%d %s\n", verdictWord(v.Continue), v.Round, v.Reason)
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s round=%d %s\n", verdictWord(v.Continue), v.Round, v.Reason)
 			}
 			if !v.Continue {
 				return Errf(ExitGate, "%s", v.Reason)
@@ -108,14 +108,14 @@ func newRalphCheckCmd() *cobra.Command {
 				return err
 			}
 			if DryRun() {
-				fmt.Fprintf(cmd.OutOrStdout(), "dry-run: would replace %s\n", eng.StatePath(st.ID))
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "dry-run: would replace %s\n", eng.StatePath(st.ID))
 			}
 			if asJSON {
 				if err := printJSON(cmd, v); err != nil {
 					return err
 				}
 			} else {
-				fmt.Fprintf(cmd.OutOrStdout(), "%s round=%d %s\n", verdictWord(v.Continue), v.Round, v.Reason)
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s round=%d %s\n", verdictWord(v.Continue), v.Round, v.Reason)
 			}
 			if !v.Continue {
 				return Errf(ExitGate, "%s", v.Reason)
@@ -146,9 +146,9 @@ func newRalphAbortCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s phase=%s\n", s.ID, s.Phase)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s phase=%s\n", s.ID, s.Phase)
 			if DryRun() {
-				fmt.Fprintf(cmd.OutOrStdout(), "dry-run: would replace %s\n", eng.StatePath(s.ID))
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "dry-run: would replace %s\n", eng.StatePath(s.ID))
 			}
 			return nil
 		}),
@@ -176,7 +176,7 @@ func newRalphStatusCmd() *cobra.Command {
 			if asJSON {
 				return printJSON(cmd, s)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s phase=%s round=%d/%d checks=%d goal=%q\n",
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s phase=%s round=%d/%d checks=%d goal=%q\n",
 				s.ID, s.Phase, s.Round, s.MaxRounds, len(s.Checks), s.Goal)
 			return nil
 		}),

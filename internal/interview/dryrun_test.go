@@ -20,7 +20,7 @@ func dirDigest(t *testing.T, root string) string {
 		if err != nil {
 			return nil
 		}
-		fmt.Fprintf(h, "%s|%v|%d\n", path, info.IsDir(), info.Size())
+		_, _ = fmt.Fprintf(h, "%s|%v|%d\n", path, info.IsDir(), info.Size())
 		if !info.IsDir() {
 			raw, _ := os.ReadFile(path)
 			h.Write(raw)

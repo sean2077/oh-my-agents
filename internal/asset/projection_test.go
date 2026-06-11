@@ -303,7 +303,6 @@ func TestZeroProjectionEntryDegradesHealth(t *testing.T) {
 	e := newTestEngine(t)
 	src := writeSkillSource(t, t.TempDir(), "x", "body")
 	mustInstall(t, e, src, Options{})
-	entries, _ := e.List()
 
 	reg, err := LoadRegistry(e.Layout.RegistryPath())
 	if err != nil {
@@ -313,7 +312,7 @@ func TestZeroProjectionEntryDegradesHealth(t *testing.T) {
 	if err := reg.Save(e.Layout.RegistryPath()); err != nil {
 		t.Fatal(err)
 	}
-	entries, _ = e.List()
+	entries, _ := e.List()
 	ok, problems := e.VerifyProjections(&entries[0])
 	if ok || len(problems) == 0 || !strings.Contains(problems[0], "no projections applied") {
 		t.Fatalf("zero-projection entry: ok=%v problems=%v", ok, problems)

@@ -87,9 +87,9 @@ func newConfigShowCmd() *cobra.Command {
 			}
 			sort.Strings(keys)
 			for _, k := range keys {
-				fmt.Fprintf(cmd.OutOrStdout(), "%-28s %-24v (%s)\n", k, values[k], cfg.Sources[k])
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%-28s %-24v (%s)\n", k, values[k], cfg.Sources[k])
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%-28s %s\n", "interview.threshold_source", cfg.Interview.ThresholdSource)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%-28s %s\n", "interview.threshold_source", cfg.Interview.ThresholdSource)
 			return nil
 		}),
 	}
@@ -117,7 +117,7 @@ func newConfigPathCmd() *cobra.Command {
 					"project": cfg.ProjectPath,
 				})
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "user:    %s\nproject: %s\n", cfg.UserPath, orNone(cfg.ProjectPath))
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "user:    %s\nproject: %s\n", cfg.UserPath, orNone(cfg.ProjectPath))
 			return nil
 		}),
 	}

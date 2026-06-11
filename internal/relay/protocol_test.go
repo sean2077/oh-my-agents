@@ -463,7 +463,7 @@ func treeDigest(t *testing.T, root string) string {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(h, "%s|%v|%d\n", path, info.IsDir(), info.Size())
+		_, _ = fmt.Fprintf(h, "%s|%v|%d\n", path, info.IsDir(), info.Size())
 		if !info.IsDir() {
 			raw, err := os.ReadFile(path)
 			if err != nil {

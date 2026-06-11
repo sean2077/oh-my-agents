@@ -59,13 +59,13 @@ func printOps(cmd *cobra.Command, rep *asset.Report) {
 		prefix = "[dry-run] "
 	}
 	for _, op := range rep.Ops {
-		fmt.Fprintf(cmd.OutOrStdout(), "%s%-7s %s\n", prefix, op.Kind, op.Path)
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s%-7s %s\n", prefix, op.Kind, op.Path)
 	}
 	for _, sk := range rep.Skips {
-		fmt.Fprintf(cmd.OutOrStdout(), "%sskip    %s: %s\n", prefix, sk.Agent, sk.Reason)
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%sskip    %s: %s\n", prefix, sk.Agent, sk.Reason)
 	}
 	for _, w := range rep.Warnings {
-		fmt.Fprintf(cmd.OutOrStdout(), "%swarn    %s\n", prefix, w)
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%swarn    %s\n", prefix, w)
 	}
 }
 
@@ -175,7 +175,7 @@ func newAssetListCmd() *cobra.Command {
 				for _, pr := range r.Projections {
 					agents = append(agents, pr.Agent)
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "%-24s %-9s -> %-16s %s%s\n", r.Name, r.Type, strings.Join(agents, ","), r.CanonicalPath, status)
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%-24s %-9s -> %-16s %s%s\n", r.Name, r.Type, strings.Join(agents, ","), r.CanonicalPath, status)
 			}
 			return nil
 		}),

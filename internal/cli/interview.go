@@ -63,10 +63,10 @@ func newInterviewStartCmd() *cobra.Command {
 				return err
 			}
 			// Mandatory first line: threshold + provenance (workflows §1.3).
-			fmt.Fprintf(cmd.OutOrStdout(), "threshold: %.2f (source: %s)\n", s.Threshold, s.ThresholdSource)
-			fmt.Fprintf(cmd.OutOrStdout(), "interview: %s phase=%s type=%s\n", s.ID, s.Phase, s.Type)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "threshold: %.2f (source: %s)\n", s.Threshold, s.ThresholdSource)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "interview: %s phase=%s type=%s\n", s.ID, s.Phase, s.Type)
 			if DryRun() && !resume {
-				fmt.Fprintf(cmd.OutOrStdout(), "dry-run: would create %s\n", eng.StatePath(s.ID))
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "dry-run: would create %s\n", eng.StatePath(s.ID))
 			}
 			return nil
 		}),
@@ -101,20 +101,20 @@ func newInterviewScoreCmd() *cobra.Command {
 				return err
 			}
 			if DryRun() {
-				fmt.Fprintf(cmd.OutOrStdout(), "dry-run: would replace %s\n", eng.StatePath(st.ID))
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "dry-run: would replace %s\n", eng.StatePath(st.ID))
 			}
 			if asJSON {
 				return printJSON(cmd, rep)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "round %d: ambiguity %.3f (threshold %.2f) phase=%s\n", rep.Round, rep.Ambiguity, rep.Threshold, rep.Phase)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "round %d: ambiguity %.3f (threshold %.2f) phase=%s\n", rep.Round, rep.Ambiguity, rep.Threshold, rep.Phase)
 			if rep.Weakest != nil {
-				fmt.Fprintf(cmd.OutOrStdout(), "weakest: %s × %s (%.2f)\n", rep.Weakest.Component, rep.Weakest.Dimension, rep.Weakest.Score)
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "weakest: %s × %s (%.2f)\n", rep.Weakest.Component, rep.Weakest.Dimension, rep.Weakest.Score)
 			}
 			for _, c := range rep.ChallengeSuggestions {
-				fmt.Fprintf(cmd.OutOrStdout(), "challenge available: %s\n", c)
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "challenge available: %s\n", c)
 			}
 			for _, w := range rep.Warnings {
-				fmt.Fprintf(cmd.OutOrStdout(), "warning: %s\n", w)
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "warning: %s\n", w)
 			}
 			return nil
 		}),
@@ -143,19 +143,19 @@ func newInterviewGateCmd() *cobra.Command {
 				return err
 			}
 			if DryRun() && res.Mutated {
-				fmt.Fprintf(cmd.OutOrStdout(), "dry-run: would replace %s\n", eng.StatePath(st.ID))
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "dry-run: would replace %s\n", eng.StatePath(st.ID))
 			}
 			if asJSON {
 				if err := printJSON(cmd, res); err != nil {
 					return err
 				}
 			} else {
-				fmt.Fprintf(cmd.OutOrStdout(), "ambiguity %.3f vs threshold %.2f (gap %+.3f) after %d rounds\n", res.Ambiguity, res.Threshold, res.Gap, res.Rounds)
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "ambiguity %.3f vs threshold %.2f (gap %+.3f) after %d rounds\n", res.Ambiguity, res.Threshold, res.Gap, res.Rounds)
 				if res.Weakest != nil {
-					fmt.Fprintf(cmd.OutOrStdout(), "weakest: %s × %s\n", res.Weakest.Component, res.Weakest.Dimension)
+					_, _ = fmt.Fprintf(cmd.OutOrStdout(), "weakest: %s × %s\n", res.Weakest.Component, res.Weakest.Dimension)
 				}
 				for _, w := range res.Warnings {
-					fmt.Fprintf(cmd.OutOrStdout(), "warning: %s\n", w)
+					_, _ = fmt.Fprintf(cmd.OutOrStdout(), "warning: %s\n", w)
 				}
 			}
 			if !res.Pass && !res.Waived {
@@ -186,9 +186,9 @@ func newInterviewCrystallizeCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s phase=%s spec=%s\n", s.ID, s.Phase, s.SpecPath)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s phase=%s spec=%s\n", s.ID, s.Phase, s.SpecPath)
 			if DryRun() {
-				fmt.Fprintf(cmd.OutOrStdout(), "dry-run: would replace %s\n", eng.StatePath(s.ID))
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "dry-run: would replace %s\n", eng.StatePath(s.ID))
 			}
 			return nil
 		}),
@@ -214,9 +214,9 @@ func newInterviewCompleteCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s phase=%s\n", s.ID, s.Phase)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s phase=%s\n", s.ID, s.Phase)
 			if DryRun() {
-				fmt.Fprintf(cmd.OutOrStdout(), "dry-run: would replace %s\n", eng.StatePath(s.ID))
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "dry-run: would replace %s\n", eng.StatePath(s.ID))
 			}
 			return nil
 		}),
@@ -240,9 +240,9 @@ func newInterviewAbortCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s phase=%s\n", s.ID, s.Phase)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s phase=%s\n", s.ID, s.Phase)
 			if DryRun() {
-				fmt.Fprintf(cmd.OutOrStdout(), "dry-run: would replace %s\n", eng.StatePath(s.ID))
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "dry-run: would replace %s\n", eng.StatePath(s.ID))
 			}
 			return nil
 		}),
@@ -270,7 +270,7 @@ func newInterviewStatusCmd() *cobra.Command {
 			if asJSON {
 				return printJSON(cmd, s)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s phase=%s type=%s rounds=%d ambiguity=%.3f threshold=%.2f\n",
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s phase=%s type=%s rounds=%d ambiguity=%.3f threshold=%.2f\n",
 				s.ID, s.Phase, s.Type, len(s.Rounds), s.CurrentAmbiguity, s.Threshold)
 			return nil
 		}),

@@ -50,7 +50,7 @@ func newDoctorCmd() *cobra.Command {
 				}
 			} else {
 				for _, f := range res.Findings {
-					fmt.Fprintf(cmd.OutOrStdout(), "%-4s %-22s %s\n", f.Level, f.Check, f.Message)
+					_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%-4s %-22s %s\n", f.Level, f.Check, f.Message)
 				}
 			}
 			switch res.Worst {
@@ -91,7 +91,7 @@ func newDoctorRelayCmd() *cobra.Command {
 				if err := l.Restore(restore, DryRun()); err != nil {
 					return err
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "restored %s\n", restore)
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "restored %s\n", restore)
 			}
 			if cleanStale {
 				slugs, err := l.AllPairs()
@@ -104,7 +104,7 @@ func newDoctorRelayCmd() *cobra.Command {
 						return err
 					}
 					for _, a := range actions {
-						fmt.Fprintf(cmd.OutOrStdout(), "%s: %s\n", slug, a)
+						_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s: %s\n", slug, a)
 					}
 				}
 			}

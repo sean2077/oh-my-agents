@@ -68,7 +68,7 @@ func newRelayInitCmd(rootFlag *string) *cobra.Command {
 			if err := l.Init(DryRun()); err != nil {
 				return err
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), l.Root)
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), l.Root)
 			return nil
 		}),
 	}
@@ -95,7 +95,7 @@ func newRelayPairCmd(rootFlag *string) *cobra.Command {
 			if newJSON {
 				return printJSON(cmd, s)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s\npeer joins with: oma relay pair join %s\n", s.Pair, s.Pair)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s\npeer joins with: oma relay pair join %s\n", s.Pair, s.Pair)
 			return nil
 		}),
 	}
@@ -119,7 +119,7 @@ func newRelayPairCmd(rootFlag *string) *cobra.Command {
 			if ensureJSON {
 				return printJSON(cmd, map[string]any{"action": "use", "pair": s.Pair, "session": s})
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), s.Pair)
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), s.Pair)
 			return nil
 		}),
 	}
@@ -142,7 +142,7 @@ func newRelayPairCmd(rootFlag *string) *cobra.Command {
 			if joinJSON {
 				return printJSON(cmd, s)
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), s.Pair)
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), s.Pair)
 			return nil
 		}),
 	}
@@ -167,7 +167,7 @@ func newRelayPairCmd(rootFlag *string) *cobra.Command {
 				return printJSON(cmd, s)
 			}
 			peer, _ := s.Peer(l.Identity.Author)
-			fmt.Fprintf(cmd.OutOrStdout(), "pair: %s\nlead: %s\npeer: %s (joins with: oma relay pair join %s)\n", s.Pair, s.Roles["lead"], peer, s.Pair)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "pair: %s\nlead: %s\npeer: %s (joins with: oma relay pair join %s)\n", s.Pair, s.Roles["lead"], peer, s.Pair)
 			return nil
 		}),
 	}
@@ -205,7 +205,7 @@ func newRelayPairCmd(rootFlag *string) *cobra.Command {
 				return printJSON(cmd, rows)
 			}
 			for _, r := range rows {
-				fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\tlead=%s\t%s\n", r.Pair, r.Status, r.Lead, strings.Join(r.Participants, "+"))
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\tlead=%s\t%s\n", r.Pair, r.Status, r.Lead, strings.Join(r.Participants, "+"))
 			}
 			return nil
 		}),
@@ -243,7 +243,7 @@ func newRelayDraftCmd(rootFlag *string) *cobra.Command {
 			if asJSON {
 				return printJSON(cmd, map[string]string{"draft": path})
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), path)
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), path)
 			return nil
 		}),
 	}
@@ -288,7 +288,7 @@ func newRelayPublishCmd(rootFlag *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), formal)
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), formal)
 			return nil
 		}),
 	}
@@ -322,7 +322,7 @@ func newRelayWaitCmd(rootFlag *string) *cobra.Command {
 					return err
 				}
 			} else if res.ArtifactPath != "" {
-				fmt.Fprintln(cmd.OutOrStdout(), res.ArtifactPath)
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), res.ArtifactPath)
 			}
 			if res.Code != relay.WaitNewArtifact {
 				return Errf(res.Code, "%s", res.Reason)
@@ -357,16 +357,16 @@ func newRelayStatusCmd(rootFlag *string) *cobra.Command {
 				return printJSON(cmd, st)
 			}
 			out := cmd.OutOrStdout()
-			fmt.Fprintf(out, "pair: %s (%s)\n", st.Pair, st.Session.Status)
+			_, _ = fmt.Fprintf(out, "pair: %s (%s)\n", st.Pair, st.Session.Status)
 			if st.Latest != nil {
-				fmt.Fprintf(out, "latest: %03d %s %s (%s)\n", st.Latest.Seq, st.Latest.Author, st.Latest.Kind, st.Latest.Status)
+				_, _ = fmt.Fprintf(out, "latest: %03d %s %s (%s)\n", st.Latest.Seq, st.Latest.Author, st.Latest.Kind, st.Latest.Status)
 			}
-			fmt.Fprintf(out, "next seq: %03d\n", st.NextSeq)
+			_, _ = fmt.Fprintf(out, "next seq: %03d\n", st.NextSeq)
 			for _, w := range st.Residue {
-				fmt.Fprintf(out, "residue: %s\n", w)
+				_, _ = fmt.Fprintf(out, "residue: %s\n", w)
 			}
 			if st.LegacyV1 != "" {
-				fmt.Fprintf(out, "legacy v1 ledger at %s (archival; oma never reads or writes it)\n", st.LegacyV1)
+				_, _ = fmt.Fprintf(out, "legacy v1 ledger at %s (archival; oma never reads or writes it)\n", st.LegacyV1)
 			}
 			return nil
 		}),
