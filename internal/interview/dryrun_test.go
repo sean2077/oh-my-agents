@@ -140,3 +140,52 @@ func TestResolveFailsClosedOnCorruptCandidate(t *testing.T) {
 		t.Fatalf("explicit id must bypass: %v", err)
 	}
 }
+
+func TestSkillRound0ExampleIsAccepted(t *testing.T) {
+	// review 072: the skill claims its round0.json shape is exact — pin
+	// doc-code sync by running the LITERAL fenced example through the
+	// engine. A future contract change that breaks the example fails here.
+	raw, err := os.ReadFile(filepath.Join("..", "..", "assets", "skills", "deep-interview", "SKILL.md"))
+	if err != nil {
+		t.Skipf("skill asset not present: %v", err)
+	}
+	var block string
+	rest := string(raw)
+	for {
+		i := strings.Index(rest, "```json\n")
+		if i < 0 {
+			break
+		}
+		rest = rest[i+len("```json\n"):]
+		j := strings.Index(rest, "```")
+		if j < 0 {
+			break
+		}
+		candidate := rest[:j]
+		if strings.Contains(candidate, `"round": 0`) {
+			block = candidate
+			break
+		}
+		rest = rest[j:]
+	}
+	if block == "" {
+		t.Fatal("round-0 example block not found in SKILL.md")
+	}
+	path := filepath.Join(t.TempDir(), "round0.json")
+	if err := os.WriteFile(path, []byte(block), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	in, err := ParseScoresInput(path)
+	if err != nil {
+		t.Fatalf("skill example does not parse: %v", err)
+	}
+	e := testEngine(t)
+	mustStart(t, e, "greenfield", 0.20)
+	st, _, err := e.Score("t1", in, false)
+	if err != nil {
+		t.Fatalf("skill example rejected by the engine: %v", err)
+	}
+	if st.Phase != PhaseInterviewing || st.Topology.Status != "confirmed" {
+		t.Fatalf("after example lock: phase=%s topology=%s", st.Phase, st.Topology.Status)
+	}
+}

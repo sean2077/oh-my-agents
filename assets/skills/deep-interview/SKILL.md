@@ -38,7 +38,8 @@ where `round0.json` is exactly:
   "round": 0,
   "topology": {
     "components": [
-      {"id": "cli-core", "name": "CLI core", "description": "…", "status": "active", "evidence": ["user phrase that implies it"]}
+      {"id": "cli-core", "name": "CLI core", "description": "the command surface", "status": "active", "evidence": ["user phrase that implies it"]},
+      {"id": "later-thing", "name": "Later thing", "description": "explicitly postponed", "status": "deferred", "evidence": []}
     ],
     "deferrals": [
       {"component_id": "later-thing", "reason": "user-confirmed deferral"}
