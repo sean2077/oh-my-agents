@@ -239,6 +239,99 @@ func TestCleanStalePreservesResumablePublish(t *testing.T) {
 	}
 }
 
+func TestArchivedSessionTamperFailsClosed(t *testing.T) {
+	// review 056 blocker 1: the archive fallback must hold the same
+	// consistency bar as the active path — pair==directory and terminal
+	// status — or a tampered archive redirects wait.
+	ck := newClock()
+	root, _ := initRoot(t, ck)
+	claude := testLedger(t, root, "claude", ck)
+	s := mustPair(t, claude, "tamper")
+	mustPublish(t, claude, s.Pair, "plan", "body", "next")
+	if err := claude.Close(s.Pair, "approve", "done", false); err != nil {
+		t.Fatal(err)
+	}
+	sessPath := filepath.Join(root, "_archive", s.Pair, "session.json")
+
+	tamper := func(replace, with string) {
+		t.Helper()
+		raw, err := os.ReadFile(sessPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := strings.Replace(string(raw), replace, with, 1)
+		if out == string(raw) {
+			t.Fatalf("tamper target %q not found", replace)
+		}
+		if err := os.WriteFile(sessPath, []byte(out), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	original, _ := os.ReadFile(sessPath)
+	tamper(`"pair": "`+s.Pair+`"`, `"pair": "20990101-other"`)
+	if _, err := claude.Wait(s.Pair, time.Second); err == nil || !strings.Contains(err.Error(), "does not match directory") {
+		t.Fatalf("pair-mismatch archive: err = %v, want fail-closed", err)
+	}
+	if err := os.WriteFile(sessPath, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tamper(`"status": "closed"`, `"status": "active"`)
+	if _, err := claude.Wait(s.Pair, time.Second); err == nil || !strings.Contains(err.Error(), "non-terminal") {
+		t.Fatalf("active-status archive: err = %v, want fail-closed", err)
+	}
+}
+
+func TestCleanStaleQuarantinesFormalWithoutDraft(t *testing.T) {
+	// review 056 blocker 2: a formal without .ready AND without a draft
+	// is not resumable — the reservation must go and the formal must be
+	// quarantined so doctor converges.
+	ck := newClock()
+	root, _ := initRoot(t, ck)
+	claude := testLedger(t, root, "claude", ck)
+	s := mustPair(t, claude, "topic")
+	draft, err := claude.CreateDraft(s.Pair, "plan", nil, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	boom := errors.New("kill")
+	claude.StepHook = func(step string) error {
+		if step == "formal-renamed" {
+			return boom
+		}
+		return nil
+	}
+	if _, err := claude.Publish(draft, PublishInput{Body: "body", Prompt: "next"}, false); !errors.Is(err, boom) {
+		t.Fatal(err)
+	}
+	claude.StepHook = nil
+	if err := os.Remove(draft); err != nil { // the draft is lost: not resumable
+		t.Fatal(err)
+	}
+	ck.advance(20 * time.Minute)
+
+	actions, err := claude.CleanStale(s.Pair, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(actions, "; ")
+	if strings.Contains(joined, "resumable") {
+		t.Fatalf("actions = %v: must not claim resumability without a draft", actions)
+	}
+	pairDir := claude.PairDir(s.Pair)
+	if _, err := os.Stat(filepath.Join(pairDir, ".seq", "001")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("orphan .seq reservation must be removed")
+	}
+	if _, err := os.Stat(filepath.Join(pairDir, ArtifactName(1, "claude", "plan")+".stale")); err != nil {
+		t.Fatal("formal must be quarantined to .stale")
+	}
+	// Doctor converges: a second pass finds nothing left to do.
+	actions, err = claude.CleanStale(s.Pair, false)
+	if err != nil || len(actions) != 0 {
+		t.Fatalf("second pass actions = %v err=%v, want clean convergence", actions, err)
+	}
+}
+
 func TestSecretScannerShapes(t *testing.T) {
 	// review 054 blocker 4: provider prefixes and unquoted assignments
 	// must block; benign prose must not (no-bypass design demands a low

@@ -96,8 +96,14 @@ func (l *Ledger) waitTarget(slug string) (*Session, string, bool, error) {
 		if s, err := l.LoadSession(slug); err == nil {
 			return s, l.PairDir(slug), false, nil
 		}
-		if s, dir, err := l.loadArchivedSession(slug); err == nil {
+		s, dir, archErr := l.loadArchivedSession(slug)
+		if archErr == nil {
 			return s, dir, true, nil
+		}
+		// A present-but-invalid archive entry surfaces its specific
+		// fail-closed reason; only a genuinely absent one is "not found".
+		if !errors.Is(archErr, os.ErrNotExist) {
+			return nil, "", false, archErr
 		}
 		return nil, "", false, fmt.Errorf("%w: pair %q not found (active or archived) under %s", ErrRelay, slug, l.Root)
 	}
@@ -108,12 +114,16 @@ func (l *Ledger) waitTarget(slug string) (*Session, string, bool, error) {
 	return s, l.PairDir(s.Pair), false, nil
 }
 
-// loadArchivedSession reads a pair archived under _archive/<slug>.
+// loadArchivedSession reads a pair archived under _archive/<slug> with
+// the SAME consistency bar as the active path (review 056 blocker 1):
+// the embedded pair name must match the directory, and an archive entry
+// must be terminal — an active-status session inside _archive is corrupt
+// or tampered, never trusted.
 func (l *Ledger) loadArchivedSession(slug string) (*Session, string, error) {
 	dir := filepath.Join(l.Root, "_archive", slug)
 	raw, err := os.ReadFile(filepath.Join(dir, "session.json"))
 	if err != nil {
-		return nil, "", fmt.Errorf("%w: no archived pair %q", ErrRelay, slug)
+		return nil, "", fmt.Errorf("%w: no archived pair %q (%w)", ErrRelay, slug, os.ErrNotExist)
 	}
 	var s Session
 	if err := json.Unmarshal(raw, &s); err != nil {
@@ -121,6 +131,12 @@ func (l *Ledger) loadArchivedSession(slug string) (*Session, string, error) {
 	}
 	if err := s.Validate(); err != nil {
 		return nil, "", err
+	}
+	if s.Pair != slug {
+		return nil, "", fmt.Errorf("%w: archived session.json pair %q does not match directory %q (corrupt or tampered archive)", ErrRelay, s.Pair, slug)
+	}
+	if !s.Terminal() {
+		return nil, "", fmt.Errorf("%w: archived pair %s has non-terminal status %q (corrupt or tampered archive)", ErrRelay, slug, s.Status)
 	}
 	return &s, dir, nil
 }
