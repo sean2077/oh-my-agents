@@ -85,14 +85,11 @@ func (l *Ledger) CreateDraft(slug, kind string, inReplyTo, corrects *int, dryRun
 	if kind == "correction" && corrects == nil {
 		return "", fmt.Errorf("%w: kind correction requires --corrects <seq>", ErrRelay)
 	}
-	s, err := l.ResolvePair("", !dryRun)
+	// Explicit --pair wins FIRST (§4a resolution order, review 054
+	// blocker 1): binding state must never gate an explicit valid slug.
+	s, err := l.ResolvePair(slug, !dryRun)
 	if err != nil {
 		return "", err
-	}
-	if slug != "" {
-		if s, err = l.LoadSession(slug); err != nil {
-			return "", err
-		}
 	}
 	if s.Terminal() {
 		return "", fmt.Errorf("%w: pair %s is %s", ErrRelay, s.Pair, s.Status)

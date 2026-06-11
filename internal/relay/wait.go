@@ -1,6 +1,7 @@
 package relay
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -31,15 +32,21 @@ type WaitResult struct {
 // ready artifact always wins — over terminal status (an unconsumed
 // closing decision must still be delivered), over stale-intent
 // (publish-then-kill leaves draft residue that is a cleanup warning,
-// never exit 11), and over the deadline.
+// never exit 11), and over the deadline. Ready-priority survives
+// close+archive (review 054 blocker 2): when the pair directory has
+// been archived, the archived tree is checked for an undelivered peer
+// artifact before reporting terminal.
 func (l *Ledger) Wait(slug string, timeout time.Duration) (*WaitResult, error) {
-	s, err := l.ResolvePair(slug, true)
+	s, dir, archived, err := l.waitTarget(slug)
 	if err != nil {
 		return nil, err
 	}
 	peer, err := s.Peer(l.Identity.Author)
 	if err != nil {
 		return nil, err
+	}
+	if archived {
+		return l.archivedResult(dir, peer)
 	}
 	interval := l.PollInterval
 	if interval <= 0 {
@@ -49,17 +56,17 @@ func (l *Ledger) Wait(slug string, timeout time.Duration) (*WaitResult, error) {
 	for {
 		l.touchHeartbeat(s.Pair)
 
-		if path, ok, err := l.newPeerArtifact(s.Pair, peer); err != nil {
+		if path, ok, err := l.newPeerArtifact(l.PairDir(s.Pair), peer); err != nil {
 			return nil, err
 		} else if ok {
 			return &WaitResult{Code: WaitNewArtifact, ArtifactPath: path, Reason: "new artifact from " + peer}, nil
 		}
 		cur, err := l.LoadSession(s.Pair)
 		if err != nil {
-			// The pair directory disappears when the peer closes+archives:
-			// that IS the terminal signal, not an error.
+			// The pair directory disappears when the peer closes+archives
+			// mid-wait: an undelivered artifact in the archive still wins.
 			if strings.Contains(err.Error(), "not found") {
-				return &WaitResult{Code: WaitTerminal, Reason: "pair archived"}, nil
+				return l.archivedResult(filepath.Join(l.Root, "_archive", s.Pair), peer)
 			}
 			return nil, err
 		}
@@ -76,10 +83,60 @@ func (l *Ledger) Wait(slug string, timeout time.Duration) (*WaitResult, error) {
 	}
 }
 
+// waitTarget resolves the pair for Wait: explicit slug or binding first,
+// each falling back to the archive so an archived pair's undelivered
+// artifacts stay reachable; the active-only auto-adopt path runs last.
+func (l *Ledger) waitTarget(slug string) (*Session, string, bool, error) {
+	if slug == "" {
+		if b, err := l.loadBinding(); err == nil {
+			slug = b.Pair
+		}
+	}
+	if slug != "" {
+		if s, err := l.LoadSession(slug); err == nil {
+			return s, l.PairDir(slug), false, nil
+		}
+		if s, dir, err := l.loadArchivedSession(slug); err == nil {
+			return s, dir, true, nil
+		}
+		return nil, "", false, fmt.Errorf("%w: pair %q not found (active or archived) under %s", ErrRelay, slug, l.Root)
+	}
+	s, err := l.ResolvePair("", true)
+	if err != nil {
+		return nil, "", false, err
+	}
+	return s, l.PairDir(s.Pair), false, nil
+}
+
+// loadArchivedSession reads a pair archived under _archive/<slug>.
+func (l *Ledger) loadArchivedSession(slug string) (*Session, string, error) {
+	dir := filepath.Join(l.Root, "_archive", slug)
+	raw, err := os.ReadFile(filepath.Join(dir, "session.json"))
+	if err != nil {
+		return nil, "", fmt.Errorf("%w: no archived pair %q", ErrRelay, slug)
+	}
+	var s Session
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return nil, "", fmt.Errorf("%w: archived session.json of %s not valid JSON: %v", ErrRelay, slug, err)
+	}
+	if err := s.Validate(); err != nil {
+		return nil, "", err
+	}
+	return &s, dir, nil
+}
+
+// archivedResult delivers an undelivered peer artifact from an archived
+// pair directory, else reports terminal.
+func (l *Ledger) archivedResult(dir, peer string) (*WaitResult, error) {
+	if path, ok, err := l.newPeerArtifact(dir, peer); err == nil && ok {
+		return &WaitResult{Code: WaitNewArtifact, ArtifactPath: path, Reason: "undelivered artifact from " + peer + " (pair archived)"}, nil
+	}
+	return &WaitResult{Code: WaitTerminal, Reason: "pair archived"}, nil
+}
+
 // newPeerArtifact returns the newest READY artifact authored by peer
-// with seq greater than our own latest published seq.
-func (l *Ledger) newPeerArtifact(slug, peer string) (string, bool, error) {
-	pairDir := l.PairDir(slug)
+// with seq greater than our own latest published seq, within pairDir.
+func (l *Ledger) newPeerArtifact(pairDir, peer string) (string, bool, error) {
 	names, err := publishedArtifacts(pairDir, true)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -153,7 +210,18 @@ func (l *Ledger) reservations(slug, author string) []int {
 
 // hasReadyAt reports a ready formal artifact at seq by author.
 func (l *Ledger) hasReadyAt(slug string, seq int, author string) bool {
-	names, err := publishedArtifacts(l.PairDir(slug), true)
+	return l.hasArtifactAt(slug, seq, author, true)
+}
+
+// hasFormalAt reports ANY formal artifact file at seq by author, ready
+// or not — an unready formal plus a surviving draft is a resumable
+// interrupted publish.
+func (l *Ledger) hasFormalAt(slug string, seq int, author string) bool {
+	return l.hasArtifactAt(slug, seq, author, false)
+}
+
+func (l *Ledger) hasArtifactAt(slug string, seq int, author string, readyOnly bool) bool {
+	names, err := publishedArtifacts(l.PairDir(slug), readyOnly)
 	if err != nil {
 		return false
 	}

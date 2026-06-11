@@ -152,6 +152,7 @@ func Parse(raw []byte) (*Frontmatter, string, error) {
 		return nil, "", fmt.Errorf("%w: artifact must start with ---", ErrRelay)
 	}
 	f := &Frontmatter{}
+	seen := map[string]bool{}
 	i := 1
 	for ; i < len(lines); i++ {
 		line := lines[i]
@@ -168,6 +169,12 @@ func Parse(raw []byte) (*Frontmatter, string, error) {
 		}
 		key = strings.TrimSpace(key)
 		value = strings.TrimSpace(value)
+		// Duplicate keys are first-wins/last-wins ambiguity: fail closed,
+		// same rule as the hook host-config parser (review 054 hardening).
+		if seen[key] {
+			return nil, "", fmt.Errorf("%w: duplicate frontmatter key %q", ErrRelay, key)
+		}
+		seen[key] = true
 		var err error
 		switch key {
 		case "schema":

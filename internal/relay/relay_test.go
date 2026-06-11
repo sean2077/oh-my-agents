@@ -125,17 +125,162 @@ func TestWaitTimeoutAndTerminal(t *testing.T) {
 	if err := claude.Close(s.Pair, "approve", "done", false); err != nil {
 		t.Fatal(err)
 	}
-	// The pair is archived now; a fresh wait resolves via explicit slug
-	// and reports terminal.
+	// Archived with no undelivered peer artifact: deterministic 12
+	// (review 054 blocker 2: archive must not surface as an error).
 	res, err = claude.Wait(s.Pair, time.Second)
-	if err == nil {
-		// Resolution may fail (archived = not found) — both shapes are
-		// acceptable as long as the result is terminal, never a hang.
-		if res.Code != WaitTerminal {
-			t.Fatalf("wait on closed pair = %+v", res)
+	if err != nil || res.Code != WaitTerminal {
+		t.Fatalf("wait on archived pair = %+v err=%v, want 12", res, err)
+	}
+}
+
+func TestWaitDeliversUnconsumedDecisionAfterCloseArchive(t *testing.T) {
+	// review 054 blocker 2: peer publishes a decision and immediately
+	// closes+archives — ready-priority must still deliver the decision.
+	ck := newClock()
+	root, _ := initRoot(t, ck)
+	claude := testLedger(t, root, "claude", ck)
+	codex := testLedger(t, root, "codex", ck)
+	s := mustPair(t, claude, "close-smoke")
+	if _, err := codex.Join(s.Pair, false); err != nil {
+		t.Fatal(err)
+	}
+	mustPublish(t, claude, s.Pair, "plan", "body", "review")
+	mustPublish(t, codex, s.Pair, "decision", "approved, shipping", "none")
+	if err := codex.Close(s.Pair, "approve", "done", false); err != nil {
+		t.Fatal(err)
+	}
+
+	// Explicit slug, bound binding, both resolve through the archive.
+	res, err := claude.Wait(s.Pair, time.Second)
+	if err != nil || res.Code != WaitNewArtifact {
+		t.Fatalf("wait = %+v err=%v, want undelivered decision", res, err)
+	}
+	if !strings.Contains(res.ArtifactPath, "_archive") || !strings.Contains(res.ArtifactPath, "002-codex-decision.md") {
+		t.Fatalf("artifact path = %s", res.ArtifactPath)
+	}
+	if _, _, err := ReadArtifact(res.ArtifactPath); err != nil {
+		t.Fatalf("archived artifact unreadable: %v", err)
+	}
+	// Bound (no explicit slug) resolution takes the binding→archive path.
+	res, err = claude.Wait("", time.Second)
+	if err != nil || res.Code != WaitNewArtifact {
+		t.Fatalf("bound wait = %+v err=%v", res, err)
+	}
+}
+
+func TestDraftExplicitPairBeatsBindingState(t *testing.T) {
+	// review 054 blocker 1: an explicit --pair must never depend on
+	// binding or auto-disambiguation state.
+	ck := newClock()
+	root, _ := initRoot(t, ck)
+	claude := testLedger(t, root, "claude", ck)
+	s1 := mustPair(t, claude, "alpha")
+	ck2 := newClock()
+	ck2.advance(48 * time.Hour)
+	claude2 := testLedger(t, root, "claude", ck2)
+	if _, err := claude2.NewPair("beta", "", "p", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(claude.bindingPath()); err != nil {
+		t.Fatal(err)
+	}
+	draft, err := claude.CreateDraft(s1.Pair, "note", nil, nil, false)
+	if err != nil {
+		t.Fatalf("explicit --pair with two actives and no binding: %v", err)
+	}
+	if !strings.Contains(draft, s1.Pair) {
+		t.Fatalf("draft landed in %s, want %s", draft, s1.Pair)
+	}
+}
+
+func TestCleanStalePreservesResumablePublish(t *testing.T) {
+	// review 054 blocker 3: an interrupted publish (formal exists, no
+	// .ready, draft alive) must survive --clean-stale even when the
+	// author's heartbeat is stale; the rerun then converges.
+	ck := newClock()
+	root, _ := initRoot(t, ck)
+	claude := testLedger(t, root, "claude", ck)
+	s := mustPair(t, claude, "topic")
+	draft, err := claude.CreateDraft(s.Pair, "plan", nil, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	boom := errors.New("kill")
+	claude.StepHook = func(step string) error {
+		if step == "formal-renamed" {
+			return boom
 		}
-	} else if !strings.Contains(err.Error(), "not found") {
-		t.Fatalf("err = %v", err)
+		return nil
+	}
+	if _, err := claude.Publish(draft, PublishInput{Body: "body", Prompt: "next"}, false); !errors.Is(err, boom) {
+		t.Fatal(err)
+	}
+	claude.StepHook = nil
+	ck.advance(20 * time.Minute) // heartbeat goes stale
+
+	actions, err := claude.CleanStale(s.Pair, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(actions, "; "), "resumable") {
+		t.Fatalf("actions = %v, want resumable notice", actions)
+	}
+	formal := filepath.Join(claude.PairDir(s.Pair), ArtifactName(1, "claude", "plan"))
+	for _, path := range []string{draft, formal, filepath.Join(claude.PairDir(s.Pair), ".seq", "001")} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("recovery path destroyed: %s missing", path)
+		}
+	}
+	if _, err := claude.Publish(draft, PublishInput{Body: "body", Prompt: "next"}, false); err != nil {
+		t.Fatalf("resumed publish: %v", err)
+	}
+	if _, _, err := ReadArtifact(formal); err != nil {
+		t.Fatalf("converged artifact: %v", err)
+	}
+}
+
+func TestSecretScannerShapes(t *testing.T) {
+	// review 054 blocker 4: provider prefixes and unquoted assignments
+	// must block; benign prose must not (no-bypass design demands a low
+	// false-positive floor).
+	blocked := []string{
+		"OPENAI_API_KEY=sk-proj-FAKE0000000000000000abcd",
+		"export ANTHROPIC_KEY=sk-ant-FAKE0000000000000000",
+		"stripe sk_live_FAKE000000000000004242",
+		"MY_ACCESS_TOKEN=Ab1-0000000000000000",
+		`api_key: "quoted-secret-000"`,
+		"AKIAIOSFODNN7EXAMPLE",
+	}
+	for _, line := range blocked {
+		if got := ScanSecrets([]byte(line)); len(got) == 0 {
+			t.Errorf("must block: %q", line)
+		}
+	}
+	benign := []string{
+		"the token = approximately four utf-8 bytes",
+		"budget_tokens: 2000",
+		"description_budget_tokens: 80",
+		"password rules require 12 characters minimum",
+		"sk-learn pipelines are unrelated",
+		"OMA_RELAY_STALE_AFTER=900",
+		"in_reply_to: 50",
+		"resident token surface counts name+description",
+	}
+	for _, line := range benign {
+		if got := ScanSecrets([]byte(line)); len(got) != 0 {
+			t.Errorf("false positive on %q: %v", line, got)
+		}
+	}
+}
+
+func TestParseRejectsDuplicateFrontmatterKeys(t *testing.T) {
+	fm := &Frontmatter{Schema: Schema, Seq: 1, Author: "claude", Peer: "codex",
+		Kind: "note", Status: "ready", Created: time.Date(2026, 6, 11, 13, 0, 0, 0, time.UTC),
+		TouchedPaths: []string{}, PromptForNext: "x"}
+	raw := string(Render(fm, "body"))
+	dup := strings.Replace(raw, "kind: note\n", "kind: note\nkind: decision\n", 1)
+	if _, _, err := Parse([]byte(dup)); err == nil || !strings.Contains(err.Error(), "duplicate frontmatter key") {
+		t.Fatalf("err = %v, want duplicate-key refusal", err)
 	}
 }
 

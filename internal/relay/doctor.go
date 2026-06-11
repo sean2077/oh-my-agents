@@ -56,6 +56,15 @@ func (l *Ledger) CleanStale(slug string, dryRun bool) ([]string, error) {
 					}
 				}
 			case stale:
+				// A surviving draft whose formal file already exists (no
+				// .ready yet) is a RESUMABLE interrupted publish: rerunning
+				// the same publish converges from the draft (protocol §7).
+				// Cleaning it would destroy the recovery path (review 054
+				// blocker 3) — preserve and report instead.
+				if l.hasFormalAt(slug, seq, author) {
+					actions = append(actions, fmt.Sprintf("keep .seq/%03d and draft (interrupted publish is resumable: rerun `oma relay publish`)", seq))
+					continue
+				}
 				if err := remove(seqPath, "stale abandoned intent"); err != nil {
 					return actions, err
 				}
