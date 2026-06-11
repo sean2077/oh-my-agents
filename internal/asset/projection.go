@@ -67,8 +67,11 @@ func (e *Engine) planProjections(m *Manifest, canonical string, requested []stri
 
 // checkProjectionRoot enforces the resolved trusted-root constraints for
 // one agent's projection area: the agent root must not resolve outside the
-// home directory (symlinked ~/.claude → elsewhere is refused), and the
-// nearest existing ancestor of the target must not be world-writable.
+// home directory (symlinked ~/.claude → elsewhere is refused), the FULL
+// target path — resolving any existing intermediate symlink components
+// such as .claude/skills → elsewhere — must stay inside the resolved agent
+// root (review 032), and the nearest existing ancestor of the target must
+// not be world-writable.
 func (e *Engine) checkProjectionRoot(agent, target string) error {
 	home, err := resolveExisting(e.Layout.Home)
 	if err != nil {
@@ -80,6 +83,19 @@ func (e *Engine) checkProjectionRoot(agent, target string) error {
 	}
 	if root != home && !strings.HasPrefix(root+string(filepath.Separator), home+string(filepath.Separator)) {
 		return fmt.Errorf("%w: agent root for %s resolves outside home: %s", ErrInvalid, agent, root)
+	}
+	// Resolve the PARENT directory's existing components — the final
+	// component is the oma-owned symlink that legitimately points at
+	// canonical (outside the agent root), so resolving the target itself
+	// would false-positive. Intermediate escapes (.claude/skills ->
+	// elsewhere) are caught here (review 032).
+	resolvedParent, err := resolveExisting(filepath.Dir(target))
+	if err != nil {
+		return err
+	}
+	if resolvedParent != root && !strings.HasPrefix(resolvedParent+string(filepath.Separator), root+string(filepath.Separator)) {
+		return fmt.Errorf("%w: projection path %s resolves outside agent root %s (intermediate symlink escape)",
+			ErrInvalid, filepath.Join(resolvedParent, filepath.Base(target)), root)
 	}
 	return checkAncestorWritable(filepath.Dir(target))
 }

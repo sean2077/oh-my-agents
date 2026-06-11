@@ -177,6 +177,57 @@ func TestProjectionRootWorldWritableRefused(t *testing.T) {
 	}
 }
 
+func TestNestedProjectionSymlinkEscapeRefused(t *testing.T) {
+	e := newTestEngine(t)
+	outside := t.TempDir()
+	claudeRoot := filepath.Join(e.Layout.Home, ".claude")
+	if err := os.MkdirAll(claudeRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(claudeRoot, "skills")); err != nil {
+		t.Skip("symlinks unavailable")
+	}
+	src := writeSkillSource(t, t.TempDir(), "x", "body")
+	_, err := e.Install(src, Options{Agents: []string{"claude"}})
+	if err == nil || !strings.Contains(err.Error(), "intermediate symlink escape") {
+		t.Fatalf("nested symlink escape: err = %v, want refusal", err)
+	}
+	if entries, _ := os.ReadDir(outside); len(entries) != 0 {
+		t.Fatal("nothing may be written through the nested escaping component")
+	}
+}
+
+func TestRemoveRefusesNestedSymlinkEscape(t *testing.T) {
+	e := newTestEngine(t)
+	src := writeSkillSource(t, t.TempDir(), "x", "body")
+	mustInstall(t, e, src, Options{Agents: []string{"claude"}})
+
+	// swap the real skills dir for an escaping symlink after install
+	outside := t.TempDir()
+	skillsDir := filepath.Join(e.Layout.Home, ".claude", "skills")
+	if err := os.RemoveAll(skillsDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, skillsDir); err != nil {
+		t.Skip("symlinks unavailable")
+	}
+	canonical := filepath.Join(e.Layout.CanonicalRoot(), "skills", "x")
+	if err := os.Symlink(canonical, filepath.Join(outside, "x")); err != nil {
+		t.Fatal(err)
+	}
+
+	rep, err := e.Remove("x", Options{})
+	if err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	if len(rep.Warnings) == 0 {
+		t.Fatalf("escaping projection path must warn, got %+v", rep)
+	}
+	if _, err := os.Lstat(filepath.Join(outside, "x")); err != nil {
+		t.Fatal("link behind the escaping component must be left intact")
+	}
+}
+
 func TestPartialProjectionConvergesToManaged(t *testing.T) {
 	e := newTestEngine(t)
 	codexRoot := filepath.Join(e.Layout.Home, ".codex")
