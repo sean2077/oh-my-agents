@@ -41,7 +41,7 @@
 - author 解析优先级：**平台信号**（`CLAUDE_CODE_SESSION_ID` → `claude`；`CODEX_THREAD_ID` → `codex`）＞ `OMA_RELAY_AUTHOR` 环境变量 ＞ 解析失败即拒绝。
 - 双平台信号并存且无 `OMA_RELAY_AUTHOR` 仲裁 → 拒绝（fail-closed，零写入）。
 - 参与者恰为 2，不允许同名双方（claude+claude 拒绝）。
-- **角色**：`session.json.roles` 将 `planner / implementer / reviewer` 映射到参与者名（一人可任多角色）。relay 机制不强制角色行为；角色字段供结对交付流等 skill 读取与提示。
+- **角色**：`session.json.roles` 将 `lead / planner / implementer / reviewer` 映射到参与者名（一人可任多角色）。`lead` = 主决策者，**必填且唯一**，默认 = bootstrap 发起方；其余角色可配置到任一参与者。relay 机制不强制角色行为；角色字段供结对交付流等 skill 读取与提示（lead 语义与对调规则见 workflows.md §4）。
 
 ## 4a. Pair 绑定与解析（rev A.1，采纳设计评审 010 finding 2）
 

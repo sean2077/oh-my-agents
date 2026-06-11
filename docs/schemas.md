@@ -43,7 +43,7 @@
   "pair": "20260611-topic",
   "project": "oh-my-agents",
   "participants": ["claude", "codex"],
-  "roles": {"planner": "claude", "implementer": "claude", "reviewer": "codex"},
+  "roles": {"lead": "claude", "planner": "claude", "implementer": "claude", "reviewer": "codex"},
   "status": "active|closed|cancelled|failed",
   "created": "ISO-8601", "closed": null, "outcome": null, "reason": null
 }
