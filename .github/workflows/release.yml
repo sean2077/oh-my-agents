@@ -17,6 +17,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
 
+      # Fail fast: a tag without its changelog section must die before
+      # any expensive build (the release body comes from CHANGELOG.md —
+      # user-defined flow: changelog → commit+tag → push → CI extracts).
+      - name: Extract release notes from CHANGELOG.md
+        run: |
+          scripts/extract-changelog.sh "$GITHUB_REF_NAME" > "$RUNNER_TEMP/release-notes.md"
+          echo "--- release notes for $GITHUB_REF_NAME ---"
+          cat "$RUNNER_TEMP/release-notes.md"
+
       - name: Setup Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
         with:
@@ -72,9 +81,9 @@ jobs:
         run: |
           tag="${GITHUB_REF_NAME}"
           if gh release view "$tag" >/dev/null 2>&1; then
-            gh release edit "$tag" --title "$tag" --generate-notes --verify-tag
+            gh release edit "$tag" --title "$tag" --notes-file "$RUNNER_TEMP/release-notes.md" --verify-tag
           else
-            gh release create "$tag" --title "$tag" --generate-notes --verify-tag
+            gh release create "$tag" --title "$tag" --notes-file "$RUNNER_TEMP/release-notes.md" --verify-tag
           fi
 
       - name: Upload assets
