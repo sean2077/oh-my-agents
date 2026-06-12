@@ -106,7 +106,7 @@ func (l *Ledger) statuslineState(explicit string) *StatuslineState {
 
 // renderStatusline builds the compact one-line text.
 func renderStatusline(st *StatuslineState) string {
-	turn := st.Turn
+	var turn string
 	switch st.Turn {
 	case "you":
 		turn = "your turn"
