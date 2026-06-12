@@ -79,7 +79,7 @@ func (l *Ledger) Hook(event string, raw []byte) *HookOutput {
 	case out := <-ch:
 		return out
 	case <-time.After(hookDeadline):
-		l.hookTrail(event, "deadline exceeded — silent")
+		go l.hookTrail(event, "deadline exceeded; silent")
 		return nil
 	}
 }
@@ -163,8 +163,8 @@ func (l *Ledger) hookSessionStart() *HookOutput {
 	}
 }
 
-// readyArtifactSeq reports whether path is a published (has .ready)
-// artifact under this ledger, and its seq.
+// readyArtifactSeq reports whether path is a published artifact or one
+// of its integrity sidecars under this ledger, and its seq.
 func (l *Ledger) readyArtifactSeq(path string) (int, bool) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
@@ -177,11 +177,18 @@ func (l *Ledger) readyArtifactSeq(path string) (int, bool) {
 	if !strings.HasPrefix(abs, root+string(filepath.Separator)) {
 		return 0, false
 	}
-	seq, _, _, ok := ParseArtifactName(filepath.Base(abs))
+	artifact := abs
+	for _, suffix := range []string{".ready", ".sha256"} {
+		if strings.HasSuffix(artifact, suffix) {
+			artifact = strings.TrimSuffix(artifact, suffix)
+			break
+		}
+	}
+	seq, _, _, ok := ParseArtifactName(filepath.Base(artifact))
 	if !ok {
 		return 0, false
 	}
-	if _, err := statReady(abs); err != nil {
+	if _, err := statReady(artifact); err != nil {
 		return 0, false
 	}
 	return seq, true

@@ -147,6 +147,17 @@ func TestHookPreToolUseDeniesReadyArtifact(t *testing.T) {
 	if out := claude.Hook(HookPreToolUse, craw); out == nil || out.HookSpecificOutput.PermissionDecision != "deny" {
 		t.Fatalf("codex apply_patch to a .ready artifact must be denied, got %+v", out)
 	}
+	for _, sidecar := range []string{formal + ".ready", formal + ".sha256"} {
+		sidecarPayload := map[string]any{
+			"hook_event_name": HookPreToolUse,
+			"tool_name":       "Edit",
+			"tool_input":      map[string]string{"file_path": sidecar},
+		}
+		sraw, _ := json.Marshal(sidecarPayload)
+		if out := claude.Hook(HookPreToolUse, sraw); out == nil || out.HookSpecificOutput.PermissionDecision != "deny" {
+			t.Fatalf("editing published sidecar %s must be denied, got %+v", sidecar, out)
+		}
+	}
 
 	// A non-artifact edit is allowed (silent).
 	other := map[string]any{

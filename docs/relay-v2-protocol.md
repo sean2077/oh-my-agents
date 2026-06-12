@@ -132,7 +132,7 @@ publish 步骤（严格顺序）：从草稿**渲染**正式内容 → 写 `NNN-
 
 ### 12.3 `oma relay hooks`（B14，已实现）
 
-`hooks install|uninstall|status|doctor --target claude|codex|both` + **隐藏**派发器 `hook <event>`（机器调用，不计入公开组、不入 refcheck）。派发器读宿主 hook 载荷、解析绑定 pair 状态、按平台输出正确 JSON、**绝不弄坏宿主**（内部任何错 → exit 0 静默，除 PreToolUse 的有意 deny）：
+`hooks install|uninstall|doctor --target claude|codex|both` + **隐藏**派发器 `hook <event>`（机器调用，不计入公开组、不入 refcheck）。派发器读宿主 hook 载荷、解析绑定 pair 状态、按平台输出正确 JSON、**绝不弄坏宿主**（内部任何错 → exit 0 静默，除 PreToolUse 的有意 deny）：
 
 - **SessionStart**：早期提示 + 轻量 stale/residue 摘要（`systemMessage`）。
 - **PreToolUse**：拒改 `.ready` 已发布 artifact（`permissionDecision:deny` + 指向 correction 流程）；不发 Codex 不支持的字段。
