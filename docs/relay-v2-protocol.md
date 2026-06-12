@@ -112,3 +112,31 @@ publish 步骤（严格顺序）：从草稿**渲染**正式内容 → 写 `NNN-
 | 10 | --ledger-root 指 v1 | 拒绝 |
 | 11 | v2 根未知 schema | 拒绝 |
 | 12 | pair 绑定解析 | 多 active pair 无消歧 → exit 3 零写入并列候选；`--pair` 覆盖生效；单 active pair 自动绑定落盘 |
+
+## 12. 体验层（B12-B14，2026-06-12 用户决定补齐 agent-ledger 体验）
+
+用户对 agent-ledger relay 体验极满意；切换到 oma relay v2 前须补齐体验层、不得回归。补**三项**：preflight / statusline / hooks 自动续turn；**不做** issue 账本与 sync 跨机（sync 本就 §2 YAGNI 延后）。三者全为增量，复用 internal/hookcfg（注入）、internal/checks 风格（检查）、status 读取器（状态）。
+
+### 12.1 `oma relay preflight [--json]`（B12）
+
+人工排障门：诊断身份、账本根/sentinel/schema、绑定/对端推导、文件系统性质。**永不硬失败**——每个条件落为一行检查结果，环境再坏也整表呈现。
+
+- 检查项：`identity.author`（+session）、`ledger.root`、`ledger.v1_root`（仅显式 `--ledger-root` 时；指 v1 树 → fail）、`legacy.shared`（项目根 `.shared/_relay` 存在 → **warn**，非 fail）、`ledger.sentinel`（v2 在/缺/异 major）、`pair.binding` + `identity.peer`；FS 探针 `fs.{tmp_rename,mtime,symlink,sha256,fsync,posix_mode}`，mtime 粗粒度（1s 内不可分）→ **warn** 不 fail。
+- 退出码：`0` 全过 / `1` 有警告 / `3` fail-stop（环境/状态，command-tree §1 通则；**不用 `2`**——`2` 归 cobra 用法错误）。与 agent-ledger 的 `0/1/2` 行为等价（表 + 停/继续语义），退出码取 oma 原生值。
+- `--json`：schema `oma-relay-preflight/1`，字段稳定供 B13/B14 复用。
+- SessionStart（B14）**不跑全量 preflight**——用轻量有界 stale/residue/status 检查（FS 探针在共享挂载上偏贵）；全量 preflight 仅人工触发。
+
+### 12.2 `oma relay statusline`（B13，待实现）
+
+紧凑「哪个 pair / 轮到谁 / 最新 seq·kind·status」行 + `--watch` 看板 + `install/uninstall/doctor`。安全属性（硬验收）：**纯读**（不 GC、不改 last_seen/心跳、零账本写）、**绑定作用域**（未绑定窗口不显示孤 active pair）、**仅 claude 装**（Codex 无命令式 statusline）、单 `statusLine` 槽不覆盖（除非 `--force`）、渲染/子进程**自限时**（挂载卡死不拖死 UI）。
+
+### 12.3 `oma relay hooks`（B14，待实现）
+
+`hooks install|uninstall|status|doctor --target claude|codex|both` + **隐藏**派发器 `hook <event>`（机器调用，不计入公开组、不入 refcheck）。派发器读宿主 hook 载荷、解析绑定 pair 状态、按平台输出正确 JSON、**绝不弄坏宿主**（内部任何错 → exit 0 静默，除 PreToolUse 的有意 deny）：
+
+- **SessionStart**：早期提示 + 轻量 stale/residue 摘要（`systemMessage`）。
+- **PreToolUse**：拒改 `.ready` 已发布 artifact（`permissionDecision:deny` + 指向 correction 流程）；不发 Codex 不支持的字段。
+- **Stop**：对端发布且 addressed-to-me 时**自动续turn**；护栏（硬验收）：防循环（`stop_hook_active` → exit 0 静默）、严格绑定（等价 `--require-binding`，未绑定静默）、有界状态（短状态面非 waiter，超时/失败 → exit 0 静默 + 诊断 trail）、去重（稳定指纹，不变则静默）、输出 `decision:"block"` 续turn 且**绝不**配 `continue:false`。
+- 安装复用 hookcfg 注入双端、relay 专属 marker、幂等、Codex `/hooks` 一次性信任提示。
+
+**切换门**：停用 agent-ledger relay 须等 B14 落地——届时体验持平或更好。公开 relay 组终态恰 10（init/pair/draft/publish/wait/status/close/preflight/statusline/hooks；派发器隐藏）。

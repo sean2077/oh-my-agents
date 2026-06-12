@@ -45,6 +45,7 @@ func newRelayCmd() *cobra.Command {
 
 	cmd.AddCommand(
 		newRelayInitCmd(&ledgerRoot),
+		newRelayPreflightCmd(&ledgerRoot),
 		newRelayPairCmd(&ledgerRoot),
 		newRelayDraftCmd(&ledgerRoot),
 		newRelayPublishCmd(&ledgerRoot),
@@ -52,6 +53,49 @@ func newRelayCmd() *cobra.Command {
 		newRelayStatusCmd(&ledgerRoot),
 		newRelayCloseCmd(&ledgerRoot),
 	)
+	return cmd
+}
+
+func newRelayPreflightCmd(rootFlag *string) *cobra.Command {
+	var asJSON bool
+	cmd := &cobra.Command{
+		Use:   "preflight",
+		Short: "Diagnose identity, ledger root/sentinel, binding, and filesystem properties",
+		Args:  cobra.NoArgs,
+		RunE: run(func(cmd *cobra.Command, _ []string) error {
+			cwd, err := os.Getwd()
+			if err != nil {
+				return err
+			}
+			rep := relay.Preflight(relay.PreflightInput{
+				ExplicitRoot: *rootFlag,
+				Cwd:          cwd,
+				ProjectRoot:  findProjectRoot(),
+				Getenv:       os.Getenv,
+			})
+			out := cmd.OutOrStdout()
+			if asJSON {
+				if err := printJSON(cmd, rep); err != nil {
+					return err
+				}
+			} else {
+				_, _ = fmt.Fprintf(out, "relay preflight :: %s\n\n", rep.Root)
+				for _, c := range rep.Checks {
+					_, _ = fmt.Fprintf(out, "  [%-4s] %-22s %s\n", c.Level, c.Name, c.Message)
+				}
+				_, _ = fmt.Fprintf(out, "\nsummary: %d pass, %d warn, %d fail\n", rep.Pass, rep.Warn, rep.Fail)
+			}
+			// 0 all pass / 1 warn / 3 fail-stop (addendum 087; usage stays 2 via cobra).
+			switch rep.ExitCode() {
+			case 3:
+				return Errf(ExitState, "preflight found %d failing check(s)", rep.Fail)
+			case 1:
+				return Errf(ExitWarn, "preflight found %d warning(s)", rep.Warn)
+			}
+			return nil
+		}),
+	}
+	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable output")
 	return cmd
 }
 

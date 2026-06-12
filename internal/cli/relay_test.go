@@ -100,3 +100,36 @@ func TestRelayCLIDryRunPublishZeroWrites(t *testing.T) {
 		t.Fatal("dry-run publish must not create the formal artifact")
 	}
 }
+
+func TestRelayPreflightCLI(t *testing.T) {
+	t.Setenv("OMA_RELAY_AUTHOR", "claude")
+	t.Setenv("CLAUDE_CODE_SESSION_ID", "")
+	t.Setenv("CODEX_THREAD_ID", "")
+
+	// Initialized ledger: pass/warn but never fail → exit 0 or 1.
+	ledger := filepath.Join(t.TempDir(), "relay")
+	if code, _ := runRelay(t, "relay", "init", "--ledger-root", ledger); code != ExitOK {
+		t.Fatalf("init exit %d", code)
+	}
+	code, out := runRelay(t, "relay", "preflight", "--ledger-root", ledger)
+	if code != ExitOK && code != ExitWarn {
+		t.Fatalf("preflight exit %d: %s", code, out)
+	}
+	if !strings.Contains(out, "relay preflight") || !strings.Contains(out, "summary:") {
+		t.Fatalf("preflight table missing: %s", out)
+	}
+
+	// --json carries the stable schema.
+	if code, out := runRelay(t, "relay", "preflight", "--ledger-root", ledger, "--json"); (code != ExitOK && code != ExitWarn) || !strings.Contains(out, `"oma-relay-preflight/1"`) {
+		t.Fatalf("preflight --json exit %d: %s", code, out)
+	}
+
+	// Explicit --ledger-root to a v1 tree fails closed → exit 3 (ExitState).
+	v1 := filepath.Join(t.TempDir(), "v1")
+	if err := os.MkdirAll(filepath.Join(v1, "_relay"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := runRelay(t, "relay", "preflight", "--ledger-root", v1); code != ExitState {
+		t.Fatalf("v1-root preflight exit %d, want %d", code, ExitState)
+	}
+}

@@ -75,6 +75,7 @@ oma ralph status [--id <id>] [--json]
 
 ```
 oma relay init [--ledger-root <path>]
+oma relay preflight [--json]
 oma relay pair new <topic-slug> [--peer <name>] [--json]
 oma relay pair ensure [--json]
 oma relay pair join <slug> [--json]
@@ -88,6 +89,7 @@ oma relay status [--last N] [--pair <slug>] [--json]
 oma relay close --outcome <approve|reject|abandon> --reason <text> [--pair <slug>]
 ```
 
+- **体验层修订记录（B12-B14，用户决定 2026-06-12 补齐 agent-ledger 体验，加 preflight/statusline/hooks 三组，不做 issue/sync）**：`preflight` 退出码 = `0` 全过 / `1` 有警告 / `3` fail-stop（环境/状态，§1 通则；不用 `2`——`2` 仍归 cobra 用法错误）；legacy `.shared/` 在项目根仅警告，仅显式 `--ledger-root` 指 v1 树才 fail。后续 B13 `statusline`、B14 `hooks` + 隐藏派发器 `hook <event>`（机器调用、不计入公开组、不入 refcheck 示例），公开 relay 组终态恰 10。
 - **C1 修订记录**：增 `pair set-lead`——workflows §4.1 要求确认对调后「更新 session.json.roles.lead」，原命令面无任何 roles 变更入口（评审 068）。
 - **B8 修订记录**：①新增 `pair new`——原命令面只有绑定语义（ensure/join），不存在任何创建 pair 的入口，实现期补此缺口；创建者默认成为 `roles.lead`（协议 §4），`--peer` 默认 claude↔codex 对端。②`draft` 增 `--corrects <seq>`——协议 §5 的 `corrects` 字段原无 CLI 入口，kind=correction 强制要求。
 
