@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -208,6 +209,94 @@ func TestRelayHooksWiredAndDrift(t *testing.T) {
 	// The foreign entry never counts as wired evidence.
 	if hookEventWired([]string{"existing-foreign-hook"}, relay.HookStop) {
 		t.Fatal("foreign command must not count as wired")
+	}
+}
+
+// runDoctor executes one doctor command tree under a fake OMA_HOME and
+// returns (exit code, combined output).
+func runDoctor(t *testing.T, home string, args ...string) (int, string) {
+	t.Helper()
+	t.Setenv("OMA_HOME", home)
+	root := newRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs(args)
+	return executeWith(root, &out), out.String()
+}
+
+// Review 101 blocker: binary drift/mismatch must exit warn(1) in BOTH
+// text and JSON modes, with the report still emitted first.
+func TestRelayHooksDoctorDriftExitCodes(t *testing.T) {
+	home := t.TempDir()
+	for _, agent := range []struct{ name, rel string }{
+		{"claude", filepath.Join(".claude", "settings.json")},
+		{"codex", filepath.Join(".codex", "hooks.json")},
+	} {
+		path := filepath.Join(home, agent.rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		// Entries embedded for a DIFFERENT binary → wired but drifted.
+		installRelayHooks(t, path, agent.name, "/elsewhere/oma")
+	}
+	for _, mode := range [][]string{
+		{"relay", "hooks", "doctor"},
+		{"relay", "hooks", "doctor", "--json"},
+	} {
+		code, out := runDoctor(t, home, mode...)
+		if code != ExitWarn {
+			t.Fatalf("%v: exit %d, want %d (warn)\n%s", mode, code, ExitWarn, out)
+		}
+		if !strings.Contains(out, "Stop") {
+			t.Fatalf("%v: report not emitted before warn exit:\n%s", mode, out)
+		}
+	}
+
+	// Canonical install (this test binary) → exit 0.
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, agent := range []struct{ name, rel string }{
+		{"claude", filepath.Join(".claude", "settings.json")},
+		{"codex", filepath.Join(".codex", "hooks.json")},
+	} {
+		installRelayHooks(t, filepath.Join(home, agent.rel), agent.name, exe)
+	}
+	if code, out := runDoctor(t, home, "relay", "hooks", "doctor", "--json"); code != ExitOK {
+		t.Fatalf("canonical doctor exit %d, want 0\n%s", code, out)
+	}
+}
+
+func TestRelayStatuslineDoctorMismatchExitCodes(t *testing.T) {
+	home := t.TempDir()
+	settings := filepath.Join(home, ".claude", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(settings), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	drifted := `{"statusLine": {"type": "command", "command": "oma relay statusline --old", "_oma_relay": "statusline"}}`
+	if err := os.WriteFile(settings, []byte(drifted), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, mode := range [][]string{
+		{"relay", "statusline", "doctor"},
+		{"relay", "statusline", "doctor", "--json"},
+	} {
+		code, out := runDoctor(t, home, mode...)
+		if code != ExitWarn {
+			t.Fatalf("%v: exit %d, want %d (warn)\n%s", mode, code, ExitWarn, out)
+		}
+		if !strings.Contains(out, "mismatch") {
+			t.Fatalf("%v: report not emitted before warn exit:\n%s", mode, out)
+		}
+	}
+	// Absent slot is informational → exit 0.
+	if err := os.WriteFile(settings, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if code, out := runDoctor(t, home, "relay", "statusline", "doctor"); code != ExitOK {
+		t.Fatalf("absent doctor exit %d, want 0\n%s", code, out)
 	}
 }
 

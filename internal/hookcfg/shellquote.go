@@ -5,12 +5,12 @@ import (
 	"strings"
 )
 
-// PosixQuote single-quotes s for a POSIX shell. Single quotes inside s
-// are closed-escaped-reopened ('\”), the only escape POSIX single
-// quoting needs; everything else ($, backticks, double quotes, spaces,
-// backslashes) is literal inside single quotes. JSON marshaling is NOT
-// shell quoting (review 099 must-fix 2) — callers quote first, then
-// marshal the completed command string.
+// PosixQuote single-quotes s for a POSIX shell. A single quote inside s
+// is closed, backslash-escaped, and reopened (quote-backslash-quote-
+// quote), the only escape POSIX single quoting needs; everything else
+// ($, backticks, double quotes, spaces, backslashes) is literal inside
+// single quotes. JSON marshaling is NOT shell quoting (review 099
+// must-fix 2) — callers quote first, then marshal the completed command.
 func PosixQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }

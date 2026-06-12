@@ -255,8 +255,9 @@ func CheckInjectable(path, wrapKey, asset string, events map[string][]json.RawMe
 }
 
 // CommandStrings recursively collects every string value under a
-// "command" key inside one JSON value (claude nests commands inside
-// hooks[]; codex entries hold them flat).
+// "command" key inside one JSON value (both hosts nest commands inside
+// a matcher group's hooks[] — review 099; recursion also tolerates any
+// future flat entry shape).
 func CommandStrings(raw json.RawMessage) []string {
 	var v any
 	if err := json.Unmarshal(raw, &v); err != nil {

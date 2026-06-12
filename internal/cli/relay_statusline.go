@@ -194,12 +194,20 @@ func newStatuslineDoctorCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// Emit the report FIRST, then map mismatch to the warn exit in
+			// BOTH modes (review 101 blocker: drift is warn-grade exit 1).
 			if asJSON {
-				return printJSON(cmd, map[string]string{"path": path, "state": string(state)})
+				if err := printJSON(cmd, map[string]string{"path": path, "state": string(state)}); err != nil {
+					return err
+				}
+			} else {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s: %s\n", path, state)
+				if state == relay.StatuslineMismatch {
+					_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  warning: relay-owned but not this binary's command — rerun `oma relay statusline install` to refresh")
+				}
 			}
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s: %s\n", path, state)
 			if state == relay.StatuslineMismatch {
-				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  warning: relay-owned but not this binary's command — rerun `oma relay statusline install` to refresh")
+				return Errf(ExitWarn, "statusLine binary drift (mismatch)")
 			}
 			return nil
 		}),

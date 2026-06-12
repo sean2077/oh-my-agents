@@ -265,18 +265,24 @@ func newRelayHooksDoctorCmd() *cobra.Command {
 				drifted = drifted || drift
 				report[tgt.agent] = map[string]any{"path": tgt.path, "events": wired, "drift": drift}
 			}
+			// Emit the report FIRST (json or text), then map drift to the
+			// warn exit so both modes honor the contract (review 101
+			// blocker: the JSON branch must not bypass exit 1).
 			if asJSON {
-				return printJSON(cmd, report)
-			}
-			out := cmd.OutOrStdout()
-			for _, tgt := range targets {
-				info := report[tgt.agent].(map[string]any)
-				_, _ = fmt.Fprintf(out, "%s (%s):\n", tgt.agent, info["path"])
-				for _, ev := range relayHookEvents {
-					_, _ = fmt.Fprintf(out, "  %-14s %v\n", ev, info["events"].(map[string]bool)[ev])
+				if err := printJSON(cmd, report); err != nil {
+					return err
 				}
-				if info["drift"].(bool) {
-					_, _ = fmt.Fprintf(out, "  warning: wired to a different oma binary than %s — rerun `oma relay hooks install` to refresh\n", exe)
+			} else {
+				out := cmd.OutOrStdout()
+				for _, tgt := range targets {
+					info := report[tgt.agent].(map[string]any)
+					_, _ = fmt.Fprintf(out, "%s (%s):\n", tgt.agent, info["path"])
+					for _, ev := range relayHookEvents {
+						_, _ = fmt.Fprintf(out, "  %-14s %v\n", ev, info["events"].(map[string]bool)[ev])
+					}
+					if info["drift"].(bool) {
+						_, _ = fmt.Fprintf(out, "  warning: wired to a different oma binary than %s — rerun `oma relay hooks install` to refresh\n", exe)
+					}
 				}
 			}
 			if drifted {
