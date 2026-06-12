@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
 # Install the latest oma from the main branch into ~/.local/bin by default.
+# On Windows, run from Git Bash; the default binary name is oma.exe.
 set -euo pipefail
 
 REPO_URL="${OMA_INSTALL_REPO:-https://github.com/sean2077/oh-my-agents.git}"
 REF="${OMA_INSTALL_REF:-main}"
 BIN_DIR="${OMA_INSTALL_BIN_DIR:-$HOME/.local/bin}"
-BIN_NAME="${OMA_INSTALL_BIN_NAME:-oma}"
+case "$(uname -s 2>/dev/null || true)" in
+  MINGW*|MSYS*|CYGWIN*) DEFAULT_BIN_NAME="oma.exe" ;;
+  *) DEFAULT_BIN_NAME="oma" ;;
+esac
+BIN_NAME="${OMA_INSTALL_BIN_NAME:-$DEFAULT_BIN_NAME}"
 
 need() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -51,7 +56,7 @@ case ":$PATH:" in
   *":$BIN_DIR:"*) ;;
   *)
     echo "NOTE: $BIN_DIR is not on PATH."
-    echo "Add it to your shell profile, for example:"
+    echo "Add it to your shell profile, for example (Git Bash on Windows uses the same line):"
     echo "  export PATH=\"$BIN_DIR:\$PATH\""
     ;;
 esac

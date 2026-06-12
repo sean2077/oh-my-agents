@@ -28,6 +28,8 @@ Four core workflow skills (the "core4"):
 | **autopilot** | End-to-end autonomous delivery (clarify -> plan -> implement -> verify -> deliver) with resumable phase state in `oma state`. Pure markdown; no dedicated command group. |
 | **pair-delivery** | Cross-agent delivery over the `oma relay` ledger (plan -> review -> implement -> review -> decision) with an explicit lead and rule-based role-swap escalation. |
 
+> **The skills require the `oma` CLI.** They are deliberately *not* standalone prompts: every mechanical step (state, scoring gates, sequence-numbered ledger operations) shells out to `oma`, and a skill invoked without the binary on `PATH` stops at its first command. Install the CLI first, then the skills. By the same principle, skill bodies carry only the core workflow — installation and platform guidance live here in the README, never in a `SKILL.md`.
+
 ## Install the CLI
 
 Install the latest `oma` from the main branch into `~/.local/bin`:
@@ -36,7 +38,7 @@ Install the latest `oma` from the main branch into `~/.local/bin`:
 curl -fsSL https://raw.githubusercontent.com/sean2077/oh-my-agents/main/scripts/install.sh | bash
 ```
 
-The installer builds from source, writes `oma` to `${OMA_INSTALL_BIN_DIR:-$HOME/.local/bin}`, and prints a PATH hint if that directory is not already on `PATH`. Override the destination with `OMA_INSTALL_BIN_DIR=/some/bin`.
+The installer builds from source, writes `oma` to `${OMA_INSTALL_BIN_DIR:-$HOME/.local/bin}`, and prints a PATH hint if that directory is not already on `PATH`. Override the destination with `OMA_INSTALL_BIN_DIR=/some/bin`. On Windows, run the same command from Git Bash; it installs `oma.exe` to `$HOME/.local/bin`, and Git Bash can invoke it as `oma` once that directory is on `PATH`. Release builds also include Windows `amd64` and `arm64` binaries once versioned releases are published.
 
 You can also build from a checkout:
 
@@ -50,6 +52,8 @@ go build -o oma ./cmd/oma
 Once releases are published, `oma self-update` updates the binary in place from the pinned GitHub Releases (checksum-verified, atomic, with automatic rollback).
 
 ## Install the skills
+
+**Prerequisite: the `oma` CLI must be installed and on `PATH`** (see above) — the skills drive it for every mechanical step and do not work without it.
 
 ```bash
 # With oma, from a checkout of this repository
