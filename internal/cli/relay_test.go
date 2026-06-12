@@ -133,3 +133,45 @@ func TestRelayPreflightCLI(t *testing.T) {
 		t.Fatalf("v1-root preflight exit %d, want %d", code, ExitState)
 	}
 }
+
+func TestRelayStatuslineCLI(t *testing.T) {
+	t.Setenv("OMA_RELAY_AUTHOR", "claude")
+	t.Setenv("CLAUDE_CODE_SESSION_ID", "")
+	t.Setenv("CODEX_THREAD_ID", "")
+
+	// Render path must never error into the status bar: uninitialized
+	// ledger (bad --ledger-root parent) degrades to a line, exit 0.
+	ledger := filepath.Join(t.TempDir(), "relay")
+	if code, out := runRelay(t, "relay", "statusline", "--ledger-root", ledger); code != ExitOK {
+		t.Fatalf("uninitialized statusline exit %d: %s", code, out)
+	}
+	if code, out := runRelay(t, "relay", "init", "--ledger-root", ledger); code != ExitOK {
+		t.Fatalf("init %d: %s", code, out)
+	}
+	if code, out := runRelay(t, "relay", "pair", "new", "demo", "--ledger-root", ledger); code != ExitOK {
+		t.Fatalf("pair new %d: %s", code, out)
+	}
+	code, out := runRelay(t, "relay", "statusline", "--ledger-root", ledger)
+	if code != ExitOK || !strings.Contains(out, "demo") || !strings.Contains(out, "your turn") {
+		t.Fatalf("statusline exit %d: %s", code, out)
+	}
+	if code, out := runRelay(t, "relay", "statusline", "--ledger-root", ledger, "--json"); code != ExitOK || !strings.Contains(out, `"oma-relay-statusline/1"`) {
+		t.Fatalf("statusline --json exit %d: %s", code, out)
+	}
+
+	// install/doctor against an isolated HOME (claude settings.json).
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if code, out := runRelay(t, "relay", "statusline", "doctor"); code != ExitOK || !strings.Contains(out, "absent") {
+		t.Fatalf("doctor absent exit %d: %s", code, out)
+	}
+	if code, out := runRelay(t, "relay", "statusline", "install"); code != ExitOK || !strings.Contains(out, "installed") {
+		t.Fatalf("install exit %d: %s", code, out)
+	}
+	if code, out := runRelay(t, "relay", "statusline", "doctor"); code != ExitOK || !strings.Contains(out, "owned") {
+		t.Fatalf("doctor owned exit %d: %s", code, out)
+	}
+	if code, _ := runRelay(t, "relay", "statusline", "uninstall"); code != ExitOK {
+		t.Fatalf("uninstall exit %d", code)
+	}
+}

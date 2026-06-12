@@ -46,6 +46,7 @@ func newRelayCmd() *cobra.Command {
 	cmd.AddCommand(
 		newRelayInitCmd(&ledgerRoot),
 		newRelayPreflightCmd(&ledgerRoot),
+		newRelayStatuslineCmd(&ledgerRoot),
 		newRelayPairCmd(&ledgerRoot),
 		newRelayDraftCmd(&ledgerRoot),
 		newRelayPublishCmd(&ledgerRoot),

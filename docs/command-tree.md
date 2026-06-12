@@ -76,6 +76,8 @@ oma ralph status [--id <id>] [--json]
 ```
 oma relay init [--ledger-root <path>]
 oma relay preflight [--json]
+oma relay statusline [--json] [--watch] [--no-color] [--pair <slug>]
+oma relay statusline install [--force] | uninstall | doctor [--json]
 oma relay pair new <topic-slug> [--peer <name>] [--json]
 oma relay pair ensure [--json]
 oma relay pair join <slug> [--json]

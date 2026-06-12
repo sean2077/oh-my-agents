@@ -126,7 +126,7 @@ publish 步骤（严格顺序）：从草稿**渲染**正式内容 → 写 `NNN-
 - `--json`：schema `oma-relay-preflight/1`，字段稳定供 B13/B14 复用。
 - SessionStart（B14）**不跑全量 preflight**——用轻量有界 stale/residue/status 检查（FS 探针在共享挂载上偏贵）；全量 preflight 仅人工触发。
 
-### 12.2 `oma relay statusline`（B13，待实现）
+### 12.2 `oma relay statusline`（B13，已实现）
 
 紧凑「哪个 pair / 轮到谁 / 最新 seq·kind·status」行 + `--watch` 看板 + `install/uninstall/doctor`。安全属性（硬验收）：**纯读**（不 GC、不改 last_seen/心跳、零账本写）、**绑定作用域**（未绑定窗口不显示孤 active pair）、**仅 claude 装**（Codex 无命令式 statusline）、单 `statusLine` 槽不覆盖（除非 `--force`）、渲染/子进程**自限时**（挂载卡死不拖死 UI）。
 
