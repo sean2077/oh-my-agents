@@ -10,4 +10,4 @@ First end-to-end implementation of `oma` and the core skill set. No versioned re
 
 - **CLI (`oma`)**: asset install/projection/rollback with a fail-closed security contract; hook fragment injection with a token-exact byte contract; `doctor` diagnostics and the resident-token budget gate; the relay v2 pair ledger (atomic publish, integrity sidecars, sequence reservation, `wait` handoff); solidified `interview` and `ralph` workflow surfaces; checksum-verified `self-update`.
 - **Skills**: the four core workflow skills (`deep-interview`, `ralph`, `autopilot`, `pair-delivery`), agent-neutral and projected to both Claude Code and Codex. Total resident surface: ~275 tokens.
-- **Tooling**: cross-platform release build script, changelog-driven release notes, and CI (test matrix + `gofmt`/`vet`/`build` + `golangci-lint`).
+- **Tooling**: main-branch install script, cross-platform release build script, changelog-driven release notes, and CI (test matrix + `gofmt`/`vet`/`build` + `golangci-lint`).

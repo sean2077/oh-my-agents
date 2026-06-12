@@ -28,9 +28,17 @@ Four core workflow skills (the "core4"):
 | **autopilot** | End-to-end autonomous delivery (clarify -> plan -> implement -> verify -> deliver) with resumable phase state in `oma state`. Pure markdown; no dedicated command group. |
 | **pair-delivery** | Cross-agent delivery over the `oma relay` ledger (plan -> review -> implement -> review -> decision) with an explicit lead and rule-based role-swap escalation. |
 
-## Install
+## Install the CLI
 
-This project is pre-1.0 and not yet published as a release. Build from source:
+Install the latest `oma` from the main branch into `~/.local/bin`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/sean2077/oh-my-agents/main/scripts/install.sh | bash
+```
+
+The installer builds from source, writes `oma` to `${OMA_INSTALL_BIN_DIR:-$HOME/.local/bin}`, and prints a PATH hint if that directory is not already on `PATH`. Override the destination with `OMA_INSTALL_BIN_DIR=/some/bin`.
+
+You can also build from a checkout:
 
 ```bash
 git clone https://github.com/sean2077/oh-my-agents
@@ -41,17 +49,24 @@ go build -o oma ./cmd/oma
 
 Once releases are published, `oma self-update` updates the binary in place from the pinned GitHub Releases (checksum-verified, atomic, with automatic rollback).
 
+## Install the skills
+
+```bash
+# With oma, from a checkout of this repository
+./oma asset install --from assets deep-interview ralph autopilot pair-delivery
+
+# Or directly through the npx skills installer
+npx skills add sean2077/oh-my-agents -g --agent claude-code codex
+```
+
 ## Quickstart
 
 ```bash
-# Install the core skills from this checkout (projects to both Claude Code and Codex by default)
-./oma asset install --from assets deep-interview ralph autopilot pair-delivery
-
 # See what is installed and healthy
-./oma asset list --installed
+oma asset list --installed
 
 # Check the resident-context budget gate
-./oma doctor budget --agent claude --profile core4
+oma doctor budget --agent claude --profile core4
 ```
 
 ## Command surface
