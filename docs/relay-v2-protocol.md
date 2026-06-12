@@ -130,7 +130,7 @@ publish 步骤（严格顺序）：从草稿**渲染**正式内容 → 写 `NNN-
 
 紧凑「哪个 pair / 轮到谁 / 最新 seq·kind·status」行 + `--watch` 看板 + `install/uninstall/doctor`。安全属性（硬验收）：**纯读**（不 GC、不改 last_seen/心跳、零账本写）、**绑定作用域**（未绑定窗口不显示孤 active pair）、**仅 claude 装**（Codex 无命令式 statusline）、单 `statusLine` 槽不覆盖（除非 `--force`）、渲染/子进程**自限时**（挂载卡死不拖死 UI）。
 
-### 12.3 `oma relay hooks`（B14，待实现）
+### 12.3 `oma relay hooks`（B14，已实现）
 
 `hooks install|uninstall|status|doctor --target claude|codex|both` + **隐藏**派发器 `hook <event>`（机器调用，不计入公开组、不入 refcheck）。派发器读宿主 hook 载荷、解析绑定 pair 状态、按平台输出正确 JSON、**绝不弄坏宿主**（内部任何错 → exit 0 静默，除 PreToolUse 的有意 deny）：
 

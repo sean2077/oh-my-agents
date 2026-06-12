@@ -175,3 +175,69 @@ func TestRelayStatuslineCLI(t *testing.T) {
 		t.Fatalf("uninstall exit %d", code)
 	}
 }
+
+func TestRelayHooksCLI(t *testing.T) {
+	t.Setenv("OMA_RELAY_AUTHOR", "claude")
+	t.Setenv("CLAUDE_CODE_SESSION_ID", "")
+	t.Setenv("CODEX_THREAD_ID", "")
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	// doctor before install: nothing wired.
+	if code, out := runRelay(t, "relay", "hooks", "doctor", "--target", "claude"); code != ExitOK || strings.Contains(out, "true") {
+		t.Fatalf("pre-install doctor exit %d: %s", code, out)
+	}
+	// install claude → all three events wired.
+	if code, out := runRelay(t, "relay", "hooks", "install", "--target", "claude"); code != ExitOK || !strings.Contains(out, "installed") {
+		t.Fatalf("install exit %d: %s", code, out)
+	}
+	code, out := runRelay(t, "relay", "hooks", "doctor", "--target", "claude")
+	if code != ExitOK {
+		t.Fatalf("doctor exit %d", code)
+	}
+	for _, ev := range []string{"SessionStart", "PreToolUse", "Stop"} {
+		if !strings.Contains(out, ev) {
+			t.Fatalf("doctor missing %s: %s", ev, out)
+		}
+	}
+	// idempotent reinstall, then uninstall strips relay entries.
+	if code, _ := runRelay(t, "relay", "hooks", "install", "--target", "claude"); code != ExitOK {
+		t.Fatal("reinstall must be idempotent")
+	}
+	if code, _ := runRelay(t, "relay", "hooks", "uninstall", "--target", "claude"); code != ExitOK {
+		t.Fatal("uninstall failed")
+	}
+	if _, out := runRelay(t, "relay", "hooks", "doctor", "--target", "claude", "--json"); strings.Contains(out, "true") {
+		t.Fatalf("after uninstall nothing should be wired: %s", out)
+	}
+}
+
+func TestRelayHookDispatchHiddenAndSilentWhenUnconfigured(t *testing.T) {
+	t.Setenv("OMA_RELAY_AUTHOR", "claude")
+	t.Setenv("CLAUDE_CODE_SESSION_ID", "")
+	t.Setenv("CODEX_THREAD_ID", "")
+	// The dispatcher must never error into the host even with no ledger.
+	dir := t.TempDir()
+	t.Chdir(dir)
+	root := newRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetIn(strings.NewReader(`{"hook_event_name":"Stop","stop_hook_active":false}`))
+	root.SetArgs([]string{"relay", "hook", "Stop"})
+	if code := executeWith(root, &out); code != ExitOK {
+		t.Fatalf("dispatch with no ledger exit %d: %s", code, out.String())
+	}
+	if strings.TrimSpace(out.String()) != "" {
+		t.Fatalf("dispatch with no ledger must be silent, got %q", out.String())
+	}
+	// The dispatcher is hidden from help.
+	var help bytes.Buffer
+	h := newRootCmd()
+	h.SetOut(&help)
+	h.SetArgs([]string{"relay", "--help"})
+	_ = h.Execute()
+	if strings.Contains(help.String(), "hook ") && strings.Contains(help.String(), "<event>") {
+		t.Fatalf("dispatcher should be hidden from relay --help:\n%s", help.String())
+	}
+}
