@@ -1,8 +1,9 @@
 // Package hookcfg edits agent host configuration files — claude's
-// ~/.claude/settings.json (events under a top-level "hooks" key) and
-// codex's ~/.codex/hooks.json (the whole document is the event map) — to
-// inject and remove oma-managed hook entries (docs/adapter-conformance.md
-// §2, docs/security-contract.md §6).
+// ~/.claude/settings.json and codex's ~/.codex/hooks.json (both nest
+// events under a top-level "hooks" key; codex's sibling "state" trust
+// map is preserved like any foreign key — review 099) — to inject and
+// remove oma-managed hook entries (docs/adapter-conformance.md §2,
+// docs/security-contract.md §6).
 //
 // Ownership is per-entry: every injected entry carries Marker
 // ("_oma_asset": "<asset-name>"). Injection replaces that asset's marked
