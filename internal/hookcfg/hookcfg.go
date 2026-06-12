@@ -44,8 +44,12 @@ const Marker = "_oma_asset"
 // (docs/schemas.md: unknown majors fail closed).
 const FragmentSchema = "oma-hook-fragment/1"
 
-// WrapKeySettings is the claude shape: events nest under "hooks".
-// WrapKeyNone is the codex shape: the document root is the event map.
+// WrapKeySettings is the shape BOTH current hosts use: events nest under
+// a top-level "hooks" key (claude settings.json AND codex hooks.json —
+// real-host evidence, review 099; codex's sibling "state" trust map is
+// preserved verbatim like any foreign top-level key). WrapKeyNone
+// (document root IS the event map) remains an editor capability for
+// future hosts; no current agent maps to it.
 const (
 	WrapKeySettings = "hooks"
 	WrapKeyNone     = ""

@@ -22,7 +22,7 @@
 |---|---|---|---|
 | skill | `~/.agents/skills/<name>/` | 软链 `~/.claude/skills/<name>` | 按 codex skills 约定位软链；不支持时不投影 + doctor 警告 |
 | subagent | `~/.agents/agents/<name>.md` | 软链 `~/.claude/agents/<name>.md` | **不投影**（Codex 无 subagent）+ manifest.fallback 说明 |
-| hook | `~/.agents/hooks/<name>/` | fragment 原子合并入 `~/.claude/settings.json` 的 `hooks` 键 | fragment 合并入 `~/.codex/hooks.json`（文档根即 event 映射；缺失视为 `{}`；一次性 /hooks 信任由用户完成） |
+| hook | `~/.agents/hooks/<name>/` | fragment 原子合并入 `~/.claude/settings.json` 的 `hooks` 键 | fragment 合并入 `~/.codex/hooks.json` 的顶层 `hooks` 键（与 claude 同构的嵌套 matcher 组——B14b 真机证据修正，原「文档根即 event 映射」有误；同级 `state` 信任表等外来顶层键逐字节保留；缺失视为 `{}`；一次性 /hooks 信任由用户完成） |
 | prompt | `~/.agents/prompts/<name>.md` | （按需）`~/.claude/commands/` | `~/.codex/prompts/<name>.md` |
 
 - 投影一律软链优先；无法软链的注入型（hook fragment）走「读-合并-写 tmp-rename + .oma-bak」原子流程，字节契约与失败语义见 security-contract §4。

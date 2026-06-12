@@ -56,13 +56,14 @@ func For(home, agent, assetType, assetName string) (Target, bool, string) {
 }
 
 // HookWrapKey returns the JSON key wrapping the event map in the agent's
-// host config file: claude keeps events under settings.json's "hooks"
-// key; codex's hooks.json root IS the event map ("").
+// host config file. BOTH hosts wrap events under a top-level "hooks"
+// key: claude in settings.json, codex in hooks.json (real-host evidence,
+// review 099 — codex's hooks.json additionally carries a sibling "state"
+// trust map, which the byte-exact editor preserves verbatim like any
+// foreign top-level key). The earlier root-is-event-map belief for codex
+// was wrong; nothing would have consumed entries injected at the root.
 func HookWrapKey(agent string) string {
-	if agent == "claude" {
-		return "hooks"
-	}
-	return ""
+	return "hooks"
 }
 
 // AgentRoot is the trusted root for one agent's projections; projection

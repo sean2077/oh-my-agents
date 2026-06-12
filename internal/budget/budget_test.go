@@ -196,7 +196,7 @@ func installHookAsset(t *testing.T, home, name, command string) *asset.Engine {
 	manifest := `{"schema":"oma-asset/1","name":"` + name + `","type":"hook","targets":["claude","codex"]}`
 	fragment := `{"schema":"oma-hook-fragment/1",
 		"claude":{"Stop":[{"hooks":[{"type":"command","command":"` + command + `"}]}]},
-		"codex":{"Stop":[{"command":"` + command + `"}]}}`
+		"codex":{"Stop":[{"hooks":[{"type":"command","command":"` + command + `"}]}]}}`
 	if err := os.WriteFile(filepath.Join(src, "manifest.json"), []byte(manifest), 0o600); err != nil {
 		t.Fatal(err)
 	}

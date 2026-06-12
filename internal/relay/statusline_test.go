@@ -93,26 +93,51 @@ func TestStatuslineJSONShape(t *testing.T) {
 
 func TestStatuslineInstallLifecycle(t *testing.T) {
 	settings := filepath.Join(t.TempDir(), "settings.json")
+	// A hostile binary path: spaces and a single quote must survive POSIX
+	// quoting (review 099 must-fix 2).
+	exe := "/opt/o m a's bin/oma"
 
 	// absent → install sets ours.
-	if state, _ := DoctorStatusline(settings); state != StatuslineAbsent {
+	if state, _ := DoctorStatusline(settings, exe); state != StatuslineAbsent {
 		t.Fatalf("initial state = %s", state)
 	}
-	if err := InstallStatusline(settings, false); err != nil {
+	if err := InstallStatusline(settings, exe, false); err != nil {
 		t.Fatal(err)
 	}
-	if state, _ := DoctorStatusline(settings); state != StatuslineOwned {
+	if state, _ := DoctorStatusline(settings, exe); state != StatuslineOwned {
 		t.Fatalf("after install = %s, want owned", state)
 	}
+	// The installed command embeds the guarded, single-quoted absolute
+	// path and the dispatcher invocation (decode the JSON: shell quoting
+	// must hold AFTER JSON unescaping).
+	raw, _ := os.ReadFile(settings)
+	var host struct {
+		StatusLine struct {
+			Command string `json:"command"`
+		} `json:"statusLine"`
+	}
+	if err := json.Unmarshal(raw, &host); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`'/opt/o m a'\''s bin/oma'`, "|| exit 0", statuslineInvocation} {
+		if !strings.Contains(host.StatusLine.Command, want) {
+			t.Fatalf("installed command missing %q: %q", want, host.StatusLine.Command)
+		}
+	}
 	// idempotent reinstall.
-	if err := InstallStatusline(settings, false); err != nil {
+	if err := InstallStatusline(settings, exe, false); err != nil {
 		t.Fatalf("reinstall: %v", err)
 	}
+	// A DIFFERENT binary sees the slot as owned-but-drifted (mismatch,
+	// warn-grade — reinstall refreshes; review 099).
+	if state, _ := DoctorStatusline(settings, "/elsewhere/oma"); state != StatuslineMismatch {
+		t.Fatalf("other-binary view = %s, want mismatch", state)
+	}
 	// uninstall removes ours.
-	if state, err := UninstallStatusline(settings); err != nil || state != StatuslineOwned {
+	if state, err := UninstallStatusline(settings, exe); err != nil || state != StatuslineOwned {
 		t.Fatalf("uninstall = %s err=%v", state, err)
 	}
-	if state, _ := DoctorStatusline(settings); state != StatuslineAbsent {
+	if state, _ := DoctorStatusline(settings, exe); state != StatuslineAbsent {
 		t.Fatalf("after uninstall = %s, want absent", state)
 	}
 }
@@ -130,28 +155,28 @@ func TestStatuslineNeverClobbersForeign(t *testing.T) {
 	if err := os.WriteFile(settings, []byte(foreign), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if state, _ := DoctorStatusline(settings); state != StatuslineForeign {
+	if state, _ := DoctorStatusline(settings, "/bin/oma"); state != StatuslineForeign {
 		t.Fatalf("foreign state = %s", state)
 	}
 	// install without --force refuses and writes nothing.
-	if err := InstallStatusline(settings, false); err == nil {
+	if err := InstallStatusline(settings, "/bin/oma", false); err == nil {
 		t.Fatal("must refuse a foreign statusLine without --force")
 	}
 	if got, _ := os.ReadFile(settings); string(got) != foreign {
 		t.Fatalf("refused install mutated the file:\n%s", got)
 	}
 	// uninstall leaves the foreign one intact.
-	if state, _ := UninstallStatusline(settings); state != StatuslineForeign {
+	if state, _ := UninstallStatusline(settings, "/bin/oma"); state != StatuslineForeign {
 		t.Fatalf("uninstall foreign = %s", state)
 	}
 	if got, _ := os.ReadFile(settings); string(got) != foreign {
 		t.Fatal("uninstall removed a foreign statusLine")
 	}
 	// --force replaces it; the model key is preserved.
-	if err := InstallStatusline(settings, true); err != nil {
+	if err := InstallStatusline(settings, "/bin/oma", true); err != nil {
 		t.Fatal(err)
 	}
-	if state, _ := DoctorStatusline(settings); state != StatuslineOwned {
+	if state, _ := DoctorStatusline(settings, "/bin/oma"); state != StatuslineOwned {
 		t.Fatalf("after force = %s", state)
 	}
 	if got, _ := os.ReadFile(settings); !strings.Contains(string(got), `"model"`) {
@@ -166,14 +191,14 @@ func TestStatuslineMismatchReinstalls(t *testing.T) {
 	if err := os.WriteFile(settings, []byte(drifted), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if state, _ := DoctorStatusline(settings); state != StatuslineMismatch {
+	if state, _ := DoctorStatusline(settings, "/bin/oma"); state != StatuslineMismatch {
 		t.Fatalf("drifted = %s, want mismatch", state)
 	}
 	// install (no force) fixes our own drifted entry.
-	if err := InstallStatusline(settings, false); err != nil {
+	if err := InstallStatusline(settings, "/bin/oma", false); err != nil {
 		t.Fatal(err)
 	}
-	if state, _ := DoctorStatusline(settings); state != StatuslineOwned {
+	if state, _ := DoctorStatusline(settings, "/bin/oma"); state != StatuslineOwned {
 		t.Fatalf("after fix = %s", state)
 	}
 }

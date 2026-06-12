@@ -129,18 +129,31 @@ func renderStatusline(st *StatuslineState) string {
 
 // --- install / uninstall / doctor (Claude Code statusLine, §12.2) ---
 
-// statuslineCommand is the relay-owned statusLine command; statuslineMarker
-// stamps ownership so a foreign statusLine is never mistaken for ours.
+// statuslineMarker stamps ownership so a foreign statusLine is never
+// mistaken for ours; statuslineInvocation is the dispatcher suffix every
+// relay-owned command carries regardless of binary path.
 const (
-	statuslineCommand = "oma relay statusline"
-	statuslineMarker  = "_oma_relay"
-	statuslineMarkVal = "statusline"
+	statuslineInvocation = "relay statusline"
+	statuslineMarker     = "_oma_relay"
+	statuslineMarkVal    = "statusline"
 )
 
-// statuslineValue is the canonical relay statusLine object.
-var statuslineValue = json.RawMessage(fmt.Sprintf(
-	`{"type": "command", "command": %q, %q: %q}`,
-	statuslineCommand, statuslineMarker, statuslineMarkVal))
+// statuslineCommand is the canonical statusLine command for the binary at
+// exe: absolute path behind an existence guard, POSIX-single-quoted
+// (review 099 — never PATH-dependent, never noisy after binary removal).
+func statuslineCommand(exe string) string {
+	return hookcfg.GuardedCommand(exe, statuslineInvocation)
+}
+
+// statuslineValue renders the canonical relay statusLine object for exe.
+func statuslineValue(exe string) (json.RawMessage, error) {
+	v := struct {
+		Type    string `json:"type"`
+		Command string `json:"command"`
+		Marker  string `json:"_oma_relay"`
+	}{"command", statuslineCommand(exe), statuslineMarkVal}
+	return json.Marshal(v)
+}
 
 // StatuslineDoctorState reports the wiring of a host statusLine without
 // mutating anything.
@@ -157,8 +170,11 @@ const (
 var ErrStatuslineSlotTaken = errors.New("a non-relay statusLine is already configured (use --force to replace)")
 
 // DoctorStatusline classifies the statusLine slot in a host settings file
-// (pure read, no mutation).
-func DoctorStatusline(settingsPath string) (StatuslineDoctorState, error) {
+// (pure read, no mutation). exe anchors the canonical-command comparison:
+// owned = relay marker AND byte-identical to the canonical command for
+// THIS binary; owned-but-different (older path, pre-guard format) is
+// mismatch — warn-grade, a reinstall refreshes it (review 099).
+func DoctorStatusline(settingsPath, exe string) (StatuslineDoctorState, error) {
 	raw, found, err := hookcfg.GetTopLevel(settingsPath, "statusLine")
 	if err != nil {
 		return "", err
@@ -170,7 +186,7 @@ func DoctorStatusline(settingsPath string) (StatuslineDoctorState, error) {
 	switch {
 	case !owned:
 		return StatuslineForeign, nil
-	case cmd == statuslineCommand:
+	case cmd == statuslineCommand(exe):
 		return StatuslineOwned, nil
 	default:
 		return StatuslineMismatch, nil
@@ -179,22 +195,26 @@ func DoctorStatusline(settingsPath string) (StatuslineDoctorState, error) {
 
 // InstallStatusline wires the relay statusLine into a Claude settings.json.
 // A foreign slot is refused unless force; an owned/mismatched/absent slot is
-// set to the canonical value (idempotent).
-func InstallStatusline(settingsPath string, force bool) error {
-	state, err := DoctorStatusline(settingsPath)
+// set to the canonical value for exe (idempotent).
+func InstallStatusline(settingsPath, exe string, force bool) error {
+	state, err := DoctorStatusline(settingsPath, exe)
 	if err != nil {
 		return err
 	}
 	if state == StatuslineForeign && !force {
 		return ErrStatuslineSlotTaken
 	}
-	return hookcfg.SetTopLevel(settingsPath, "statusLine", statuslineValue)
+	value, err := statuslineValue(exe)
+	if err != nil {
+		return err
+	}
+	return hookcfg.SetTopLevel(settingsPath, "statusLine", value)
 }
 
-// UninstallStatusline removes only a relay-owned statusLine; a foreign one is
-// left intact (reported via the returned state).
-func UninstallStatusline(settingsPath string) (StatuslineDoctorState, error) {
-	state, err := DoctorStatusline(settingsPath)
+// UninstallStatusline removes only a relay-owned statusLine (owned or
+// mismatched); a foreign one is left intact (reported via the state).
+func UninstallStatusline(settingsPath, exe string) (StatuslineDoctorState, error) {
+	state, err := DoctorStatusline(settingsPath, exe)
 	if err != nil {
 		return "", err
 	}

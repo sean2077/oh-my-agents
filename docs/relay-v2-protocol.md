@@ -139,4 +139,11 @@ publish 步骤（严格顺序）：从草稿**渲染**正式内容 → 写 `NNN-
 - **Stop**：对端发布且 addressed-to-me 时**自动续turn**；护栏（硬验收）：防循环（`stop_hook_active` → exit 0 静默）、严格绑定（等价 `--require-binding`，未绑定静默）、有界状态（短状态面非 waiter，超时/失败 → exit 0 静默 + 诊断 trail）、去重（稳定指纹，不变则静默）、输出 `decision:"block"` 续turn 且**绝不**配 `continue:false`。
 - 安装复用 hookcfg 注入双端、relay 专属 marker、幂等、Codex `/hooks` 一次性信任提示。
 
+**安装面加固（B14b，评审 099）**：
+
+- **形状（真机证据）**：两端宿主均为顶层 `hooks` 键包裹的嵌套 matcher 组（claude `settings.json`、codex `hooks.json`——codex 同级 `state` 信任表按外来顶层键逐字节保留）。早先「codex 根即事件表」的认定有误，按根注入的条目宿主不会消费。
+- **matcher 作用域**：SessionStart `startup|resume|clear`（timeout 10s）；PreToolUse claude `^(Edit|Write|MultiEdit)$`、codex `^(apply_patch|Edit|Write)$`（timeout 5s）；Stop 无 matcher（timeout 5s）。无 matcher 的 PreToolUse 会让派发器对每次工具调用 spawn 一次——禁止。
+- **命令串**：安装时解析的**绝对二进制路径** + 存在性守卫（unix：`[ -x '<path>' ] || exit 0; exec '<path>' …`，路径经 POSIX 单引号转义——JSON 序列化不是 shell 引用；windows：裸引号命令，无守卫，文档化限制）。statusLine 命令同构。解决两类失效：宿主裁剪 PATH 导致 hook 静默不触发；二进制被移除后宿主每次调用刷 command-not-found。失效模式取**静默跳过**，噪音归 doctor。
+- **doctor 漂移语义（warn 级）**：己有条目仍调用 `relay hook <event>` 即 wired=true；与当前二进制的规范命令不一致报 drift 警告（exit 1），提示重装刷新——多版本共存不是 broken。statusline doctor 的 `mismatch` 同语义（重装修复）。
+
 **切换门**：停用 agent-ledger relay 须等 B14 落地——届时体验持平或更好。公开 relay 组终态恰 10（init/pair/draft/publish/wait/status/close/preflight/statusline/hooks；派发器隐藏）。

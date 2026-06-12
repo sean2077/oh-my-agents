@@ -20,9 +20,11 @@ func writeHookSource(t *testing.T, root, name, command string) string {
 		t.Fatal(err)
 	}
 	manifest := `{"schema": "oma-asset/1", "name": "` + name + `", "type": "hook", "targets": ["claude", "codex"]}`
+	// Both hosts take nested matcher-group entries under a top-level
+	// "hooks" key (review 099 real-host evidence).
 	fragment := `{"schema": "oma-hook-fragment/1",
 		"claude": {"Stop": [{"hooks": [{"type": "command", "command": "` + command + `"}]}]},
-		"codex": {"Stop": [{"command": "` + command + `"}]}}`
+		"codex": {"Stop": [{"hooks": [{"type": "command", "command": "` + command + `"}]}]}}`
 	for file, content := range map[string]string{
 		"manifest.json": manifest,
 		"fragment.json": fragment,
@@ -54,8 +56,8 @@ func TestHookInstallInjectsBothAgentsAndRecordsProjections(t *testing.T) {
 		t.Fatalf("want 2 inject ops, got %+v", rep.Ops)
 	}
 	claude, codex := hostPaths(e)
-	for path, wrap := range map[string]string{claude: "hooks", codex: ""} {
-		cmds, err := hookcfg.OwnCommands(path, wrap, "relay-watch")
+	for _, path := range []string{claude, codex} {
+		cmds, err := hookcfg.OwnCommands(path, "hooks", "relay-watch")
 		if err != nil || len(cmds) != 1 || cmds[0] != "oma relay wait --hook" {
 			t.Fatalf("%s: cmds = %v err=%v", path, cmds, err)
 		}
@@ -207,7 +209,7 @@ func TestHookRollbackReinjectsRestoredCommands(t *testing.T) {
 	canonical := filepath.Join(e.Layout.CanonicalRoot(), "hooks", "relay-watch")
 	driftFrag := `{"schema": "oma-hook-fragment/1",
 		"claude": {"Stop": [{"hooks": [{"type": "command", "command": "v1-drifted"}]}]},
-		"codex": {"Stop": [{"command": "v1-drifted"}]}}`
+		"codex": {"Stop": [{"hooks": [{"type": "command", "command": "v1-drifted"}]}]}}`
 	if err := os.WriteFile(filepath.Join(canonical, "fragment.json"), []byte(driftFrag), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -218,8 +220,8 @@ func TestHookRollbackReinjectsRestoredCommands(t *testing.T) {
 		t.Fatalf("rollback: %v", err)
 	}
 	claude, codex := hostPaths(e)
-	for path, wrap := range map[string]string{claude: "hooks", codex: ""} {
-		cmds, err := hookcfg.OwnCommands(path, wrap, "relay-watch")
+	for _, path := range []string{claude, codex} {
+		cmds, err := hookcfg.OwnCommands(path, "hooks", "relay-watch")
 		if err != nil || len(cmds) != 1 || cmds[0] != "v1-drifted" {
 			t.Fatalf("%s after rollback: cmds = %v err=%v, want [v1-drifted]", path, cmds, err)
 		}
