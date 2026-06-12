@@ -4,10 +4,10 @@
 >
 > Section heading format: `## vX.Y.Z - YYYY-MM-DD` (CI matches the tag by exact prefix; a tag with no matching section fails the release, fail-closed).
 
-## Unreleased
+## v0.1.0 - 2026-06-12
 
-First end-to-end implementation of `oma` and the core skill set. No versioned release has been cut yet; the publish point is a user decision.
+First tagged release: the complete `oma` CLI and the core skill set, built end-to-end through the project's own cross-reviewed pair-delivery workflow.
 
-- **CLI (`oma`)**: asset install/projection/rollback with a fail-closed security contract; hook fragment injection with a token-exact byte contract; `doctor` diagnostics and the resident-token budget gate; the relay v2 pair ledger (atomic publish, integrity sidecars, sequence reservation, `wait` handoff); solidified `interview` and `ralph` workflow surfaces; checksum-verified `self-update`.
-- **Skills**: the four core workflow skills (`deep-interview`, `ralph`, `autopilot`, `pair-delivery`), agent-neutral and projected to both Claude Code and Codex. Total resident surface: ~275 tokens.
-- **Tooling**: main-branch install script with Git Bash / Windows `oma.exe` defaults, cross-platform release build script, changelog-driven release notes, and CI (test matrix + `gofmt`/`vet`/`build` + `golangci-lint`).
+- **CLI (`oma`)**: asset install/projection/rollback with a fail-closed security contract; hook fragment injection with a token-exact byte contract; `doctor` diagnostics and the resident-token budget gate; the relay v2 pair ledger (atomic publish, integrity sidecars, sequence reservation, `wait` handoff) with its experience layer — `preflight`, a binding-scoped `statusline`, and auto-continue `hooks` (guarded absolute-path commands with per-event matchers, for both Claude Code and Codex); solidified `interview` and `ralph` workflow surfaces; checksum-verified `self-update`.
+- **Skills**: the four core workflow skills (`deep-interview`, `ralph`, `autopilot`, `pair-delivery`), agent-neutral and projected to both Claude Code and Codex. Total resident surface: ~275 tokens. The skills require the `oma` CLI on `PATH`.
+- **Tooling**: main-branch install script with Git Bash / Windows `oma.exe` defaults, cross-platform release build script (six platforms + a checksums manifest), changelog-driven release notes, and CI (test matrix + `gofmt`/`vet`/`build` + `golangci-lint`).
