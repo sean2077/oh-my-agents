@@ -121,4 +121,4 @@ This project is itself built through its own `pair-delivery` workflow: every sli
 
 ## License
 
-TBD.
+[MIT](LICENSE) © 2026 sean2077
