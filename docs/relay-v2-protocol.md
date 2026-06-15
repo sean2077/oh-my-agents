@@ -126,24 +126,38 @@ publish 步骤（严格顺序）：从草稿**渲染**正式内容 → 写 `NNN-
 - `--json`：schema `oma-relay-preflight/1`，字段稳定供 B13/B14 复用。
 - SessionStart（B14）**不跑全量 preflight**——用轻量有界 stale/residue/status 检查（FS 探针在共享挂载上偏贵）；全量 preflight 仅人工触发。
 
-### 12.2 `oma relay statusline`（B13，已实现）
+### 12.2 `oma relay statusline`（B13，渲染命令）
 
-紧凑「哪个 pair / 轮到谁 / 最新 seq·kind·status」行 + `--watch` 看板 + `install/uninstall/doctor`。安全属性（硬验收）：**纯读**（不 GC、不改 last_seen/心跳、零账本写）、**绑定作用域**（未绑定窗口不显示孤 active pair）、**仅 claude 装**（Codex 无命令式 statusline）、单 `statusLine` 槽不覆盖（除非 `--force`）、渲染/子进程**自限时**（挂载卡死不拖死 UI）。
+紧凑「哪个 pair / 轮到谁 / 最新 seq·kind·status」行 + `--watch` 看板。安全属性（硬验收）：**纯读**（不 GC、不改 last_seen/心跳、零账本写）、**绑定作用域**（未绑定窗口不显示孤 active pair）、渲染/子进程**自限时**（挂载卡死不拖死 UI）。`--json` schema `oma-relay-statusline/1`，供宿主状态行脚本消费。
 
-### 12.3 `oma relay hooks`（B14，已实现）
+> **移除（2026-06-15 用户决定）**：原 `install/uninstall/doctor` 子命令（写入 `~/.claude/settings.json` 的 `statusLine` 槽）已删——用户自管 settings.json，安装向导会覆盖其自定义状态行。手动接线见 §12.4。
 
-`hooks install|uninstall|doctor --target claude|codex|both` + **隐藏**派发器 `hook <event>`（机器调用，不计入公开组、不入 refcheck）。派发器读宿主 hook 载荷、解析绑定 pair 状态、按平台输出正确 JSON、**绝不弄坏宿主**（内部任何错 → exit 0 静默，除 PreToolUse 的有意 deny）：
+### 12.3 `oma relay hook <event>`（B14，隐藏派发器）
+
+**隐藏**派发器 `hook <event>`（机器调用，不计入公开组、不入 refcheck）。读宿主 hook 载荷、解析绑定 pair 状态、按平台输出正确 JSON、**绝不弄坏宿主**（内部任何错 → exit 0 静默，除 PreToolUse 的有意 deny）：
 
 - **SessionStart**：早期提示 + 轻量 stale/residue 摘要（`systemMessage`）。
 - **PreToolUse**：拒改 `.ready` 已发布 artifact（`permissionDecision:deny` + 指向 correction 流程）；不发 Codex 不支持的字段。
 - **Stop**：对端发布且 addressed-to-me 时**自动续turn**；护栏（硬验收）：防循环（`stop_hook_active` → exit 0 静默）、严格绑定（等价 `--require-binding`，未绑定静默）、有界状态（短状态面非 waiter，超时/失败 → exit 0 静默 + 诊断 trail）、去重（稳定指纹，不变则静默）、输出 `decision:"block"` 续turn 且**绝不**配 `continue:false`。
-- 安装复用 hookcfg 注入双端、relay 专属 marker、幂等、Codex `/hooks` 一次性信任提示。
 
-**安装面加固（B14b，评审 099）**：
+> **移除（2026-06-15 用户决定）**：原 `oma relay hooks install|uninstall|doctor --target` 宿主写入组已整组删——派发器本身不变，用户改为手动把下面的条目接入自己的 hooks 配置。
 
-- **形状（真机证据）**：两端宿主均为顶层 `hooks` 键包裹的嵌套 matcher 组（claude `settings.json`、codex `hooks.json`——codex 同级 `state` 信任表按外来顶层键逐字节保留）。早先「codex 根即事件表」的认定有误，按根注入的条目宿主不会消费。
-- **matcher 作用域**：SessionStart `startup|resume|clear`（timeout 10s）；PreToolUse claude `^(Edit|Write|MultiEdit)$`、codex `^(apply_patch|Edit|Write)$`（timeout 5s）；Stop 无 matcher（timeout 5s）。无 matcher 的 PreToolUse 会让派发器对每次工具调用 spawn 一次——禁止。
-- **命令串**：安装时解析的**绝对二进制路径** + 存在性守卫（unix：`[ -x '<path>' ] || exit 0; exec '<path>' …`，路径经 POSIX 单引号转义——JSON 序列化不是 shell 引用；windows：裸引号命令，无守卫，文档化限制）。statusLine 命令同构。解决两类失效：宿主裁剪 PATH 导致 hook 静默不触发；二进制被移除后宿主每次调用刷 command-not-found。失效模式取**静默跳过**，噪音归 doctor。
-- **doctor 漂移语义（warn 级）**：己有条目仍调用 `relay hook <event>` 即 wired=true；与当前二进制的规范命令不一致报 drift 警告（exit 1），提示重装刷新——多版本共存不是 broken。statusline doctor 的 `mismatch` 同语义（重装修复）。
+### 12.4 手动接线参考（用户自管宿主配置）
 
-**切换门**：停用 agent-ledger relay 须等 B14 落地——届时体验持平或更好。公开 relay 组终态恰 10（init/pair/draft/publish/wait/status/close/preflight/statusline/hooks；派发器隐藏）。
+oma 不再写入宿主配置；以下为用户手动接入 `~/.claude/settings.json`（claude）/ `~/.codex/hooks.json`（codex）的规范形状。
+
+- **statusLine（claude，可选）**：把渲染命令接入顶层 `statusLine` 键，存在性守卫避免二进制缺失时刷 command-not-found：
+
+  ```json
+  { "statusLine": { "type": "command",
+    "command": "[ -x '/abs/path/oma' ] || exit 0; exec '/abs/path/oma' relay statusline" } }
+  ```
+
+  已有富状态行脚本者，改为在脚本内调 `oma relay statusline --json` 并按 `.bound` 过滤即可（见本仓 statusline 脚本范式）。
+
+- **hooks 形状（真机证据）**：两端宿主均为顶层 `hooks` 键包裹的嵌套 matcher 组（claude `settings.json`、codex `hooks.json`——codex 同级 `state` 信任表逐字节保留）。每个事件一个 `{type:"command", command, timeout}` 条目。
+- **matcher 作用域 / timeout**：SessionStart `startup|resume|clear`（10s）；PreToolUse claude `^(Edit|Write|MultiEdit)$`、codex `^(apply_patch|Edit|Write)$`（5s）；Stop 无 matcher（5s）。无 matcher 的 PreToolUse 会让派发器对每次工具调用 spawn 一次——务必带 matcher。
+- **命令串守卫**：用**绝对二进制路径** + 存在性守卫（unix：`[ -x '<path>' ] || exit 0; exec '<path>' relay hook <event>`，路径含空格/引号时 POSIX 单引号转义；windows：裸引号命令，无守卫）。解决两类失效：宿主裁剪 PATH 导致 hook 静默不触发；二进制被移除后宿主每次调用刷 command-not-found。
+- **codex 信任**：编辑 codex hooks 后跑一次 `/hooks` 信任新条目。
+
+**切换门**：停用 agent-ledger relay 须等自动续turn 派发器经手动接线验证持平或更好。公开 relay 组终态恰 9（init/pair/draft/publish/wait/status/close/preflight/statusline；`hook <event>` 派发器隐藏，不计入）。

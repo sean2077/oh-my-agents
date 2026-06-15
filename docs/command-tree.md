@@ -77,9 +77,8 @@ oma ralph status [--id <id>] [--json]
 oma relay init [--ledger-root <path>]
 oma relay preflight [--json]
 oma relay statusline [--json] [--watch] [--no-color] [--pair <slug>]
-oma relay statusline install [--force] | uninstall | doctor [--json]
-oma relay hooks install [--target claude|codex|both] | uninstall | doctor [--json]
 # (hidden) oma relay hook <event>   — machine-invoked dispatcher; not a public group
+# 宿主写入命令 statusline/hooks install|uninstall|doctor 已删（2026-06-15）；手动接线见 relay-v2-protocol.md §12.4
 oma relay pair new <topic-slug> [--peer <name>] [--json]
 oma relay pair ensure [--json]
 oma relay pair join <slug> [--json]
@@ -93,8 +92,8 @@ oma relay status [--last N] [--pair <slug>] [--json]
 oma relay close --outcome <approve|reject|abandon> --reason <text> [--pair <slug>]
 ```
 
-- **体验层修订记录（B12-B14，用户决定 2026-06-12 补齐 agent-ledger 体验，加 preflight/statusline/hooks 三组，不做 issue/sync）**：`preflight` 退出码 = `0` 全过 / `1` 有警告 / `3` fail-stop（环境/状态，§1 通则；不用 `2`——`2` 仍归 cobra 用法错误）；legacy `.shared/` 在项目根仅警告，仅显式 `--ledger-root` 指 v1 树才 fail。后续 B13 `statusline`、B14 `hooks` + 隐藏派发器 `hook <event>`（机器调用、不计入公开组、不入 refcheck 示例），公开 relay 组终态恰 10。
-- **B14b 修订记录（评审 099）**：`hooks install` / `statusline install` 写入的宿主命令为**安装时绝对路径 + 存在性守卫**（POSIX 单引号转义；windows 裸命令）并带 per-event matcher/timeout；codex 宿主形状修正为顶层 `hooks` 键 + 嵌套 matcher 组（同 claude；真机证据，同级 `state` 信任表逐字节保留）；`hooks doctor` / `statusline doctor` 增二进制漂移警告（warn 级 exit 1，重装刷新，多版本共存非 broken）。
+- **体验层修订记录（B12-B14，用户决定 2026-06-12 补齐 agent-ledger 体验，加 preflight/statusline/hooks 三组，不做 issue/sync）**：`preflight` 退出码 = `0` 全过 / `1` 有警告 / `3` fail-stop（环境/状态，§1 通则；不用 `2`——`2` 仍归 cobra 用法错误）；legacy `.shared/` 在项目根仅警告，仅显式 `--ledger-root` 指 v1 树才 fail。B13 `statusline`（渲染命令）、B14 隐藏派发器 `hook <event>`（机器调用、不计入公开组、不入 refcheck 示例）。
+- **宿主安装命令移除（用户决定 2026-06-15）**：原 `statusline install/uninstall/doctor` 与整组 `hooks install/uninstall/doctor`（写入宿主 `settings.json`/`hooks.json`）已删——用户自管宿主配置，安装向导会覆盖其自定义状态行/钩子。保留 `oma relay statusline`（渲染）与隐藏 `hook <event>`（派发器）；手动接线规范见 relay-v2-protocol.md §12.4。**公开 relay 组终态恰 9**（init/pair/draft/publish/wait/status/close/preflight/statusline；派发器隐藏）。
 - **C1 修订记录**：增 `pair set-lead`——workflows §4.1 要求确认对调后「更新 session.json.roles.lead」，原命令面无任何 roles 变更入口（评审 068）。
 - **B8 修订记录**：①新增 `pair new`——原命令面只有绑定语义（ensure/join），不存在任何创建 pair 的入口，实现期补此缺口；创建者默认成为 `roles.lead`（协议 §4），`--peer` 默认 claude↔codex 对端。②`draft` 增 `--corrects <seq>`——协议 §5 的 `corrects` 字段原无 CLI 入口，kind=correction 强制要求。
 

@@ -158,58 +158,6 @@ func TestRelayStatuslineCLI(t *testing.T) {
 	if code, out := runRelay(t, "relay", "statusline", "--ledger-root", ledger, "--json"); code != ExitOK || !strings.Contains(out, `"oma-relay-statusline/1"`) {
 		t.Fatalf("statusline --json exit %d: %s", code, out)
 	}
-
-	// install/doctor against an isolated HOME (claude settings.json).
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	if code, out := runRelay(t, "relay", "statusline", "doctor"); code != ExitOK || !strings.Contains(out, "absent") {
-		t.Fatalf("doctor absent exit %d: %s", code, out)
-	}
-	if code, out := runRelay(t, "relay", "statusline", "install"); code != ExitOK || !strings.Contains(out, "installed") {
-		t.Fatalf("install exit %d: %s", code, out)
-	}
-	if code, out := runRelay(t, "relay", "statusline", "doctor"); code != ExitOK || !strings.Contains(out, "owned") {
-		t.Fatalf("doctor owned exit %d: %s", code, out)
-	}
-	if code, _ := runRelay(t, "relay", "statusline", "uninstall"); code != ExitOK {
-		t.Fatalf("uninstall exit %d", code)
-	}
-}
-
-func TestRelayHooksCLI(t *testing.T) {
-	t.Setenv("OMA_RELAY_AUTHOR", "claude")
-	t.Setenv("CLAUDE_CODE_SESSION_ID", "")
-	t.Setenv("CODEX_THREAD_ID", "")
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-
-	// doctor before install: nothing wired.
-	if code, out := runRelay(t, "relay", "hooks", "doctor", "--target", "claude"); code != ExitOK || strings.Contains(out, "true") {
-		t.Fatalf("pre-install doctor exit %d: %s", code, out)
-	}
-	// install claude → all three events wired.
-	if code, out := runRelay(t, "relay", "hooks", "install", "--target", "claude"); code != ExitOK || !strings.Contains(out, "installed") {
-		t.Fatalf("install exit %d: %s", code, out)
-	}
-	code, out := runRelay(t, "relay", "hooks", "doctor", "--target", "claude")
-	if code != ExitOK {
-		t.Fatalf("doctor exit %d", code)
-	}
-	for _, ev := range []string{"SessionStart", "PreToolUse", "Stop"} {
-		if !strings.Contains(out, ev) {
-			t.Fatalf("doctor missing %s: %s", ev, out)
-		}
-	}
-	// idempotent reinstall, then uninstall strips relay entries.
-	if code, _ := runRelay(t, "relay", "hooks", "install", "--target", "claude"); code != ExitOK {
-		t.Fatal("reinstall must be idempotent")
-	}
-	if code, _ := runRelay(t, "relay", "hooks", "uninstall", "--target", "claude"); code != ExitOK {
-		t.Fatal("uninstall failed")
-	}
-	if _, out := runRelay(t, "relay", "hooks", "doctor", "--target", "claude", "--json"); strings.Contains(out, "true") {
-		t.Fatalf("after uninstall nothing should be wired: %s", out)
-	}
 }
 
 func TestRelayHookDispatchHiddenAndSilentWhenUnconfigured(t *testing.T) {

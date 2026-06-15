@@ -4,21 +4,11 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"time"
 
 	"github.com/sean2077/oh-my-agents/internal/relay"
 	"github.com/spf13/cobra"
 )
-
-// claudeSettingsPath resolves ~/.claude/settings.json (the statusLine host).
-func claudeSettingsPath() (string, error) {
-	home, err := homeDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(home, ".claude", "settings.json"), nil
-}
 
 func newRelayStatuslineCmd(rootFlag *string) *cobra.Command {
 	var pairSlug string
@@ -58,12 +48,6 @@ func newRelayStatuslineCmd(rootFlag *string) *cobra.Command {
 	cmd.Flags().BoolVar(&watch, "watch", false, "repaint a live line until Ctrl-C")
 	cmd.Flags().BoolVar(&noColor, "no-color", false, "disable ANSI styling")
 	cmd.Flags().IntVar(&interval, "interval", 2, "watch repaint interval in seconds")
-
-	cmd.AddCommand(
-		newStatuslineInstallCmd(),
-		newStatuslineUninstallCmd(),
-		newStatuslineDoctorCmd(),
-	)
 	return cmd
 }
 
@@ -97,121 +81,4 @@ func watchStatusline(cmd *cobra.Command, l *relay.Ledger, pair string, noColor b
 			paint()
 		}
 	}
-}
-
-func newStatuslineInstallCmd() *cobra.Command {
-	var force bool
-	cmd := &cobra.Command{
-		Use:   "install",
-		Short: "Wire `oma relay statusline` into Claude Code settings.json (claude only)",
-		Args:  cobra.NoArgs,
-		RunE: run(func(cmd *cobra.Command, _ []string) error {
-			path, err := claudeSettingsPath()
-			if err != nil {
-				return err
-			}
-			exe, err := omaExecutable()
-			if err != nil {
-				return err
-			}
-			if DryRun() {
-				state, derr := relay.DoctorStatusline(path, exe)
-				if derr != nil {
-					return derr
-				}
-				if state == relay.StatuslineForeign && !force {
-					return relay.ErrStatuslineSlotTaken
-				}
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "dry-run: would set statusLine in %s (current: %s, binary %s)\n", path, state, exe)
-				return nil
-			}
-			if err := relay.InstallStatusline(path, exe, force); err != nil {
-				return err
-			}
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "installed relay statusLine in %s\n", path)
-			return nil
-		}),
-	}
-	cmd.Flags().BoolVar(&force, "force", false, "replace an existing non-relay statusLine")
-	return cmd
-}
-
-func newStatuslineUninstallCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "uninstall",
-		Short: "Remove the relay-owned statusLine (leaves a foreign one intact)",
-		Args:  cobra.NoArgs,
-		RunE: run(func(cmd *cobra.Command, _ []string) error {
-			path, err := claudeSettingsPath()
-			if err != nil {
-				return err
-			}
-			exe, err := omaExecutable()
-			if err != nil {
-				return err
-			}
-			if DryRun() {
-				state, derr := relay.DoctorStatusline(path, exe)
-				if derr != nil {
-					return derr
-				}
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "dry-run: statusLine is %s in %s\n", state, path)
-				return nil
-			}
-			state, err := relay.UninstallStatusline(path, exe)
-			if err != nil {
-				return err
-			}
-			switch state {
-			case relay.StatuslineOwned, relay.StatuslineMismatch:
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "removed relay statusLine from %s\n", path)
-			case relay.StatuslineForeign:
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "left a non-relay statusLine intact in %s\n", path)
-			default:
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "no statusLine configured in %s\n", path)
-			}
-			return nil
-		}),
-	}
-}
-
-func newStatuslineDoctorCmd() *cobra.Command {
-	var asJSON bool
-	cmd := &cobra.Command{
-		Use:   "doctor",
-		Short: "Report statusLine wiring state (no mutation)",
-		Args:  cobra.NoArgs,
-		RunE: run(func(cmd *cobra.Command, _ []string) error {
-			path, err := claudeSettingsPath()
-			if err != nil {
-				return err
-			}
-			exe, err := omaExecutable()
-			if err != nil {
-				return err
-			}
-			state, err := relay.DoctorStatusline(path, exe)
-			if err != nil {
-				return err
-			}
-			// Emit the report FIRST, then map mismatch to the warn exit in
-			// BOTH modes (review 101 blocker: drift is warn-grade exit 1).
-			if asJSON {
-				if err := printJSON(cmd, map[string]string{"path": path, "state": string(state)}); err != nil {
-					return err
-				}
-			} else {
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s: %s\n", path, state)
-				if state == relay.StatuslineMismatch {
-					_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  warning: relay-owned but not this binary's command — rerun `oma relay statusline install` to refresh")
-				}
-			}
-			if state == relay.StatuslineMismatch {
-				return Errf(ExitWarn, "statusLine binary drift (mismatch)")
-			}
-			return nil
-		}),
-	}
-	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable output")
-	return cmd
 }

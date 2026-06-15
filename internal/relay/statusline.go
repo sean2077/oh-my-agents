@@ -1,12 +1,8 @@
 package relay
 
 import (
-	"encoding/json"
-	"errors"
 	"fmt"
 	"time"
-
-	"github.com/sean2077/oh-my-agents/internal/hookcfg"
 )
 
 // StatuslineSchema versions the --json shape.
@@ -125,117 +121,4 @@ func renderStatusline(st *StatuslineState) string {
 		line += fmt.Sprintf(" · %03d %s %s", st.LatestSeq, st.LatestKind, st.LatestAuthor)
 	}
 	return line
-}
-
-// --- install / uninstall / doctor (Claude Code statusLine, §12.2) ---
-
-// statuslineMarker stamps ownership so a foreign statusLine is never
-// mistaken for ours; statuslineInvocation is the dispatcher suffix every
-// relay-owned command carries regardless of binary path.
-const (
-	statuslineInvocation = "relay statusline"
-	statuslineMarker     = "_oma_relay"
-	statuslineMarkVal    = "statusline"
-)
-
-// statuslineCommand is the canonical statusLine command for the binary at
-// exe: absolute path behind an existence guard, POSIX-single-quoted
-// (review 099 — never PATH-dependent, never noisy after binary removal).
-func statuslineCommand(exe string) string {
-	return hookcfg.GuardedCommand(exe, statuslineInvocation)
-}
-
-// statuslineValue renders the canonical relay statusLine object for exe.
-func statuslineValue(exe string) (json.RawMessage, error) {
-	v := struct {
-		Type    string `json:"type"`
-		Command string `json:"command"`
-		Marker  string `json:"_oma_relay"`
-	}{"command", statuslineCommand(exe), statuslineMarkVal}
-	return json.Marshal(v)
-}
-
-// StatuslineDoctorState reports the wiring of a host statusLine without
-// mutating anything.
-type StatuslineDoctorState string
-
-const (
-	StatuslineAbsent   StatuslineDoctorState = "absent"   // no statusLine configured
-	StatuslineOwned    StatuslineDoctorState = "owned"    // relay-owned and current
-	StatuslineForeign  StatuslineDoctorState = "foreign"  // a non-relay statusLine occupies the slot
-	StatuslineMismatch StatuslineDoctorState = "mismatch" // relay-owned but the command drifted
-)
-
-// ErrStatuslineSlotTaken marks a foreign statusLine refused without --force.
-var ErrStatuslineSlotTaken = errors.New("a non-relay statusLine is already configured (use --force to replace)")
-
-// DoctorStatusline classifies the statusLine slot in a host settings file
-// (pure read, no mutation). exe anchors the canonical-command comparison:
-// owned = relay marker AND byte-identical to the canonical command for
-// THIS binary; owned-but-different (older path, pre-guard format) is
-// mismatch — warn-grade, a reinstall refreshes it (review 099).
-func DoctorStatusline(settingsPath, exe string) (StatuslineDoctorState, error) {
-	raw, found, err := hookcfg.GetTopLevel(settingsPath, "statusLine")
-	if err != nil {
-		return "", err
-	}
-	if !found {
-		return StatuslineAbsent, nil
-	}
-	owned, cmd := statuslineOwnership(raw)
-	switch {
-	case !owned:
-		return StatuslineForeign, nil
-	case cmd == statuslineCommand(exe):
-		return StatuslineOwned, nil
-	default:
-		return StatuslineMismatch, nil
-	}
-}
-
-// InstallStatusline wires the relay statusLine into a Claude settings.json.
-// A foreign slot is refused unless force; an owned/mismatched/absent slot is
-// set to the canonical value for exe (idempotent).
-func InstallStatusline(settingsPath, exe string, force bool) error {
-	state, err := DoctorStatusline(settingsPath, exe)
-	if err != nil {
-		return err
-	}
-	if state == StatuslineForeign && !force {
-		return ErrStatuslineSlotTaken
-	}
-	value, err := statuslineValue(exe)
-	if err != nil {
-		return err
-	}
-	return hookcfg.SetTopLevel(settingsPath, "statusLine", value)
-}
-
-// UninstallStatusline removes only a relay-owned statusLine (owned or
-// mismatched); a foreign one is left intact (reported via the state).
-func UninstallStatusline(settingsPath, exe string) (StatuslineDoctorState, error) {
-	state, err := DoctorStatusline(settingsPath, exe)
-	if err != nil {
-		return "", err
-	}
-	switch state {
-	case StatuslineOwned, StatuslineMismatch:
-		if err := hookcfg.DeleteTopLevel(settingsPath, "statusLine"); err != nil {
-			return "", err
-		}
-	}
-	return state, nil
-}
-
-// statuslineOwnership reports whether a statusLine value carries the relay
-// marker, and its command string.
-func statuslineOwnership(raw json.RawMessage) (owned bool, command string) {
-	var probe struct {
-		Marker  *string `json:"_oma_relay"`
-		Command string  `json:"command"`
-	}
-	if err := json.Unmarshal(raw, &probe); err != nil {
-		return false, ""
-	}
-	return probe.Marker != nil && *probe.Marker == statuslineMarkVal, probe.Command
 }
