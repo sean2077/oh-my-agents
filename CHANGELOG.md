@@ -4,6 +4,15 @@
 >
 > Section heading format: `## vX.Y.Z - YYYY-MM-DD` (CI matches the tag by exact prefix; a tag with no matching section fails the release, fail-closed).
 
+## v0.2.0 - 2026-06-15
+
+This release tightens the install and host-integration contract after the first tagged release.
+
+- **Install path**: the default installer now resolves and downloads the latest prebuilt GitHub Release binary, verifies it against `checksums.txt`, and keeps the source-build path as a fallback or explicit override. Tagged source installs no longer fall back to a `dev` version stamp.
+- **Build/release tooling**: the Makefile now has stamped `build`, `install`, `check`, `ci`, and `release` targets, so local binaries report the same version metadata shape as release assets.
+- **Host integration**: removed commands that rewrote Claude Code / Codex host config files directly. Hook and statusline setup now ships as discoverable assets plus a manual wiring guide, keeping `oma` out of user-owned host configuration.
+- **Project packaging**: added the MIT license to make redistribution and binary installation terms explicit.
+
 ## v0.1.0 - 2026-06-12
 
 First tagged release: the complete `oma` CLI and the core skill set, built end-to-end through the project's own cross-reviewed pair-delivery workflow.
