@@ -32,13 +32,13 @@ Four core workflow skills (the "core4"):
 
 ## Install the CLI
 
-Install the latest `oma` from the main branch into `~/.local/bin`:
+Install the latest released `oma` into `~/.local/bin`:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/sean2077/oh-my-agents/main/scripts/install.sh | bash
 ```
 
-The installer builds from source, writes `oma` to `${OMA_INSTALL_BIN_DIR:-$HOME/.local/bin}`, and prints a PATH hint if that directory is not already on `PATH`. Override the destination with `OMA_INSTALL_BIN_DIR=/some/bin`. On Windows, run the same command from Git Bash; it installs `oma.exe` to `$HOME/.local/bin`, and Git Bash can invoke it as `oma` once that directory is on `PATH`. Release builds also include Windows `amd64` and `arm64` binaries once versioned releases are published.
+By default the installer downloads the prebuilt binary for the **latest GitHub release**, verifies its SHA-256 against the release `checksums.txt` (the same fail-closed contract `self-update` uses), writes `oma` to `${OMA_INSTALL_BIN_DIR:-$HOME/.local/bin}`, and prints a PATH hint if that directory is not already on `PATH` — no Go toolchain required. Useful overrides: `OMA_INSTALL_VERSION=v0.1.0` pins a tag, `OMA_INSTALL_BIN_DIR=/some/bin` changes the destination, and `OMA_INSTALL_FROM_SOURCE=1` forces a source build. If no prebuilt binary matches your platform (or no release can be resolved), the installer falls back to a source build (needs `git` + `go`). On Windows, run the same command from Git Bash; it installs `oma.exe`, and Git Bash can invoke it as `oma` once that directory is on `PATH`.
 
 You can also build from a checkout:
 
