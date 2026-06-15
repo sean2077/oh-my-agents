@@ -144,6 +144,8 @@ publish 步骤（严格顺序）：从草稿**渲染**正式内容 → 写 `NNN-
 
 ### 12.4 手动接线参考（用户自管宿主配置）
 
+> **复制即用的完整片段在 README「Wire the statusline and hooks (optional)」**（含 statusLine 与三事件 hooks 的整段 JSON）。本节是字段级规范，供精确接线时查阅。
+
 oma 不再写入宿主配置；以下为用户手动接入 `~/.claude/settings.json`（claude）/ `~/.codex/hooks.json`（codex）的规范形状。
 
 - **statusLine（claude，可选）**：把渲染命令接入顶层 `statusLine` 键，存在性守卫避免二进制缺失时刷 command-not-found：

@@ -69,6 +69,57 @@ Once releases are published, `oma self-update` updates the binary in place from 
 npx skills add sean2077/oh-my-agents -g --agent claude-code codex
 ```
 
+## Wire the statusline and hooks (optional)
+
+`oma` never writes your host config. The relay statusline and the auto-continue
+hooks are **opt-in**: you add them to your own `~/.claude/settings.json` (or
+`~/.codex/hooks.json`) by hand. Use the absolute path to your binary (`which oma`)
+behind an existence guard so a missing binary degrades silently instead of
+spamming command-not-found.
+
+**Statusline** (a compact "which pair / whose turn" line) — add to
+`~/.claude/settings.json`:
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "[ -x '/ABS/PATH/oma' ] || exit 0; exec '/ABS/PATH/oma' relay statusline"
+  }
+}
+```
+
+Already have a custom statusline script? Don't replace it — call
+`oma relay statusline --json` from inside it and gate on `.bound` (so non-pair
+windows stay clean). See `~/.claude/statusline-command.sh` in this repo's author's
+setup for the pattern.
+
+**Auto-continue hooks** (drive the pair-delivery loop without manual nudging) —
+add to the top-level `hooks` key in `~/.claude/settings.json`. The dispatcher
+`oma relay hook <event>` is pure-read and always exits 0, so it can never break
+your session:
+
+```json
+{
+  "hooks": {
+    "SessionStart": [{ "matcher": "startup|resume|clear",
+      "hooks": [{ "type": "command", "timeout": 10,
+        "command": "[ -x '/ABS/PATH/oma' ] || exit 0; exec '/ABS/PATH/oma' relay hook SessionStart" }] }],
+    "PreToolUse": [{ "matcher": "^(Edit|Write|MultiEdit)$",
+      "hooks": [{ "type": "command", "timeout": 5,
+        "command": "[ -x '/ABS/PATH/oma' ] || exit 0; exec '/ABS/PATH/oma' relay hook PreToolUse" }] }],
+    "Stop": [{
+      "hooks": [{ "type": "command", "timeout": 5,
+        "command": "[ -x '/ABS/PATH/oma' ] || exit 0; exec '/ABS/PATH/oma' relay hook Stop" }] }]
+  }
+}
+```
+
+For **Codex**, put the same structure in `~/.codex/hooks.json`, change the
+`PreToolUse` matcher to `^(apply_patch|Edit|Write)$`, and run `/hooks` once to
+trust the new entries. Full field reference (matchers, timeouts, guard rationale)
+is in [`docs/relay-v2-protocol.md`](docs/relay-v2-protocol.md) §12.4.
+
 ## Quickstart
 
 ```bash
