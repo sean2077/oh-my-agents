@@ -1,7 +1,6 @@
 package asset
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -9,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/sean2077/oh-my-agents/internal/agentdir"
-	"github.com/sean2077/oh-my-agents/internal/hookcfg"
 )
 
 // ErrProjectionConflict marks a projection destination occupied by
@@ -25,22 +23,17 @@ type Skip struct {
 	Reason string `json:"reason"`
 }
 
-// plannedProjection is one projection to create: a symlink, or a hook
-// fragment injection into the agent's host config.
+// plannedProjection is one symlink projection to create.
 type plannedProjection struct {
 	target    agentdir.Target
 	canonical string
-	asset     string                       // asset name = ownership marker value (inject only)
-	wrapKey   string                       // host config shape (inject only)
-	events    map[string][]json.RawMessage // entries to inject (inject only)
 }
 
 // planProjections intersects manifest targets with requested agents and
 // resolves agent paths. Final set = manifest.targets ∩ requested; "shared"
-// never projects; unsupported combinations become Skips. Hook assets must
-// supply a fragment section for every projected agent (a target with no
-// entries is a packaging bug — fail closed).
-func (e *Engine) planProjections(m *Manifest, canonical string, requested []string, frag *hookcfg.Fragment) ([]plannedProjection, []Skip, error) {
+// never projects; unsupported combinations (including hook assets, which
+// are canonical-only) become Skips.
+func (e *Engine) planProjections(m *Manifest, canonical string, requested []string) ([]plannedProjection, []Skip, error) {
 	if len(requested) == 0 {
 		requested = []string{agentClaude, agentCodex}
 	}
@@ -68,14 +61,7 @@ func (e *Engine) planProjections(m *Manifest, canonical string, requested []stri
 		if err := e.checkProjectionRoot(agent, tgt.Path); err != nil {
 			return nil, nil, err
 		}
-		p := plannedProjection{target: tgt, canonical: canonical}
-		if tgt.Kind == agentdir.KindInject {
-			if frag == nil || len(frag.Events[agent]) == 0 {
-				return nil, nil, fmt.Errorf("%w: hook asset %q targets %s but fragment.json has no %s section", ErrInvalid, m.Name, agent, agent)
-			}
-			p.asset, p.wrapKey, p.events = m.Name, agentdir.HookWrapKey(agent), frag.Events[agent]
-		}
-		plans = append(plans, p)
+		plans = append(plans, plannedProjection{target: tgt, canonical: canonical})
 	}
 	return plans, skips, nil
 }
@@ -138,23 +124,10 @@ func checkAncestorWritable(dir string) error {
 	}
 }
 
-// checkProjection pre-validates one destination with zero writes.
-// Symlink kind: free, or already the expected oma symlink (idempotent
-// reinstall) — anything else conflicts. Inject kind: the host config must
-// be absent or safely editable (valid JSON object, regular file) so a
-// damaged host file aborts the install before any filesystem change
-// (review 044 forward note).
+// checkProjection pre-validates one symlink destination with zero writes:
+// free, or already the expected oma symlink (idempotent reinstall) —
+// anything else conflicts.
 func checkProjection(p plannedProjection) error {
-	if p.target.Kind == agentdir.KindInject {
-		// Same validation Inject will run, zero-write: strict parse,
-		// ownership attribution, AND array shape of every planned target
-		// event — a "Stop": {} host must fail here, before dry-run reports
-		// success or canonical/registry state exists (review 048).
-		if err := hookcfg.CheckInjectable(p.target.Path, p.wrapKey, p.asset, p.events); err != nil {
-			return fmt.Errorf("%w: %s: %v", ErrProjectionConflict, p.target.Path, err)
-		}
-		return checkParentWritable(filepath.Dir(p.target.Path))
-	}
 	info, err := os.Lstat(p.target.Path)
 	if errors.Is(err, os.ErrNotExist) {
 		return checkParentWritable(filepath.Dir(p.target.Path))
@@ -175,13 +148,8 @@ func checkProjection(p plannedProjection) error {
 	return nil
 }
 
-// applyProjection creates (or refreshes) the symlink, or injects the hook
-// fragment with replace-own semantics (idempotent reinstall: the asset's
-// previous entries are replaced, never duplicated).
+// applyProjection creates (or refreshes) the symlink.
 func applyProjection(p plannedProjection) error {
-	if p.target.Kind == agentdir.KindInject {
-		return hookcfg.Inject(p.target.Path, p.wrapKey, p.asset, p.events)
-	}
 	if err := os.MkdirAll(filepath.Dir(p.target.Path), 0o700); err != nil {
 		return err
 	}
@@ -204,28 +172,10 @@ func applyProjection(p plannedProjection) error {
 func (e *Engine) removeProjection(entry *Entry, pr Projection, canonical string) (removed bool, warn string, err error) {
 	expected, ok, _ := agentdir.For(e.Layout.Home, pr.Agent, entry.Type, entry.Name)
 	if !ok || filepath.Clean(pr.Path) != expected.Path {
-		if pr.Kind == agentdir.KindInject || expected.Kind == agentdir.KindInject {
-			// Inject residue must never be orphaned (review 046 blocker 2).
-			return false, "", fmt.Errorf("%w: recorded inject projection %s does not match expected path %s", ErrInvalid, pr.Path, expected.Path)
-		}
 		return false, fmt.Sprintf("recorded projection %s does not match expected path; left intact", pr.Path), nil
 	}
 	if rootErr := e.checkProjectionRoot(pr.Agent, expected.Path); rootErr != nil {
-		if expected.Kind == agentdir.KindInject {
-			return false, "", rootErr
-		}
 		return false, fmt.Sprintf("projection root check failed for %s: %v", expected.Path, rootErr), nil
-	}
-	if expected.Kind == agentdir.KindInject {
-		// Own-marker filtering IS the ownership verification: only entries
-		// stamped "_oma_asset": <name> leave the host file; foreign hooks
-		// and other assets' entries are byte-untouched. Failure here is a
-		// hard error, never a warning: the caller must keep canonical and
-		// registry state so a rerun can converge (review 046 blocker 2).
-		if rmErr := hookcfg.Remove(expected.Path, agentdir.HookWrapKey(pr.Agent), entry.Name); rmErr != nil {
-			return false, "", fmt.Errorf("%s: %w", expected.Path, rmErr)
-		}
-		return true, "", nil
 	}
 	info, statErr := os.Lstat(expected.Path)
 	if errors.Is(statErr, os.ErrNotExist) {
@@ -292,21 +242,6 @@ func (e *Engine) VerifyProjections(entry *Entry) (ok bool, problems []string) {
 		if err != nil {
 			ok = false
 			problems = append(problems, fmt.Sprintf("%s projection missing: %s", pr.Agent, pr.Path))
-			continue
-		}
-		if pr.Kind == agentdir.KindInject {
-			// Liveness for injections: the host file must still hold at
-			// least one entry marked for this asset.
-			cmds, err := hookcfg.OwnCommands(pr.Path, agentdir.HookWrapKey(pr.Agent), entry.Name)
-			if err != nil {
-				ok = false
-				problems = append(problems, fmt.Sprintf("%s host config unreadable: %v", pr.Agent, err))
-				continue
-			}
-			if len(cmds) == 0 {
-				ok = false
-				problems = append(problems, fmt.Sprintf("%s injected hook entries missing from %s", pr.Agent, pr.Path))
-			}
 			continue
 		}
 		if pr.Kind != agentdir.KindSymlink {

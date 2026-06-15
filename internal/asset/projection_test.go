@@ -7,9 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/sean2077/oh-my-agents/internal/agentdir"
-	"github.com/sean2077/oh-my-agents/internal/hookcfg"
 )
 
 func TestInstallProjectsToBothAgents(t *testing.T) {
@@ -391,13 +388,6 @@ func TestConformanceFixtures(t *testing.T) {
 				continue
 			}
 			link := filepath.Join(e.Layout.Home, filepath.FromSlash(want))
-			if c.WantKind == agentdir.KindInject {
-				cmds, err := hookcfg.OwnCommands(link, agentdir.HookWrapKey(agent), m.Name)
-				if err != nil || len(cmds) == 0 {
-					t.Errorf("%s/%s: expected injected entries in %s: cmds=%v err=%v", agent, m.Name, want, cmds, err)
-				}
-				continue
-			}
 			dest, err := os.Readlink(link)
 			if err != nil {
 				t.Errorf("%s/%s: expected projection at %s: %v", agent, m.Name, want, err)

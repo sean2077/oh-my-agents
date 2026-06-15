@@ -13,7 +13,7 @@ The trigger for this project was a concrete pain point in oh-my-claudecode (OMC)
 - **You decide what is installed.** Skills are explicit assets you install and remove. Nothing is resident unless you put it there. The four core skills together cost **~275 tokens** of resident surface (name + description), versus OMC's 15-20k, about 2%, and every asset is independently installable.
 - **Mechanical logic belongs in a binary, not a prompt.** Sequence numbers, ambiguity math, threshold gates, stall detection, atomic file writes, and integrity checks are deterministic. They live in `oma`, where they are testable and fail-closed, not re-derived by the model each turn.
 - **Skills stay agent-neutral.** A skill's default path is plain `oma` commands plus markdown, so Claude Code and Codex follow the *same* contract. Host-only accelerations (Claude Code's structured option picker, subagents, plan mode) are clearly-marked optional branches, never the default.
-- **One asset model, two agents.** Assets live in canonical `~/.agents/` and are projected by symlink, or by atomic fragment injection for hooks, into both `~/.claude/` and `~/.codex/`. Install once, available to both.
+- **One asset model, two agents.** Assets live in canonical `~/.agents/` and are projected by symlink into both `~/.claude/` and `~/.codex/`. Install once, available to both. (Hook assets are placed canonically only — oma never writes your host config; you wire hooks into `settings.json`/`hooks.json` by hand, see [`docs/relay-v2-protocol.md`](docs/relay-v2-protocol.md) §12.4.)
 
 This is CLI + skills, deliberately **not** a Claude Code plugin: a plugin is a Claude-Code-only concept, and the whole point is to stay neutral and lightweight.
 
@@ -99,9 +99,9 @@ Conventions: `--json` on every query command; `--dry-run` is a global flag that 
 ~/.agents/                      canonical asset store (shared with the npx-skills ecosystem)
   skills/<name>/                skill body
   agents/<name>.md              subagent
-  hooks/<name>/                 hook (manifest + fragment)
+  hooks/<name>/                 hook (manifest + fragment; canonical-only, wire by hand)
   prompts/<name>.md             prompt
-        |  projection (symlink, or atomic fragment injection for hooks)
+        |  projection (symlink; hooks are canonical-only — never written to host config)
         v
 ~/.claude/   ~/.codex/          per-agent directories
 ```

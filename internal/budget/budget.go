@@ -8,9 +8,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/sean2077/oh-my-agents/internal/agentdir"
 	"github.com/sean2077/oh-my-agents/internal/asset"
-	"github.com/sean2077/oh-my-agents/internal/hookcfg"
 )
 
 // AlgoVersion pins the token approximation; it is reported in every output
@@ -89,7 +87,7 @@ func Measure(eng *asset.Engine, agent, profile string, max int) (*Report, error)
 		if !projectsTo(e, agent) {
 			continue
 		}
-		items, err := residentSurface(eng, e, agent)
+		items, err := residentSurface(e)
 		if err != nil {
 			return nil, err
 		}
@@ -111,7 +109,7 @@ func projectsTo(e *asset.Entry, agent string) bool {
 }
 
 // residentSurface extracts the always-loaded fields for one entry.
-func residentSurface(eng *asset.Engine, e *asset.Entry, agent string) ([]Item, error) {
+func residentSurface(e *asset.Entry) ([]Item, error) {
 	switch e.Type {
 	case asset.TypeSkill:
 		fm, err := ReadFrontmatterFile(e.CanonicalPath + "/SKILL.md")
@@ -126,36 +124,12 @@ func residentSurface(eng *asset.Engine, e *asset.Entry, agent string) ([]Item, e
 		}
 		return requiredFieldItems(e.Name, fm, "name", "description", "whenToUse")
 	case asset.TypeHook:
-		return hookSurface(eng, e, agent)
+		// Hook assets are canonical-only (not projected into host config),
+		// so they add no resident context surface.
+		return nil, nil
 	default: // prompts are slash-invoked, not resident
 		return nil, nil
 	}
-}
-
-// hookSurface counts the command strings of the entries this asset
-// actually injected into the agent's host config — the real resident
-// surface, deduped by the same ownership marker install/remove use
-// (review 044 forward note). The host path is recomputed from the
-// manifest, never read from the registry (untrusted-record rule). A
-// registered injection with zero marked entries is drift: fail closed
-// rather than undercount (review 042 lesson).
-func hookSurface(eng *asset.Engine, e *asset.Entry, agent string) ([]Item, error) {
-	target, ok, reason := agentdir.For(eng.Layout.Home, agent, e.Type, e.Name)
-	if !ok {
-		return nil, fmt.Errorf("%w: %s: %s", ErrBudget, e.Name, reason)
-	}
-	cmds, err := hookcfg.OwnCommands(target.Path, agentdir.HookWrapKey(agent), e.Name)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %s: %v", ErrBudget, e.Name, err)
-	}
-	if len(cmds) == 0 {
-		return nil, fmt.Errorf("%w: %s: no injected hook entries in %s (projection drift; reinstall to converge)", ErrBudget, e.Name, target.Path)
-	}
-	items := make([]Item, 0, len(cmds))
-	for _, c := range cmds {
-		items = append(items, Item{Asset: e.Name, Field: "command", Tokens: Tokens(c)})
-	}
-	return items, nil
 }
 
 // requiredFieldItems counts the A4-defined resident fields; a missing or

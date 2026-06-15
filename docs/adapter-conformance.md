@@ -22,12 +22,12 @@
 |---|---|---|---|
 | skill | `~/.agents/skills/<name>/` | 软链 `~/.claude/skills/<name>` | 按 codex skills 约定位软链；不支持时不投影 + doctor 警告 |
 | subagent | `~/.agents/agents/<name>.md` | 软链 `~/.claude/agents/<name>.md` | **不投影**（Codex 无 subagent）+ manifest.fallback 说明 |
-| hook | `~/.agents/hooks/<name>/` | fragment 原子合并入 `~/.claude/settings.json` 的 `hooks` 键 | fragment 合并入 `~/.codex/hooks.json` 的顶层 `hooks` 键（与 claude 同构的嵌套 matcher 组——B14b 真机证据修正，原「文档根即 event 映射」有误；同级 `state` 信任表等外来顶层键逐字节保留；缺失视为 `{}`；一次性 /hooks 信任由用户完成） |
+| hook | `~/.agents/hooks/<name>/` | **不投影**（仅规范位放置）+ skip 说明 | **不投影**（仅规范位放置）+ skip 说明 |
 | prompt | `~/.agents/prompts/<name>.md` | （按需）`~/.claude/commands/` | `~/.codex/prompts/<name>.md` |
 
-- 投影一律软链优先；无法软链的注入型（hook fragment）走「读-合并-写 tmp-rename + .oma-bak」原子流程，字节契约与失败语义见 security-contract §4。
-- 卸载 = 移除投影 + 移除规范位条目 + registry 去账；fragment 注入可干净反向移除（条目级 `_oma_asset` 标记，仅过滤己有条目）。注入投影移除失败 → **硬失败且不去账**（security-contract §4 移除 fail-closed），修复宿主后重跑收敛。
-- hook 资产内容 = `manifest.json` + `fragment.json`（schema `oma-hook-fragment/1`）：顶层按 agent 分节（`claude`/`codex`），节内 `event → [宿主原生形态条目…]`；manifest targets 中的每个投影端必须有对应分节（缺节 fail-closed）；条目不得自带 `_oma_asset`（保留键）、必须含至少一个 `command` 字符串（预算面要求）。
+- 投影一律软链。**oma 不改写任何宿主配置文件**：早先 hook fragment 注入 `~/.claude/settings.json` / `~/.codex/hooks.json` 的做法已移除（用户决定 2026-06-15：不确定/改宿主状态的行为用文档指导而非命令，详见 relay-v2-protocol.md §12.4 同源决策）。
+- **hook 资产 = 规范位放置（canonical-only）**：`manifest.json` + `fragment.json` 仍随资产落到 `~/.agents/hooks/<name>/`，但 oma 不解析、不注入；`agentdir.For(hook)` 对两端返回 skip。用户照 `fragment.json` 内容**手动**把条目接进自己的 `settings.json`/`hooks.json`（接线规范与守卫见 relay-v2-protocol.md §12.4）。
+- 卸载 = 移除软链投影 + 移除规范位条目 + registry 去账（hook 无投影，仅删规范位+去账）。
 - codex 侧具体路径以常量表维护（`internal/agentdir`；本机无 codex 时以文件断言验证，见 §6）。
 
 ## 3. 双端一致性契约
@@ -48,13 +48,13 @@
 
 ## 5. 预算注入面模型（`oma doctor budget`）
 
-- **计数对象（claude profile）**：每个已安装且投影到 claude 的 skill 的 frontmatter `name` + `description` 字段；hook 资产取**宿主文件实注条目**（按 `_oma_asset` 标记识别归属，递归收集条目内全部 `command` 字符串）——以宿主文件为准而非 fragment 源，登记了注入投影却找不到标记条目即漂移，fail-closed 而非静默少计；subagent 的 `name`+`description`+`whenToUse`；按 Claude Code 实际常驻加载行为建模（只算常驻面，不算按需加载的 SKILL.md 正文与 references/）。
+- **计数对象（claude profile）**：每个已安装且投影到 claude 的 skill 的 frontmatter `name` + `description` 字段；subagent 的 `name`+`description`+`whenToUse`；按 Claude Code 实际常驻加载行为建模（只算常驻面，不算按需加载的 SKILL.md 正文与 references/）。**hook 资产为 canonical-only（不注入宿主、不常驻），计零**——手动接入的 hook 是用户自管面，不计入 oma 预算门禁。
 - tokenizer：pinned 近似算法 `tok ≈ ceil(utf8_bytes/4) `，常量 `BudgetAlgoVersion = "approx-b4/1"` 入库并写入 --json 输出；发版前与 `/context` 实测校准一次，偏差记录在 dogfood 日志。
 - profile：`core4` = deep-interview, autopilot, ralph, pair-delivery（自 Phase C 起完整计量）；阈值 2000（CI 门禁），内部目标 1800。
 
 ## 6. conformance fixtures（双端离线验证）
 
-- 位置：`testdata/conformance/{claude,codex}.json` 用例文件：每例含 `manifest`（内联 oma-asset/1 文档）、`payload_file`（+ 可选 `payload_content`，注入型资产用于内联合法 fragment）、`want_rel_home`（期望投影位，空 = 期望 skip）、`want_kind`（空 = symlink；`inject` = 断言宿主文件含本资产标记条目）。
+- 位置：`testdata/conformance/{claude,codex}.json` 用例文件：每例含 `manifest`（内联 oma-asset/1 文档）、`payload_file`（+ 可选 `payload_content`）、`want_rel_home`（期望软链投影位，空 = 期望 skip——hook 与 shared 资产均为此情形）。oma 只投影软链，无注入断言。
 - 测试流程：假 HOME（t.TempDir）→ 引擎 Install（单 agent 窄化）→ 按 `want_kind` 断言：软链目标指向规范位，或宿主配置中可按 `_oma_asset` 取回注入命令。
 - 默认路径检查：对每个 skill 的默认路径文本断言不含目标端不支持的引用（如 codex fixture 中出现 `AskUserQuestion`、subagent 调用即 fail；允许出现在显式 CC 加速标记块内）。
 - 本机无 codex 的现实约束：codex 侧验收以 fixtures 文件断言为准；真机冒烟为 Phase D 非阻塞补做项。

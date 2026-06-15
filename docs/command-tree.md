@@ -21,7 +21,7 @@ oma asset rollback <name> [--to <backup-id>]
 oma asset link --dev [--repo <path>]            # dogfood：软链本地 checkout
 ```
 
-- `install`：资产文件 → `~/.agents/{skills,agents,hooks}/<name>/` 规范位 → 按 manifest `targets` 投影到各 agent 目录（软链/fragment 注入）。默认 targets 全投影，`--agent` 收窄。
+- `install`：资产文件 → `~/.agents/{skills,agents,hooks}/<name>/` 规范位 → 按 manifest `targets` **软链**投影到各 agent 目录。默认 targets 全投影，`--agent` 收窄。hook 资产为 canonical-only（仅规范位放置，不注入宿主配置；用户手动接线，见 relay-v2-protocol.md §12.4）。
 - 覆盖语义：目标已存在且非 oma 管理 → 拒绝；`--force` 先备份再覆盖（见 security-contract.md §2）。
 - `rollback`：从 `~/.config/oma/backups/` 恢复；`--to` 省略时取最近备份。
 - `link --dev`：规范位条目改为指向仓库 checkout 的软链；registry 标记 `dev: true`。

@@ -20,8 +20,7 @@
       "manifest": {"schema": "oma-asset/1", "name": "sample-hook", "type": "hook", "targets": ["claude", "codex"]},
       "payload_file": "fragment.json",
       "payload_content": "{\"schema\": \"oma-hook-fragment/1\", \"claude\": {\"Stop\": [{\"hooks\": [{\"type\": \"command\", \"command\": \"oma state get demo\"}]}]}, \"codex\": {\"Stop\": [{\"command\": \"oma state get demo\"}]}}",
-      "want_rel_home": ".claude/settings.json",
-      "want_kind": "inject"
+      "want_rel_home": ""
     },
     {
       "manifest": {"schema": "oma-asset/1", "name": "shared-only", "type": "skill", "targets": ["shared"]},

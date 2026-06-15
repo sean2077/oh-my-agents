@@ -21,7 +21,6 @@ var Schemas = map[string]string{
 	"interview_scores": "oma-interview-scores/1",
 	"ralph":            "oma-ralph/1",
 	"asset":            "oma-asset/1",
-	"hook_fragment":    "oma-hook-fragment/1",
 	"config":           "oma-config/1",
 }
 

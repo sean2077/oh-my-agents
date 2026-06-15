@@ -1,7 +1,6 @@
 package asset
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -10,7 +9,6 @@ import (
 	"time"
 
 	"github.com/sean2077/oh-my-agents/internal/agentdir"
-	"github.com/sean2077/oh-my-agents/internal/hookcfg"
 )
 
 // ErrUnmanagedTarget marks a destination that exists but is not owned by
@@ -26,7 +24,7 @@ var ErrRollbackConflict = errors.New("rollback conflict: current content is not 
 // Op is one planned filesystem operation; --dry-run prints these and
 // writes nothing (docs/security-contract.md §1).
 type Op struct {
-	Kind string `json:"kind"` // create | replace | backup | delete | restore | link | unlink | inject | uninject
+	Kind string `json:"kind"` // create | replace | backup | delete | restore | link | unlink
 	Path string `json:"path"`
 }
 
@@ -87,11 +85,7 @@ func (e *Engine) Install(srcDir string, opts Options) (*Report, error) {
 	rel, _ := e.Layout.CanonicalRel(m)
 
 	rep := &Report{Name: m.Name, DryRun: opts.DryRun}
-	frag, err := e.loadFragment(srcDir, m)
-	if err != nil {
-		return nil, err
-	}
-	plans, skips, err := e.planProjections(m, dest, opts.Agents, frag)
+	plans, skips, err := e.planProjections(m, dest, opts.Agents)
 	if err != nil {
 		return nil, err
 	}
@@ -271,30 +265,17 @@ func (e *Engine) Remove(name string, opts Options) (*Report, error) {
 	return rep, nil
 }
 
-// precheckRemoveProjection runs the zero-write validation for removing
-// one projection. Inject kind: recorded-path mismatch, root-check failure
-// or an uneditable host file are hard errors (oma residue must never be
-// orphaned). Symlink kind: the same conditions degrade to the warning the
-// apply path would emit (no residue at stake; canonical deletion is the
-// real removal).
+// precheckRemoveProjection runs the zero-write validation for removing one
+// symlink projection. A recorded-path mismatch or root-check failure
+// degrades to the warning the apply path would emit (no residue at stake;
+// canonical deletion is the real removal).
 func (e *Engine) precheckRemoveProjection(entry *Entry, pr Projection) (warn string, err error) {
 	expected, ok, _ := agentdir.For(e.Layout.Home, pr.Agent, entry.Type, entry.Name)
 	if !ok || filepath.Clean(pr.Path) != expected.Path {
-		if pr.Kind == agentdir.KindInject || expected.Kind == agentdir.KindInject {
-			return "", fmt.Errorf("%w: recorded inject projection %s does not match expected path %s (corrupt or tampered registry)", ErrInvalid, pr.Path, expected.Path)
-		}
 		return fmt.Sprintf("recorded projection %s does not match expected path; left intact", pr.Path), nil
 	}
 	if rootErr := e.checkProjectionRoot(pr.Agent, expected.Path); rootErr != nil {
-		if expected.Kind == agentdir.KindInject {
-			return "", rootErr
-		}
 		return fmt.Sprintf("projection root check failed for %s: %v", expected.Path, rootErr), nil
-	}
-	if expected.Kind == agentdir.KindInject {
-		if editErr := hookcfg.CheckEditable(expected.Path, agentdir.HookWrapKey(pr.Agent)); editErr != nil {
-			return "", fmt.Errorf("cannot remove injected hooks from %s: %w", expected.Path, editErr)
-		}
 	}
 	return "", nil
 }
@@ -341,46 +322,8 @@ func (e *Engine) Rollback(name, backupID string, opts Options) (*Report, error) 
 		}
 	}
 
-	// Pre-validate hook re-injection before any mutation; --dry-run runs
-	// the same checks (review 046 blocker 2). Symlink projections track
-	// the restored content automatically (same canonical path); injected
-	// hook entries are copies and must be re-injected from the restored
-	// fragment — read here from the backup payload, the exact bytes
-	// place() will restore.
-	type reinject struct {
-		path, wrapKey string
-		events        map[string][]json.RawMessage
-	}
-	var reinjects []reinject
-	if entry.Type == TypeHook {
-		frag, fragErr := e.loadFragment(b.Path, &entry.Manifest)
-		if fragErr != nil {
-			return nil, fmt.Errorf("backup payload: %w", fragErr)
-		}
-		for _, pr := range entry.Projections {
-			if pr.Kind != agentdir.KindInject {
-				continue
-			}
-			expected, ok, _ := agentdir.For(e.Layout.Home, pr.Agent, entry.Type, entry.Name)
-			if !ok || filepath.Clean(pr.Path) != expected.Path {
-				return nil, fmt.Errorf("%w: recorded inject projection %s does not match expected path", ErrInvalid, pr.Path)
-			}
-			if err := e.checkProjectionRoot(pr.Agent, expected.Path); err != nil {
-				return nil, err
-			}
-			wrap := agentdir.HookWrapKey(pr.Agent)
-			if err := hookcfg.CheckEditable(expected.Path, wrap); err != nil {
-				return nil, fmt.Errorf("cannot re-inject restored hooks into %s: %w", expected.Path, err)
-			}
-			reinjects = append(reinjects, reinject{expected.Path, wrap, frag.Events[pr.Agent]})
-		}
-	}
-
 	rep := &Report{Name: name, DryRun: opts.DryRun}
 	rep.Ops = append(rep.Ops, Op{"restore", target}, Op{"replace", e.Layout.RegistryPath()})
-	for _, ri := range reinjects {
-		rep.Ops = append(rep.Ops, Op{"inject", ri.path})
-	}
 	if opts.DryRun {
 		return rep, nil
 	}
@@ -396,11 +339,6 @@ func (e *Engine) Rollback(name, backupID string, opts Options) (*Report, error) 
 	if err := reg.Save(e.Layout.RegistryPath()); err != nil {
 		return nil, err
 	}
-	for _, ri := range reinjects {
-		if err := hookcfg.Inject(ri.path, ri.wrapKey, entry.Name, ri.events); err != nil {
-			return nil, fmt.Errorf("re-inject restored hooks (registry intact; rerun rollback to converge): %w", err)
-		}
-	}
 	return rep, nil
 }
 
@@ -413,35 +351,11 @@ func (e *Engine) List() ([]Entry, error) {
 	return reg.Assets, nil
 }
 
-// loadFragment reads fragment.json for hook assets (nil for other types).
-// Validation happens here — before any write — so a broken fragment fails
-// the whole install closed.
-func (e *Engine) loadFragment(dir string, m *Manifest) (*hookcfg.Fragment, error) {
-	if m.Type != TypeHook {
-		return nil, nil
-	}
-	frag, err := hookcfg.LoadFragment(filepath.Join(dir, "fragment.json"))
-	if err != nil {
-		return nil, fmt.Errorf("%w: hook asset %s: %v", ErrInvalid, m.Name, err)
-	}
-	return frag, nil
-}
-
 // projectionOpKind / removalOpKind label the planned operation for
-// --dry-run and reports.
-func projectionOpKind(kind string) string {
-	if kind == agentdir.KindInject {
-		return "inject"
-	}
-	return "link"
-}
+// --dry-run and reports. oma only projects by symlink.
+func projectionOpKind(string) string { return "link" }
 
-func removalOpKind(kind string) string {
-	if kind == agentdir.KindInject {
-		return "uninject"
-	}
-	return "unlink"
-}
+func removalOpKind(string) string { return "unlink" }
 
 // payloadPath resolves what gets copied: directory assets ship the whole
 // source dir; file assets ship exactly "<name>.md".

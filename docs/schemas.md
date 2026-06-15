@@ -80,9 +80,8 @@
 
 ## 8. hook fragment `assets/hooks/<name>/fragment.json`（`oma-hook-fragment/1`）
 
-- hook 资产的注入内容描述：顶层 `schema` + 按 agent 分节（`claude`/`codex`），节内 `event → [宿主原生形态条目…]`（形态与校验规则见 adapter-conformance.md §2）。
-- major fail-closed 同通则；登记入 `version.Schemas["hook_fragment"]`。
-- 与其他 schema 的差异：它描述**写入外部宿主文件**的内容，故校验最严——manifest 投影端缺对应分节、条目缺 `command`、条目自带保留键 `_oma_asset`、非对象条目均拒绝安装（security-contract §4）。
+- hook 资产随包携带的**手动接线参考**：顶层 `schema` + 按 agent 分节（`claude`/`codex`），节内 `event → [宿主原生形态条目…]`。
+- **oma 不再解析或校验它**（用户决定 2026-06-15：oma 零宿主配置改写，hook 注入命令移除）。`fragment.json` 随 hook 资产规范位放置到 `~/.agents/hooks/<name>/`，由用户照其内容手动接入自己的 `settings.json`/`hooks.json`（接线规范见 relay-v2-protocol.md §12.4）。因此该 schema 不再登记入 `version.Schemas`，也不参与安装期 fail-closed 校验。
 
 ## 9. dogfood 日志 `.oma/dogfood-log.md`
 

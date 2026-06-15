@@ -6,10 +6,12 @@ package agentdir
 
 import "path/filepath"
 
-// Projection kinds.
+// Projection kinds. oma only projects by symlink; host-config mutation
+// (hook fragment injection) was removed — hook assets are placed
+// canonically and the user wires them into their host config by hand
+// (docs/adapter-conformance.md §2).
 const (
 	KindSymlink = "symlink"
-	KindInject  = "inject" // hook fragments merged into the agent's host config
 )
 
 // Target describes where one asset projects for one agent.
@@ -38,7 +40,7 @@ func For(home, agent, assetType, assetName string) (Target, bool, string) {
 		case "prompt":
 			return t(agent, home, KindSymlink, ".claude", "commands", assetName+".md"), true, ""
 		case "hook":
-			return t(agent, home, KindInject, ".claude", "settings.json"), true, ""
+			return Target{}, false, "hook assets are placed canonically only; wire them into ~/.claude/settings.json by hand (docs/adapter-conformance.md §2)"
 		}
 	case "codex":
 		switch assetType {
@@ -49,21 +51,10 @@ func For(home, agent, assetType, assetName string) (Target, bool, string) {
 		case "subagent":
 			return Target{}, false, "codex has no subagent mechanism (manifest fallback applies)"
 		case "hook":
-			return t(agent, home, KindInject, ".codex", "hooks.json"), true, ""
+			return Target{}, false, "hook assets are placed canonically only; wire them into ~/.codex/hooks.json by hand (docs/adapter-conformance.md §2)"
 		}
 	}
 	return Target{}, false, "unknown agent or asset type"
-}
-
-// HookWrapKey returns the JSON key wrapping the event map in the agent's
-// host config file. BOTH hosts wrap events under a top-level "hooks"
-// key: claude in settings.json, codex in hooks.json (real-host evidence,
-// review 099 — codex's hooks.json additionally carries a sibling "state"
-// trust map, which the byte-exact editor preserves verbatim like any
-// foreign top-level key). The earlier root-is-event-map belief for codex
-// was wrong; nothing would have consumed entries injected at the root.
-func HookWrapKey(agent string) string {
-	return "hooks"
 }
 
 // AgentRoot is the trusted root for one agent's projections; projection
