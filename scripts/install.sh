@@ -106,17 +106,78 @@ build_from_source() {
   log "building oma from source (ref: $REF)"
   need git
   need go
-  git clone --quiet --depth 1 --branch "$REF" "https://github.com/$REPO.git" "$tmpdir/src"
-  ( cd "$tmpdir/src" && go build -trimpath -o "$tmpdir/built" ./cmd/oma )
+  git -c advice.detachedHead=false clone --quiet --depth 1 --branch "$REF" "https://github.com/$REPO.git" "$tmpdir/src"
+  local commit source_version
+  commit="$(git -C "$tmpdir/src" rev-parse --short HEAD 2>/dev/null || echo none)"
+  if [ "$VERSION" != "latest" ]; then
+    source_version="$VERSION"
+  elif [ "$REF" != "main" ]; then
+    source_version="$REF"
+  else
+    source_version="$(git -C "$tmpdir/src" describe --tags --exact-match 2>/dev/null || true)"
+    if [ -z "$source_version" ]; then
+      source_version="$(git -C "$tmpdir/src" describe --tags --abbrev=0 2>/dev/null || true)"
+    fi
+    if [ -z "$source_version" ]; then
+      source_version="$REF"
+    fi
+  fi
+  (
+    cd "$tmpdir/src"
+    go build -trimpath \
+      -ldflags "-s -w \
+        -X github.com/sean2077/oh-my-agents/internal/version.Version=$source_version \
+        -X github.com/sean2077/oh-my-agents/internal/version.Commit=$commit" \
+      -o "$tmpdir/built" ./cmd/oma
+  )
   install_atomic "$tmpdir/built"
   path_note
 }
 
+tag_from_release_url() {
+  local url="$1"
+  url="${url%%\?*}"
+  case "$url" in
+    */releases/tag/*)
+      local tag="${url##*/releases/tag/}"
+      [ -n "$tag" ] || return 1
+      printf '%s\n' "$tag"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+resolve_latest_tag_from_redirect() {
+  # The public release redirect is more reliable than the anonymous API and
+  # keeps the no-jq installer path small.
+  local final
+  final="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/$REPO/releases/latest" 2>/dev/null)" || return 1
+  tag_from_release_url "$final"
+}
+
+resolve_latest_tag_from_api() {
+  local body
+  body="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null)" || return 1
+  printf '%s\n' "$body" \
+    | sed -nE 's/.*"tag_name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' \
+    | head -n 1
+}
+
 resolve_latest_tag() {
-  # GitHub API releases/latest -> tag_name (no jq dependency).
-  curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
-    | grep -m1 '"tag_name"' \
-    | sed -E 's/.*"tag_name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/'
+  local tag
+  tag="$(resolve_latest_tag_from_redirect || true)"
+  if [ -n "$tag" ]; then
+    printf '%s\n' "$tag"
+    return 0
+  fi
+  tag="$(resolve_latest_tag_from_api || true)"
+  if [ -n "$tag" ]; then
+    printf '%s\n' "$tag"
+    return 0
+  fi
+  return 1
 }
 
 install_from_release() {
@@ -128,6 +189,7 @@ install_from_release() {
       log "could not resolve the latest release for $REPO; falling back to source"
       return 1
     fi
+    REF="$tag"
   fi
 
   local asset="oma_${tag}_${OS}_${ARCH}${EXT}"
