@@ -40,14 +40,20 @@ curl -fsSL https://raw.githubusercontent.com/sean2077/oh-my-agents/main/scripts/
 
 By default the installer downloads the prebuilt binary for the **latest GitHub release**, verifies its SHA-256 against the release `checksums.txt` (the same fail-closed contract `self-update` uses), writes `oma` to `${OMA_INSTALL_BIN_DIR:-$HOME/.local/bin}`, and prints a PATH hint if that directory is not already on `PATH` — no Go toolchain required. Useful overrides: `OMA_INSTALL_VERSION=v0.1.0` pins a tag, `OMA_INSTALL_BIN_DIR=/some/bin` changes the destination, and `OMA_INSTALL_FROM_SOURCE=1` forces a source build. If no prebuilt binary matches your platform (or no release can be resolved), the installer falls back to a source build (needs `git` + `go`). On Windows, run the same command from Git Bash; it installs `oma.exe`, and Git Bash can invoke it as `oma` once that directory is on `PATH`.
 
-You can also build from a checkout:
+You can also install from a checkout. This is the preferred self-build path:
+it stamps `oma version` with `git describe`, the short git commit, and
+`-dirty` when the checkout has uncommitted changes.
 
 ```bash
 git clone https://github.com/sean2077/oh-my-agents
 cd oh-my-agents
-go build -o oma ./cmd/oma
-./oma version
+make install
+oma version
 ```
+
+`make install` uses Go's normal install location (`GOBIN`, or `GOPATH/bin` when
+`GOBIN` is unset), so make sure that directory is on `PATH`. Use `make build`
+instead when you want a stamped local `./oma` binary in the checkout.
 
 Once releases are published, `oma self-update` updates the binary in place from the pinned GitHub Releases (checksum-verified, atomic, with automatic rollback).
 
