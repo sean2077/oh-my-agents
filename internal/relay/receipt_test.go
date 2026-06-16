@@ -157,3 +157,28 @@ func TestReviewRequiresVerdictAndTarget(t *testing.T) {
 		t.Fatal("a review without a target must be refused")
 	}
 }
+
+// TestApproveGateRejectsFutureTargetReview (R1 residual): a review cannot
+// pre-approve a future seq — publish refuses a target >= the review's own
+// seq, closing the future-target bypass of the approve gate.
+func TestApproveGateRejectsFutureTargetReview(t *testing.T) {
+	ck := newClock()
+	root, _ := initRoot(t, ck)
+	claude := testLedger(t, root, "claude", ck)
+	codex := testLedger(t, root, "codex", ck)
+	s := mustPair(t, claude, "topic")
+	if _, err := codex.Join(s.Pair, false); err != nil {
+		t.Fatal(err)
+	}
+	mustPublish(t, claude, s.Pair, "plan", "p", "review") // seq 1
+	// codex's review draft reserves seq 2; targeting seq 3 (a fix that does
+	// not exist yet) must be refused.
+	three := 3
+	d, err := codex.CreateDraft(s.Pair, "review", &three, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := codex.Publish(d, PublishInput{Body: "b", Prompt: "p", Verdict: VerdictApprove, ReviewTarget: &three}, false); err == nil {
+		t.Fatal("a review pre-targeting a future seq must be refused at publish")
+	}
+}

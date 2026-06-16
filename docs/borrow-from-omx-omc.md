@@ -44,37 +44,35 @@
 ### Phase 1（P0）—— A1 + A2：`oma-relay/3` 回执 + 质量门 + close 门
 作为**同一 schema/门切片**一次做到终态（最先、最复杂）。
 
-**Schema 变更**
-- artifact schema 升 `oma-relay/3`（session 仍 `oma-relay/2`，除非 close 状态结构变）。
-- review frontmatter 增：`verdict`(approve|approve-with-changes|revise)、`review_target_seq`、`review_target_hash`、`ledger_head_seq`、`ledger_head_hash`、`evidence_hash`。
-- review 正文内 fenced canonical JSON：`oma-review-evidence/1` = `{findings[], commands_run[], limitations[]}`。
-- decision frontmatter 增：`receipt_id`、`plan_hash_before`、`quality_gate_hash`、`ledger_head_seq`、`ledger_head_hash`、`verified_at`。
-- 回执 canonical JSON：`oma-completion-receipt/1` = `{pair, decision_seq, plan_ref{seq,hash}, quality_gate_ref{seq,verdict,hash}, ledger_head{seq,hash}, verified_at}`。
+> 注：本节初版规划经 Codex code-review（R1–R4 + 未来-target 残留）收敛为下述**终态**——`reviewed_head` 模型，无 `ledger_head`/`plan_ref`/`evidence_hash`。
+
+**Schema 变更（终态）**
+- artifact schema 升 `oma-relay/3`（session/sentinel 仍 `oma-relay/2`）。
+- ready `kind:review` **必带**：`verdict`(approve|approve-with-changes|revise) + `review_target_seq`（≥1，且须指向一条**已发布、且早于本 review**的 artifact）。纯散文走 `note`/`addendum`。
+- `kind:decision` 增完成回执字段：`receipt_id`、`reviewed_head_seq`、`reviewed_head_hash`、`quality_gate_seq`、`quality_gate_hash`、`verified_at`。
+- 回执 canonical JSON `oma-completion-receipt/1` = `{schema, pair, decision_seq, reviewed_head{seq,hash}, quality_gate_ref{seq,verdict,hash}, verified_at}`；`reviewed_head` = 被批准的工作（最新非 review/非 decision artifact）。
 
 **代码变更**
-- `internal/relay/artifact.go`：`Frontmatter` 增上述字段；`Render`/`Parse`/`Validate` 扩展；`schemaMajor` 接受 3；**未知 key 仍 fail-closed**（只新增"已知"键）。
-- 新 `internal/relay/receipt.go`：回执构造、canonical JSON、sha256(规范化)、校验。
-- 新 `internal/relay/verdict.go`：review verdict 解析 + evidence JSON 校验。
-- `internal/relay/session.go` `Close`：approve 门（见下）。
-- `internal/relay/publish.go`：publish 时按 kind 校验新字段(review 须带 verdict+target+evidence_hash 自洽；decision 须带自洽 receipt)。
-- `internal/ralph/ralph.go`：`PhasePassed` 时写 `receipt = hash{goal, checks, terminal_check}`（注：verifier 由 agent 执行，回执只证明"记录的 exit code"）。
+- `internal/relay/artifact.go`：`Frontmatter` 增上述字段；`Render`/`Parse`/`Validate` 扩展；artifact major=3；**未知 key 仍 fail-closed**。
+- `internal/relay/receipt.go`：`Receipt`、`buildDecisionReceipt`（取 reviewed_head + 针对它且更新的非-lead approve review）、`verifyApproveClose`、`ErrGate`。
+- `internal/relay/publish.go`：review 必带 verdict+target，且 target 须已发布且 `< 本 review seq`（防未来-target）；decision 自动盖回执。
+- `internal/relay/session.go` `Close`：approve 走 `verifyApproveClose`；`internal/cli/relay.go`：`ErrGate` → exit 4。
+- `internal/ralph/ralph.go`：`PhasePassed` 写 `receipt = hash{goal, checks, terminal_check}`（只证明记录的 exit code）。
 
-**命令面**（`docs/command-tree.md` 同步）
-- `oma relay draft --kind review` → publish 增 `--verdict`、`--review-target <seq>`、`--evidence-file <json>`。
-- `oma relay draft --kind decision` → publish 自动据"被门 review + plan"算并写 receipt。
-- `oma relay close --outcome approve` 走门。
+**命令面**
+- `oma relay publish` 对 `kind:review` 增 `--verdict`、`--review-target <seq>`；`kind:decision` 自动盖回执；`oma relay close --outcome approve` 走门。
 
-**close approve 门（最小，fail-closed）**
-1. 载入最新 ready 全量 + 校验 sidecar。
-2. 找最新 lead `kind:decision`；其须含**合法 receipt** 且 `ledger_head == 该 decision`。
-3. receipt 须引用**非-lead** `kind:review` 且 `verdict=approve`；该 review 的 hash == `quality_gate_hash`。
-4. 该 approve review 须命中 decision 直接前驱 head 或工作流指定 fix/plan seq —— **每门明确，禁止任意旧 approve 满足 close**。
-5. `approve-with-changes` **不**满足 close。
+**close approve 门（终态，fail-closed）**
+1. 载入最新 ready + 校验 sidecar；找最新 lead `kind:decision`，须含合法回执（否则 exit 4）。
+2. 回执 `reviewed_head` 须存在且 hash 一致（损坏 → exit 3）；reviewed_head 之后**无更新的未评审工作**（否则 exit 4）。
+3. 回执引用的 `kind:review` 须存在、hash 一致（损坏 → exit 3），且：非-lead、`verdict=approve`、`review_target_seq == reviewed_head`、`review.seq > reviewed_head.seq`（任一不满足 → exit 4）。
+4. `approve-with-changes` / lead 自评 / 未来或陈旧 target 均不满足。
 
-**测试**（`internal/relay/protocol_test.go` 扩矩阵）
-- 旧 oma-relay/2 artifact 在 /3 解析器下行为(终态：不兼容→拒绝)；未知 key 仍 fail-closed。
-- review 缺 verdict / evidence_hash 不自洽 → 拒。
-- close 无匹配非-lead approve → 拒；只有 approve-with-changes → 拒；hash 不匹配 → 拒；任意旧 approve → 拒；齐备 → 过。
+**测试**（`internal/relay/receipt_test.go` + `internal/cli/relay_test.go`）
+- 设计路径（plan 被评）与实现路径（fix 被评）均出回执并过 close。
+- R1：未评审 fix → close 拒，直到 fix 被 approve；未来-target review → publish 拒。
+- R3：review 缺 verdict / 缺 target → publish 拒。
+- R4：gate miss → exit 4（CLI 回归），损坏 → exit 3。
 - ralph PhasePassed receipt 哈希稳定、可复算。
 
 ### Phase 2（P1）—— A3 逃生阀 + A4 deep-interview + wave1 skills（可并行）

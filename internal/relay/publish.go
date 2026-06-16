@@ -97,6 +97,14 @@ func (l *Ledger) Publish(draftPath string, in PublishInput, dryRun bool) (string
 		if fm.ReviewTargetSeq == nil || *fm.ReviewTargetSeq < 1 {
 			return "", fmt.Errorf("%w: a kind:review must target the seq it judges via --review-target (or the draft's --in-reply-to)", ErrRelay)
 		}
+		// R1 (future-target): a review may only judge an already-published
+		// artifact OLDER than itself — it cannot pre-approve future work.
+		if *fm.ReviewTargetSeq >= fm.Seq {
+			return "", fmt.Errorf("%w: review_target_seq %d must be an earlier seq than this review (seq %d) — a review cannot pre-approve future work", ErrRelay, *fm.ReviewTargetSeq, fm.Seq)
+		}
+		if !l.seqIsPublished(pairDir, *fm.ReviewTargetSeq) {
+			return "", fmt.Errorf("%w: review_target_seq %d is not a published artifact", ErrRelay, *fm.ReviewTargetSeq)
+		}
 	}
 	if fm.Kind == "decision" && fm.ReceiptID == "" {
 		rcpt, rerr := l.buildDecisionReceipt(slug, fm.Seq)
@@ -189,6 +197,21 @@ func (l *Ledger) Publish(draftPath string, in PublishInput, dryRun bool) (string
 		}
 	}
 	return formal, nil
+}
+
+// seqIsPublished reports whether a ready artifact with the given seq exists
+// in the pair dir — used to reject reviews that target a missing/future seq.
+func (l *Ledger) seqIsPublished(pairDir string, seq int) bool {
+	names, err := publishedArtifacts(pairDir, true)
+	if err != nil {
+		return false
+	}
+	for _, n := range names {
+		if sq, _, _, ok := ParseArtifactName(n); ok && sq == seq {
+			return true
+		}
+	}
+	return false
 }
 
 // ownDraftPath validates that draftPath names a draft of OUR author

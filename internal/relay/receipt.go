@@ -146,7 +146,7 @@ func (l *Ledger) buildDecisionReceipt(slug string, decisionSeq int) (*Receipt, e
 	for i := range arts {
 		a := &arts[i]
 		if a.Kind == "review" && a.Author != lead && a.FM.Verdict == VerdictApprove &&
-			a.FM.ReviewTargetSeq != nil && *a.FM.ReviewTargetSeq == head.Seq {
+			a.FM.ReviewTargetSeq != nil && *a.FM.ReviewTargetSeq == head.Seq && a.Seq > head.Seq {
 			review = a // sorted ascending → keep the latest matching review
 		}
 	}
@@ -233,6 +233,9 @@ func (l *Ledger) verifyApproveClose(slug string) error {
 	}
 	if rev.FM.ReviewTargetSeq == nil || *rev.FM.ReviewTargetSeq != head.Seq {
 		return fmt.Errorf("%w: approve review seq %d does not target the reviewed head seq %d", ErrGate, rev.Seq, head.Seq)
+	}
+	if rev.Seq <= head.Seq {
+		return fmt.Errorf("%w: approve review seq %d is not newer than the reviewed head seq %d (it could not have reviewed its content)", ErrGate, rev.Seq, head.Seq)
 	}
 	return nil
 }

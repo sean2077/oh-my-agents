@@ -160,6 +160,29 @@ func TestRelayStatuslineCLI(t *testing.T) {
 	}
 }
 
+// TestRelayCloseApproveGateMissExit4 pins R4: an unsatisfied approve quality
+// gate exits 4 (ErrGate → ExitGate), distinct from exit 3 for corrupt state.
+func TestRelayCloseApproveGateMissExit4(t *testing.T) {
+	t.Setenv("OMA_RELAY_AUTHOR", "claude")
+	t.Setenv("CLAUDE_CODE_SESSION_ID", "")
+	t.Setenv("CODEX_THREAD_ID", "")
+	ledger := filepath.Join(t.TempDir(), "relay")
+	if code, out := runRelay(t, "relay", "init", "--ledger-root", ledger); code != ExitOK {
+		t.Fatalf("init %d: %s", code, out)
+	}
+	if code, out := runRelay(t, "relay", "pair", "new", "gate", "--ledger-root", ledger); code != ExitOK {
+		t.Fatalf("pair new %d: %s", code, out)
+	}
+	// No decision/approve review yet → approve close is an unsatisfied gate → exit 4.
+	if code, out := runRelay(t, "relay", "close", "--outcome", "approve", "--reason", "x", "--ledger-root", ledger); code != ExitGate {
+		t.Fatalf("gate-miss approve close exit = %d (want %d): %s", code, ExitGate, out)
+	}
+	// abandon needs no receipt → succeeds.
+	if code, out := runRelay(t, "relay", "close", "--outcome", "abandon", "--reason", "drop", "--ledger-root", ledger); code != ExitOK {
+		t.Fatalf("abandon close exit = %d: %s", code, out)
+	}
+}
+
 func TestRelayHookDispatchHiddenAndSilentWhenUnconfigured(t *testing.T) {
 	t.Setenv("OMA_RELAY_AUTHOR", "claude")
 	t.Setenv("CLAUDE_CODE_SESSION_ID", "")
