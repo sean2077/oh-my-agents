@@ -39,7 +39,8 @@ func newRelayStatuslineCmd(rootFlag *string) *cobra.Command {
 			if asJSON {
 				return printJSON(cmd, st)
 			}
-			_, _ = fmt.Fprintln(cmd.OutOrStdout(), relay.RenderPreset(st, preset))
+			color := !noColor && os.Getenv("NO_COLOR") == ""
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), relay.RenderPreset(st, preset, color))
 			return nil
 		}),
 	}
@@ -59,6 +60,7 @@ func watchStatusline(cmd *cobra.Command, l *relay.Ledger, pair, preset string, n
 	if interval <= 0 {
 		interval = 2 * time.Second
 	}
+	color := !noColor && os.Getenv("NO_COLOR") == ""
 	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt)
 	defer stop()
 	out := cmd.OutOrStdout()
@@ -66,10 +68,7 @@ func watchStatusline(cmd *cobra.Command, l *relay.Ledger, pair, preset string, n
 	defer ticker.Stop()
 	paint := func() {
 		st := l.Statusline(pair)
-		line := relay.RenderPreset(st, preset)
-		if !noColor && st.Turn == "you" {
-			line = "\x1b[1m" + line + "\x1b[0m"
-		}
+		line := relay.RenderPreset(st, preset, color)
 		_, _ = fmt.Fprintf(out, "\r\x1b[2K%s", line)
 	}
 	paint()

@@ -151,8 +151,8 @@ func TestRelayStatuslineCLI(t *testing.T) {
 	if code, out := runRelay(t, "relay", "pair", "new", "demo", "--ledger-root", ledger); code != ExitOK {
 		t.Fatalf("pair new %d: %s", code, out)
 	}
-	code, out := runRelay(t, "relay", "statusline", "--ledger-root", ledger)
-	if code != ExitOK || !strings.Contains(out, "demo") || !strings.Contains(out, "your turn") {
+	code, out := runRelay(t, "relay", "statusline", "--ledger-root", ledger, "--no-color")
+	if code != ExitOK || !strings.Contains(out, "demo") || !strings.Contains(out, "new pair") {
 		t.Fatalf("statusline exit %d: %s", code, out)
 	}
 	if code, out := runRelay(t, "relay", "statusline", "--ledger-root", ledger, "--json"); code != ExitOK || !strings.Contains(out, `"oma-relay-statusline/1"`) {
