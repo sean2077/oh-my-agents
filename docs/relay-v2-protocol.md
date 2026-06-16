@@ -156,7 +156,7 @@ oma 不再写入宿主配置；以下为用户手动接入 `~/.claude/settings.j
     "command": "[ -x '/abs/path/oma' ] || exit 0; exec '/abs/path/oma' relay statusline" } }
   ```
 
-  已有富状态行脚本者，改为在脚本内调 `oma relay statusline --json` 并按 `.bound` 过滤即可（见本仓 statusline 脚本范式）。
+  已有富状态行脚本者，改为在脚本内调 `oma relay statusline --json` 并按 `.bound` 过滤即可（见 `docs/examples/statusline-command.sh`）。
 
 - **hooks 形状（真机证据）**：两端宿主均为顶层 `hooks` 键包裹的嵌套 matcher 组（claude `settings.json`、codex `hooks.json`——codex 同级 `state` 信任表逐字节保留）。每个事件一个 `{type:"command", command, timeout}` 条目。
 - **matcher 作用域 / timeout**：SessionStart `startup|resume|clear`（10s）；PreToolUse claude `^(Edit|Write|MultiEdit)$`、codex `^(apply_patch|Edit|Write)$`（5s）；Stop 无 matcher（5s）。无 matcher 的 PreToolUse 会让派发器对每次工具调用 spawn 一次——务必带 matcher。

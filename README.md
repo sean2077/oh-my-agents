@@ -91,8 +91,8 @@ spamming command-not-found.
 
 Already have a custom statusline script? Don't replace it — call
 `oma relay statusline --json` from inside it and gate on `.bound` (so non-pair
-windows stay clean). See `~/.claude/statusline-command.sh` in this repo's author's
-setup for the pattern.
+windows stay clean). See [`docs/examples/statusline-command.sh`](docs/examples/statusline-command.sh)
+for a complete working example — the relay segment is the last block.
 
 **Auto-continue hooks** (drive the pair-delivery loop without manual nudging) —
 add to the top-level `hooks` key in `~/.claude/settings.json`. The dispatcher
