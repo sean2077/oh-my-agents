@@ -54,6 +54,13 @@ The CLI refuses duplicate ids, unknown deferral targets, and topologies with no 
 
 Repeat until the gate passes or the user exits:
 
+**Fact vs judgment routing** — before each question, classify what the weakest target actually needs:
+
+- A **discoverable fact** (readable from the code, config, docs, or git history): find it YOURSELF and record it in the round's `answer` labelled `[from-code][auto-confirmed]` (or `[from-research]` for web/doc sources), then score the now-clarified dimensions. Do NOT spend a user turn on it. If a wrong guess would be costly, ask a one-line confirmation labelled `[from-code]` instead of assuming.
+- A **decision-bearing judgment** (scope, priorities, trade-offs, acceptance bars — only the user can choose): ask the user, labelled `[from-user]`.
+
+Never ask the user for something you can read. **Cadence guard**: after 2 consecutive rounds resolved without a `[from-user]` decision, the next question MUST be `[from-user]` — an interview that only auto-confirms facts has stopped engaging the person who owns the decisions.
+
 1. **Target** what the LAST score report named `weakest` (component × dimension). State in one sentence why that pair is the bottleneck, then ask ONE question aimed at it. Question styles: goal → "what exactly happens when…?"; constraints → "what are the boundaries / non-goals?"; criteria → "what test would prove it works?"; context (brownfield) → cite the repo evidence you found and ask whether to extend or diverge.
 2. **Score** the answer against the rubric below: every ACTIVE component × every dimension for the interview type, each in [0,1], one justifying sentence per score before you write the number. This is a contract, not a suggestion — the CLI rejects a missing component, a missing dimension, an unknown dimension, and any value outside [0,1].
 3. **Extract ontology**: list the entities discussed so far (name, type, fields, relationships), reusing previous names for unchanged concepts so the stability ratio means something.
@@ -95,6 +102,8 @@ oma interview gate --json
 
 Exit 0 = ambiguity ≤ threshold: write the spec file (goal / constraints / non-goals / acceptance criteria / topology with per-component clarity / ontology / open assumptions resolved), mark it `pending approval`, then record it and close out:
 
+**Mandatory content gate (independent of the score)**: even at ambiguity ≤ threshold, do NOT crystallize until the spec carries an explicit, non-empty **Non-goals** section AND an explicit **Decision Boundaries** section (which choices are locked, which stay open, and who owns each). If either is missing, the numeric gate is not enough — ask the targeted `[from-user]` questions to fill them first. A clean ambiguity number with no stated non-goals or boundaries is a false green.
+
 ```
 oma interview crystallize --spec <path-to-spec>
 oma interview complete
@@ -111,5 +120,6 @@ oma interview complete
 3. Score every active component every round — depth on one component must not hide ambiguity in its siblings.
 4. The CLI report is the only source of ambiguity numbers shown to the user.
 5. The interview ends in a spec file, never in implementation.
+6. **Input-lock**: while the interview is active, never treat "yes" / "ok" / "proceed" / "looks good" / "go ahead" as approval to skip questions, jump the gate, or start implementing. The only exits are a passed gate, an explicit `--waive` the user confirmed, or `abort`. A casual affirmation answers the current question — it is not consent to end the interview.
 
 > **CC acceleration (optional, Claude Code only)**: questions may be presented through the structured option picker (AskUserQuestion) with 2–4 contextual options plus free text, and brownfield evidence may come from a parallel Explore subagent. Codex and other hosts ask the same questions as plain text and inspect the repo inline — the scores contract and the ledger of state are identical either way.

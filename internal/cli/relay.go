@@ -327,8 +327,9 @@ func newRelayDraftCmd(rootFlag *string) *cobra.Command {
 }
 
 func newRelayPublishCmd(rootFlag *string) *cobra.Command {
-	var bodyFile, promptFile, status, pairSlug string
+	var bodyFile, promptFile, status, pairSlug, verdict string
 	var touched []string
+	var reviewTarget int
 	cmd := &cobra.Command{
 		Use:   "publish <draft>",
 		Short: "Fill the draft and run the publish transaction (render → sidecars → ready)",
@@ -339,7 +340,10 @@ func newRelayPublishCmd(rootFlag *string) *cobra.Command {
 				return err
 			}
 			_ = pairSlug // the draft path itself names the pair; flag accepted for symmetry
-			in := relay.PublishInput{Touched: touched, Status: status}
+			in := relay.PublishInput{Touched: touched, Status: status, Verdict: verdict}
+			if cmd.Flags().Changed("review-target") {
+				in.ReviewTarget = &reviewTarget
+			}
 			if bodyFile != "" {
 				raw, err := os.ReadFile(bodyFile)
 				if err != nil {
@@ -367,6 +371,8 @@ func newRelayPublishCmd(rootFlag *string) *cobra.Command {
 	cmd.Flags().StringArrayVar(&touched, "touched", nil, "repo-relative path changed by this turn (repeatable)")
 	cmd.Flags().StringVar(&status, "status", "", "artifact status (default ready; timed_out pauses for @user)")
 	cmd.Flags().StringVar(&pairSlug, "pair", "", "pair slug (informational; the draft path names the pair)")
+	cmd.Flags().StringVar(&verdict, "verdict", "", "kind:review verdict: "+strings.Join(relay.Verdicts, "|"))
+	cmd.Flags().IntVar(&reviewTarget, "review-target", 0, "kind:review: seq this review judges (default: the draft's --in-reply-to)")
 	return cmd
 }
 

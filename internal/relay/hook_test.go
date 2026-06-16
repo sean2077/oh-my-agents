@@ -29,6 +29,11 @@ func stopPayload(active bool) []byte {
 	return b
 }
 
+func stopPayloadReason(reason string) []byte {
+	b, _ := json.Marshal(HookPayload{Event: HookStop, StopReason: reason})
+	return b
+}
+
 func TestHookStopAutoContinue(t *testing.T) {
 	ck := newClock()
 	codex, _ := hookPair(t, ck)
@@ -71,6 +76,31 @@ func TestHookStopAntiLoop(t *testing.T) {
 	}
 }
 
+func TestHookStopEscapeValves(t *testing.T) {
+	// A stop reason that classifies as context/rate/auth must stay silent
+	// even when a fresh peer artifact would otherwise continue (A3).
+	for _, reason := range []string{
+		"context window exceeded",
+		"hit the token limit",
+		"429 rate limit",
+		"request was throttled (quota)",
+		"401 unauthorized",
+		"OAuth token expired",
+	} {
+		ck := newClock()
+		codex, _ := hookPair(t, ck)
+		if out := codex.Hook(HookStop, stopPayloadReason(reason)); out != nil {
+			t.Fatalf("reason %q must escape (silent), got %+v", reason, out)
+		}
+	}
+	// An ordinary stop reason with a fresh peer artifact still continues.
+	ck := newClock()
+	codex, _ := hookPair(t, ck)
+	if out := codex.Hook(HookStop, stopPayloadReason("end_turn")); out == nil || out.Decision != "block" {
+		t.Fatalf("ordinary stop must still continue, got %+v", out)
+	}
+}
+
 func TestHookStopUnboundSilent(t *testing.T) {
 	ck := newClock()
 	root, _ := initRoot(t, ck)
@@ -107,7 +137,7 @@ func TestHookStopTerminalSilent(t *testing.T) {
 	ck := newClock()
 	codex, slug := hookPair(t, ck)
 	// A terminal pair has nothing to continue.
-	if err := codex.Close(slug, "approve", "done", false); err != nil {
+	if err := codex.Close(slug, "abandon", "done", false); err != nil {
 		t.Fatal(err)
 	}
 	if out := codex.Hook(HookStop, stopPayload(false)); out != nil {

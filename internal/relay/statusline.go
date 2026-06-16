@@ -100,25 +100,61 @@ func (l *Ledger) statuslineState(explicit string) *StatuslineState {
 	return st
 }
 
-// renderStatusline builds the compact one-line text.
-func renderStatusline(st *StatuslineState) string {
-	var turn string
+// Statusline presets (A5): rendering verbosity. focused is the default
+// embedded in StatuslineState.Text; minimal and full are opt-in via the CLI
+// --preset flag. Presets are pure formatting over the already-computed
+// state — they read nothing extra, so the bounded pure-read contract holds.
+const (
+	PresetMinimal = "minimal"
+	PresetFocused = "focused"
+	PresetFull    = "full"
+)
+
+// turnPhrase renders just the whose-turn token (+ a stale marker when the
+// awaited peer's heartbeat is stale).
+func turnPhrase(st *StatuslineState) string {
 	switch st.Turn {
 	case "you":
-		turn = "your turn"
+		return "your turn"
 	case "done":
-		turn = "done"
+		return "done"
 	case "idle", "":
-		turn = "idle"
+		return "idle"
 	default:
-		turn = "awaiting " + st.Turn
+		s := "awaiting " + st.Turn
 		if st.PeerStale {
-			turn += " (stale)"
+			s += " (stale)"
 		}
+		return s
 	}
-	line := fmt.Sprintf("relay %s · %s", st.Pair, turn)
+}
+
+// renderStatusline builds the compact one-line text (the focused preset).
+func renderStatusline(st *StatuslineState) string {
+	line := fmt.Sprintf("relay %s · %s", st.Pair, turnPhrase(st))
 	if st.LatestSeq > 0 {
 		line += fmt.Sprintf(" · %03d %s %s", st.LatestSeq, st.LatestKind, st.LatestAuthor)
 	}
 	return line
+}
+
+// RenderPreset re-renders a computed state at the requested verbosity (pure
+// formatting; no new reads). An unbound state or an unknown preset falls
+// back to the focused text already on the state.
+func RenderPreset(st *StatuslineState, preset string) string {
+	if !st.Bound {
+		return st.Text
+	}
+	switch preset {
+	case PresetMinimal:
+		return turnPhrase(st)
+	case PresetFull:
+		line := fmt.Sprintf("relay %s [%s] · %s", st.Pair, st.Status, turnPhrase(st))
+		if st.LatestSeq > 0 {
+			line += fmt.Sprintf(" · last %03d %s %s", st.LatestSeq, st.LatestKind, st.LatestAuthor)
+		}
+		return line
+	default:
+		return st.Text
+	}
 }

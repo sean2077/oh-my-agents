@@ -167,7 +167,7 @@ func TestPreflightBindingWarnsOnStale(t *testing.T) {
 	claude := testLedger(t, root, "claude", ck)
 	s := mustPair(t, claude, "gone")
 	// Close the pair → the binding now points at a terminal/archived pair.
-	if err := claude.Close(s.Pair, "approve", "done", false); err != nil {
+	if err := claude.Close(s.Pair, "abandon", "done", false); err != nil {
 		t.Fatal(err)
 	}
 	r := Preflight(PreflightInput{ExplicitRoot: root, Getenv: claudeIDEnv, Now: ck.now})

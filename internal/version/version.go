@@ -15,6 +15,7 @@ var Schemas = map[string]string{
 	"registry":         "oma-registry/1",
 	"state":            "oma-state/1",
 	"relay":            "oma-relay/2",
+	"relay_artifact":   "oma-relay/3",
 	"relay_binding":    "oma-relay-binding/1",
 	"relay_preflight":  "oma-relay-preflight/1",
 	"interview":        "oma-interview/1",

@@ -167,7 +167,7 @@ func TestAppendOnlyFormalNeverOverwritten(t *testing.T) {
 	// A hand-crafted draft at the SAME seq with different content must
 	// fail closed, never overwrite the published artifact.
 	draftPath := filepath.Join(claude.PairDir(s.Pair), ".draft", filepath.Base(formal))
-	fm := &Frontmatter{Schema: Schema, Seq: 1, Author: "claude", Peer: "codex", Kind: "plan",
+	fm := &Frontmatter{Schema: ArtifactSchema, Seq: 1, Author: "claude", Peer: "codex", Kind: "plan",
 		Status: "ready", Created: ck.now(), TouchedPaths: []string{}, PromptForNext: "different"}
 	if err := os.WriteFile(draftPath, Render(fm, "DIFFERENT body"), 0o600); err != nil {
 		t.Fatal(err)
@@ -446,7 +446,7 @@ func TestBindingResolution(t *testing.T) {
 	if _, err := claude.Join(s1.Pair, false); err != nil {
 		t.Fatal(err)
 	}
-	if err := claude.Close(s1.Pair, "approve", "done", false); err != nil {
+	if err := claude.Close(s1.Pair, "abandon", "done", false); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := claude.ResolvePair("", true); err == nil || !strings.Contains(err.Error(), "rebind") {

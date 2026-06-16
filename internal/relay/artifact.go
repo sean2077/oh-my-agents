@@ -19,6 +19,17 @@ var (
 	Statuses = []string{"ready", "closed", "cancelled", "failed", "timed_out"}
 )
 
+// Verdict values for kind:review (A2). approve-with-changes does NOT satisfy
+// the close gate — only approve does.
+const (
+	VerdictApprove            = "approve"
+	VerdictApproveWithChanges = "approve-with-changes"
+	VerdictRevise             = "revise"
+)
+
+// Verdicts is the closed set a review verdict may take.
+var Verdicts = []string{VerdictApprove, VerdictApproveWithChanges, VerdictRevise}
+
 // ValidKind / ValidStatus report membership in the §5 sets.
 func ValidKind(k string) bool   { return contains(Kinds, k) }
 func ValidStatus(s string) bool { return contains(Statuses, s) }
@@ -32,7 +43,10 @@ func contains(set []string, v string) bool {
 	return false
 }
 
-// Frontmatter is the oma-relay/2 artifact header (protocol §5).
+// Frontmatter is the oma-relay/3 artifact header (protocol §5). The A1/A2
+// fields (verdict on kind:review, receipt on kind:decision) are optional
+// and absent (zero) on every other kind; the strict parser still rejects
+// any key it does not know.
 type Frontmatter struct {
 	Schema        string
 	Seq           int
@@ -45,12 +59,28 @@ type Frontmatter struct {
 	PromptForNext string
 	TouchedPaths  []string
 	Corrects      *int
+
+	// A1/A2 (oma-relay/3). Review-gate fields — set on kind:review only:
+	Verdict         string // approve | approve-with-changes | revise
+	ReviewTargetSeq *int   // the seq this review judges
+	// Completion-receipt fields — set on kind:decision only. The receipt
+	// makes "done" falsifiable: it binds the approved plan, the non-lead
+	// approve review and the ledger head by content hash, so a decision can
+	// be proven to have been reviewed against the exact artifacts named.
+	ReceiptID       string     // sha256:<hex> of the canonical receipt JSON
+	PlanRefSeq      *int       // the approved plan artifact
+	PlanRefHash     string     // sha256:<hex> of that plan's rendered bytes
+	QualityGateSeq  *int       // the non-lead approve review
+	QualityGateHash string     // sha256:<hex> of that review's rendered bytes
+	LedgerHeadSeq   *int       // latest ready artifact at receipt time
+	LedgerHeadHash  string     // sha256:<hex> of that artifact's rendered bytes
+	VerifiedAt      *time.Time // receipt timestamp
 }
 
 // Validate enforces the §5 contract on a parsed or about-to-render header.
 func (f *Frontmatter) Validate() error {
-	if major, ok := schemaMajor(f.Schema, "oma-relay"); !ok || major != 2 {
-		return fmt.Errorf("%w: artifact schema %q, want %s", ErrRelay, f.Schema, Schema)
+	if major, ok := schemaMajor(f.Schema, "oma-relay"); !ok || major != 3 {
+		return fmt.Errorf("%w: artifact schema %q, want %s", ErrRelay, f.Schema, ArtifactSchema)
 	}
 	if f.Seq < 1 || f.Seq > 999 {
 		return fmt.Errorf("%w: seq %d out of range 1..999", ErrRelay, f.Seq)
@@ -74,6 +104,36 @@ func (f *Frontmatter) Validate() error {
 		clean := filepath.ToSlash(filepath.Clean(p))
 		if p == "" || strings.HasPrefix(clean, "/") || clean == ".." || strings.HasPrefix(clean, "../") {
 			return fmt.Errorf("%w: touched path %q must be repo-relative without escapes", ErrRelay, p)
+		}
+	}
+	return f.validateGateFields()
+}
+
+// validateGateFields enforces the A1/A2 optional fields: verdict shape,
+// kind-locality (review fields only on kind:review, receipt fields only on
+// kind:decision) and sha256 hash shape — so the close gate can trust what
+// it reads without re-deriving it (fail-closed).
+func (f *Frontmatter) validateGateFields() error {
+	if f.Verdict != "" {
+		if !contains(Verdicts, f.Verdict) {
+			return fmt.Errorf("%w: verdict %q not in %v", ErrRelay, f.Verdict, Verdicts)
+		}
+		if f.Kind != "review" {
+			return fmt.Errorf("%w: verdict is only valid on kind:review (got %s)", ErrRelay, f.Kind)
+		}
+	}
+	if f.ReviewTargetSeq != nil && f.Kind != "review" {
+		return fmt.Errorf("%w: review_target_seq is only valid on kind:review (got %s)", ErrRelay, f.Kind)
+	}
+	receiptSet := f.ReceiptID != "" || f.PlanRefSeq != nil || f.PlanRefHash != "" ||
+		f.QualityGateSeq != nil || f.QualityGateHash != "" || f.LedgerHeadSeq != nil ||
+		f.LedgerHeadHash != "" || f.VerifiedAt != nil
+	if receiptSet && f.Kind != "decision" {
+		return fmt.Errorf("%w: receipt fields are only valid on kind:decision (got %s)", ErrRelay, f.Kind)
+	}
+	for _, h := range []string{f.ReceiptID, f.PlanRefHash, f.QualityGateHash, f.LedgerHeadHash} {
+		if h != "" && !strings.HasPrefix(h, "sha256:") {
+			return fmt.Errorf("%w: hash %q must be sha256:<hex>", ErrRelay, h)
 		}
 	}
 	return nil
@@ -138,6 +198,21 @@ func Render(f *Frontmatter, body string) []byte {
 	} else {
 		b.WriteString("corrects: null\n")
 	}
+	// A1/A2 fields render only when set, in a fixed order, after the base
+	// header (the strict parser reads them back by key, so order is for
+	// humans / stable digests).
+	renderScalar(&b, "verdict", f.Verdict)
+	renderOptInt(&b, "review_target_seq", f.ReviewTargetSeq)
+	renderScalar(&b, "receipt_id", f.ReceiptID)
+	renderOptInt(&b, "plan_ref_seq", f.PlanRefSeq)
+	renderScalar(&b, "plan_ref_hash", f.PlanRefHash)
+	renderOptInt(&b, "quality_gate_seq", f.QualityGateSeq)
+	renderScalar(&b, "quality_gate_hash", f.QualityGateHash)
+	renderOptInt(&b, "ledger_head_seq", f.LedgerHeadSeq)
+	renderScalar(&b, "ledger_head_hash", f.LedgerHeadHash)
+	if f.VerifiedAt != nil {
+		fmt.Fprintf(&b, "verified_at: %s\n", f.VerifiedAt.UTC().Format(time.RFC3339))
+	}
 	b.WriteString("---\n")
 	b.WriteString(body)
 	return []byte(b.String())
@@ -195,6 +270,26 @@ func Parse(raw []byte) (*Frontmatter, string, error) {
 			f.InReplyTo, err = parseOptInt(value)
 		case "corrects":
 			f.Corrects, err = parseOptInt(value)
+		case "verdict":
+			f.Verdict = value
+		case "review_target_seq":
+			f.ReviewTargetSeq, err = parseOptInt(value)
+		case "receipt_id":
+			f.ReceiptID = value
+		case "plan_ref_seq":
+			f.PlanRefSeq, err = parseOptInt(value)
+		case "plan_ref_hash":
+			f.PlanRefHash = value
+		case "quality_gate_seq":
+			f.QualityGateSeq, err = parseOptInt(value)
+		case "quality_gate_hash":
+			f.QualityGateHash = value
+		case "ledger_head_seq":
+			f.LedgerHeadSeq, err = parseOptInt(value)
+		case "ledger_head_hash":
+			f.LedgerHeadHash = value
+		case "verified_at":
+			f.VerifiedAt, err = parseOptTime(value)
 		case "prompt_for_next":
 			switch value {
 			case "|", "|-":
@@ -243,6 +338,32 @@ func parseOptInt(v string) (*int, error) {
 		return nil, err
 	}
 	return &n, nil
+}
+
+func parseOptTime(v string) (*time.Time, error) {
+	if v == "null" || v == "" {
+		return nil, nil
+	}
+	t, err := time.Parse(time.RFC3339, v)
+	if err != nil {
+		return nil, err
+	}
+	return &t, nil
+}
+
+// renderScalar writes "key: val\n" only when val is non-empty (A1/A2
+// optional fields render only when set).
+func renderScalar(b *strings.Builder, key, val string) {
+	if val != "" {
+		fmt.Fprintf(b, "%s: %s\n", key, val)
+	}
+}
+
+// renderOptInt writes "key: n\n" only when v is non-nil.
+func renderOptInt(b *strings.Builder, key string, v *int) {
+	if v != nil {
+		fmt.Fprintf(b, "%s: %d\n", key, *v)
+	}
 }
 
 // ReadArtifact loads and verifies one published artifact: the .ready

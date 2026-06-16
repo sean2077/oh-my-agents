@@ -32,6 +32,15 @@ const (
 	TargetShared = "shared"
 )
 
+// Asset lifecycle status (A7 catalog). An empty status reads as active.
+// merged/alias point to a successor via the manifest's canonical field.
+const (
+	StatusActive     = "active"
+	StatusDeprecated = "deprecated"
+	StatusMerged     = "merged"
+	StatusAlias      = "alias"
+)
+
 var (
 	// ErrUnknownSchema marks a manifest whose schema major is not supported.
 	ErrUnknownSchema = errors.New("unknown manifest schema (fail-closed)")
@@ -52,6 +61,10 @@ type Manifest struct {
 	Targets                 []string `json:"targets"`
 	DescriptionBudgetTokens int      `json:"description_budget_tokens,omitempty"`
 	Fallback                string   `json:"fallback,omitempty"`
+	// A7 catalog lifecycle. Status is active|deprecated|merged|alias (empty
+	// = active); Canonical names the successor for merged/alias.
+	Status    string `json:"status,omitempty"`
+	Canonical string `json:"canonical,omitempty"`
 }
 
 // LoadManifest reads and validates a manifest file.
@@ -109,7 +122,27 @@ func (m *Manifest) Validate() error {
 	if seen[TargetClaude] && !seen[TargetCodex] && strings.TrimSpace(m.Fallback) == "" {
 		return fmt.Errorf("%w: claude-only asset %q requires a codex fallback note", ErrInvalid, m.Name)
 	}
+	switch m.Status {
+	case "", StatusActive, StatusDeprecated, StatusMerged, StatusAlias:
+	default:
+		return fmt.Errorf("%w: status %q not in {active,deprecated,merged,alias}", ErrInvalid, m.Status)
+	}
+	if (m.Status == StatusMerged || m.Status == StatusAlias) && strings.TrimSpace(m.Canonical) == "" {
+		return fmt.Errorf("%w: status %q requires a canonical successor", ErrInvalid, m.Status)
+	}
+	if m.Canonical != "" && !nameRe.MatchString(m.Canonical) {
+		return fmt.Errorf("%w: canonical %q (want a valid asset name)", ErrInvalid, m.Canonical)
+	}
 	return nil
+}
+
+// StatusOrDefault returns the lifecycle status, defaulting an empty value
+// to active.
+func (m *Manifest) StatusOrDefault() string {
+	if m.Status == "" {
+		return StatusActive
+	}
+	return m.Status
 }
 
 // HasTarget reports whether the manifest projects to the given target.

@@ -57,7 +57,7 @@ func TestRelayCLIRoundTrip(t *testing.T) {
 	if code, _ := runRelay(t, "relay", "wait", "--timeout", "0", "--ledger-root", ledger); code != 10 {
 		t.Fatalf("wait timeout exit = %d, want 10", code)
 	}
-	if code, out := runRelay(t, "relay", "close", "--outcome", "approve", "--reason", "smoke done", "--ledger-root", ledger); code != ExitOK {
+	if code, out := runRelay(t, "relay", "close", "--outcome", "abandon", "--reason", "smoke done", "--ledger-root", ledger); code != ExitOK {
 		t.Fatalf("close exit %d: %s", code, out)
 	}
 	// terminal pair: wait resolves to 12 via explicit --pair on the

@@ -46,10 +46,10 @@ The peer binds with `oma relay pair join <slug>`.
 Every delivery moves through these gates, each gate being one or more artifact exchanges:
 
 1. **plan** — lead publishes `kind: plan`: scope, approach, acceptance criteria.
-2. **plan review** — auxiliary publishes `kind: review` with verdict `approve` / `approve-with-changes` / `revise`. On `revise`, the lead fixes and republishes; count these rounds.
+2. **plan review** — auxiliary publishes `kind: review` carrying a typed verdict: `--verdict approve|approve-with-changes|revise` (and `--review-target <plan-seq>`, default the draft's `--in-reply-to`). On `revise`, the lead fixes and republishes; count these rounds. **Only `approve` satisfies the final close gate — `approve-with-changes` does not.**
 3. **implement** — lead does the work, publishes `kind: fix` (or `note` for a progress slice) listing every changed file via `--touched`.
-4. **code review** — auxiliary reviews the actual changes, same verdict set. Findings → lead verifies each independently, fixes what holds, publishes `kind: fix` with per-finding dispositions.
-5. **decision** — when both sides agree the work is done, the lead publishes `kind: decision` summarizing what shipped; then `oma relay close --outcome approve --reason "<what concluded>"` (ask the user before closing).
+4. **code review** — auxiliary reviews the actual changes and publishes `kind: review` with `--verdict …` (same set). Findings → lead verifies each independently, fixes what holds, publishes `kind: fix` with per-finding dispositions.
+5. **decision** — when both sides agree the work is done, the lead publishes `kind: decision`. The CLI auto-stamps a **completion receipt** onto it, binding the approved plan + the non-lead `approve` review + the ledger head by content hash. Then `oma relay close --outcome approve --reason "<what concluded>"` (ask the user before closing). **The approve close is fail-closed**: it refuses unless a lead `kind: decision` with a valid receipt over a non-lead `approve` review exists — so a review must have been published with `--verdict approve`. If the pair is being dropped instead, close with `--outcome reject|abandon` (no receipt required).
 
 Revise cap: after 3 `revise` rounds on the SAME gate, stop iterating and escalate with `@user:` — more rounds without convergence is a signal the approach (or the lead) is wrong, and that is the user's call.
 
@@ -69,7 +69,7 @@ Revise cap: after 3 `revise` rounds on the SAME gate, stop iterating and escalat
    oma relay publish <draft-path> --body-file body.md --prompt-file next.md --touched <path> ...
    ```
 
-   Publish refuses placeholder bodies, empty prompts, and anything matching the secret scan (no bypass exists — edit the content instead).
+   Publish refuses placeholder bodies, empty prompts, and anything matching the secret scan (no bypass exists — edit the content instead). For a `kind: review`, add `--verdict <approve|approve-with-changes|revise>` so the verdict is machine-readable (the close gate reads it); a `kind: decision` needs no extra flags — the receipt is stamped automatically from the latest non-lead `approve` review.
 
 3. To pause for user input mid-delivery: put the question on its own line starting with `@user:` in the prompt file and publish with `--status timed_out`. That stops the peer's wait without ending the pair; answer in hand, the next draft resumes normally.
 

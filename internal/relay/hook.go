@@ -29,6 +29,14 @@ type HookPayload struct {
 	StopHookActive bool            `json:"stop_hook_active"`
 	ToolName       string          `json:"tool_name"`
 	ToolInput      json.RawMessage `json:"tool_input"`
+	// A3 escape valves (docs/borrow-from-omx-omc.md): a tolerant union of
+	// the field a host uses to report WHY it stopped. Host naming drifts and
+	// the exact per-host Stop-payload shape still needs verification against
+	// real Claude Code / Codex payloads — so this is a safe, additive
+	// scaffold: when the reason is absent both fields are "" and hookStop
+	// behaves exactly as before (continue only on a new peer artifact).
+	StopReason string `json:"stop_reason"`
+	Reason     string `json:"reason"`
 }
 
 // HookOutput is the decision emitted to the host. Only the shared,
@@ -93,6 +101,15 @@ func (l *Ledger) hookStop(p HookPayload) *HookOutput {
 	if p.StopHookActive {
 		return nil // anti-loop: a hook-induced continuation must not recurse
 	}
+	// A3 escape valves: never inject a continuation when the host stopped
+	// for context exhaustion (would wedge compaction), rate limiting (retry
+	// storm) or auth failure (auth loop) — even if a fresh peer artifact is
+	// waiting. The peer's turn is still in the ledger; the user reads it via
+	// `oma relay status` once the blocking condition clears.
+	if valve, escape := stopEscape(p); escape {
+		l.hookTrail(HookStop, "escape valve: "+valve)
+		return nil
+	}
 	b, err := l.loadBinding()
 	if err != nil {
 		return nil // strict binding: an unbound session stays silent
@@ -121,6 +138,38 @@ func (l *Ledger) hookStop(p HookPayload) *HookOutput {
 		Reason: fmt.Sprintf("[relay-action] %s published seq=%03d kind=%s addressed to you — read %s and continue the relay (oma relay status --json).",
 			peer, seq, kind, path),
 	}
+}
+
+// stopEscape classifies a host stop reason into an A3 escape valve. It
+// reads the tolerant union of reason fields and matches substrings; an
+// empty or unrecognized reason returns ("", false) so the normal
+// peer-artifact continuation proceeds unchanged. The bias is deliberately
+// toward escaping: a false escape only skips one turn's auto-nudge (the
+// peer artifact stays readable), whereas a missed context/rate/auth stop
+// is the deadlock these valves exist to prevent.
+func stopEscape(p HookPayload) (valve string, escape bool) {
+	r := strings.ToLower(strings.TrimSpace(p.StopReason + " " + p.Reason))
+	switch {
+	case r == "":
+		return "", false
+	case containsAny(r, "context", "compact", "token limit", "token_limit", "max tokens", "max_tokens"):
+		return "context_limit", true
+	case containsAny(r, "429", "rate limit", "rate_limit", "ratelimit", "quota", "overloaded", "throttl"):
+		return "rate_limit", true
+	case containsAny(r, "401", "403", "unauthor", "forbidden", "auth", "expired", "credential", "api key", "api_key"):
+		return "auth_error", true
+	default:
+		return "", false
+	}
+}
+
+func containsAny(s string, subs ...string) bool {
+	for _, sub := range subs {
+		if strings.Contains(s, sub) {
+			return true
+		}
+	}
+	return false
 }
 
 // hookPreToolUse denies edits to published .ready artifacts (append-only

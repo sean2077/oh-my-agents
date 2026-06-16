@@ -29,7 +29,7 @@ func newEngine() (*asset.Engine, error) {
 }
 
 // sourceTypeDirs mirrors the repo assets/ layout (plan §2).
-var sourceTypeDirs = []string{"skills", "agents", "hooks", "prompts"}
+var sourceTypeDirs = asset.TypeDirs
 
 // requireValidNames guards CLI asset-name arguments before they reach any
 // path computation (recheck 020 blocker 1).
@@ -74,7 +74,7 @@ func newAssetCmd() *cobra.Command {
 		Use:   "asset",
 		Short: "Manage content assets (skills, subagents, hooks, prompts)",
 	}
-	cmd.AddCommand(newAssetInstallCmd(), newAssetListCmd(), newAssetRemoveCmd(), newAssetRollbackCmd())
+	cmd.AddCommand(newAssetInstallCmd(), newAssetListCmd(), newAssetCatalogCmd(), newAssetRemoveCmd(), newAssetRollbackCmd())
 	return cmd
 }
 
@@ -234,5 +234,40 @@ func newAssetRollbackCmd() *cobra.Command {
 		}),
 	}
 	cmd.Flags().StringVar(&to, "to", "", "backup id (default: most recent)")
+	return cmd
+}
+
+func newAssetCatalogCmd() *cobra.Command {
+	var from string
+	var asJSON bool
+	cmd := &cobra.Command{
+		Use:   "catalog",
+		Short: "Generated catalog of source assets (derived from manifests; status lifecycle)",
+		Args:  cobra.NoArgs,
+		RunE: run(func(cmd *cobra.Command, _ []string) error {
+			if from == "" {
+				from = "assets"
+			}
+			entries, err := asset.Catalog(from)
+			if err != nil {
+				return Errf(ExitState, "%v", err)
+			}
+			if asJSON {
+				enc := json.NewEncoder(cmd.OutOrStdout())
+				enc.SetIndent("", "  ")
+				return enc.Encode(map[string]any{"schema": "oma-cli/1", "catalog": entries})
+			}
+			for _, e := range entries {
+				line := fmt.Sprintf("%-24s %-9s %-10s %s", e.Name, e.Type, e.Status, strings.Join(e.Targets, ","))
+				if e.Canonical != "" {
+					line += " -> " + e.Canonical
+				}
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), line)
+			}
+			return nil
+		}),
+	}
+	cmd.Flags().StringVar(&from, "from", "", "assets source root (default: ./assets)")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable output")
 	return cmd
 }

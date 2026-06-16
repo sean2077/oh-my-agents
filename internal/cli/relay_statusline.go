@@ -11,7 +11,7 @@ import (
 )
 
 func newRelayStatuslineCmd(rootFlag *string) *cobra.Command {
-	var pairSlug string
+	var pairSlug, preset string
 	var asJSON, watch, noColor bool
 	var interval int
 
@@ -33,13 +33,13 @@ func newRelayStatuslineCmd(rootFlag *string) *cobra.Command {
 				return nil
 			}
 			if watch {
-				return watchStatusline(cmd, l, pairSlug, noColor, time.Duration(interval)*time.Second)
+				return watchStatusline(cmd, l, pairSlug, preset, noColor, time.Duration(interval)*time.Second)
 			}
 			st := l.Statusline(pairSlug)
 			if asJSON {
 				return printJSON(cmd, st)
 			}
-			_, _ = fmt.Fprintln(cmd.OutOrStdout(), st.Text)
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), relay.RenderPreset(st, preset))
 			return nil
 		}),
 	}
@@ -48,13 +48,14 @@ func newRelayStatuslineCmd(rootFlag *string) *cobra.Command {
 	cmd.Flags().BoolVar(&watch, "watch", false, "repaint a live line until Ctrl-C")
 	cmd.Flags().BoolVar(&noColor, "no-color", false, "disable ANSI styling")
 	cmd.Flags().IntVar(&interval, "interval", 2, "watch repaint interval in seconds")
+	cmd.Flags().StringVar(&preset, "preset", "", "verbosity: minimal|focused|full (default focused)")
 	return cmd
 }
 
 // watchStatusline repaints in place on a bounded frame interval until the
 // user interrupts. Each frame's state computation is itself deadline-bounded
 // inside Ledger.Statusline, so a stall degrades the line rather than wedging.
-func watchStatusline(cmd *cobra.Command, l *relay.Ledger, pair string, noColor bool, interval time.Duration) error {
+func watchStatusline(cmd *cobra.Command, l *relay.Ledger, pair, preset string, noColor bool, interval time.Duration) error {
 	if interval <= 0 {
 		interval = 2 * time.Second
 	}
@@ -65,7 +66,7 @@ func watchStatusline(cmd *cobra.Command, l *relay.Ledger, pair string, noColor b
 	defer ticker.Stop()
 	paint := func() {
 		st := l.Statusline(pair)
-		line := st.Text
+		line := relay.RenderPreset(st, preset)
 		if !noColor && st.Turn == "you" {
 			line = "\x1b[1m" + line + "\x1b[0m"
 		}

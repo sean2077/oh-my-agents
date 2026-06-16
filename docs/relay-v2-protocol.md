@@ -54,7 +54,7 @@
 
 - 文件名 `NNN-<author>-<kind>.md`，NNN 三位十进制（001 起，允许空洞，读取按文件名排序）。
 - `kind ∈ plan | review | fix | note | question | decision | correction | addendum`。
-- frontmatter（YAML）：`schema("oma-relay/2"), seq(int), author, peer, kind, status, created(ISO-8601), in_reply_to(int|null), prompt_for_next(string), touched_paths([string]), corrects(int|null)`。
+- frontmatter（YAML）：`schema("oma-relay/3"), seq(int), author, peer, kind, status, created(ISO-8601), in_reply_to(int|null), prompt_for_next(string), touched_paths([string]), corrects(int|null)`。**A1/A2 可选字段**（其他 kind 缺省）：`kind:review` 增 `verdict(approve|approve-with-changes|revise)` 与 `review_target_seq`；`kind:decision` 增完成回执 `receipt_id, plan_ref_seq, plan_ref_hash, quality_gate_seq, quality_gate_hash, ledger_head_seq, ledger_head_hash, verified_at`。严格 parser 仍拒绝任何未知 key；session/sentinel 仍 `oma-relay/2`。
 - `status ∈ ready | closed | cancelled | failed | timed_out`；终态 = closed/cancelled/failed；`timed_out` 为可恢复暂停（用于 `@user:` 上抛）。
 - **append-only**：带 `.ready` 的文件永不修改；更正经 `kind: correction` + `corrects` 指向原 seq。
 
@@ -88,6 +88,7 @@ publish 步骤（严格顺序）：从草稿**渲染**正式内容 → 写 `NNN-
 ## 9. 终态与归档
 
 - `oma relay close --outcome <approve|reject|abandon> --reason <text>`：写 session.json 终态 → 写 `CLOSED` 哨兵 → 整体移入 `_archive/`。
+- **approve 质量门（A2，fail-closed）**：`--outcome approve` 拒绝，除非存在 lead `kind:decision` 携带合法完成回执，且其引用的计划与**非-lead** `kind:review`（verdict=approve）按内容 hash 仍一致；`approve-with-changes` 不满足。`reject`/`abandon` 无需回执。
 - 归档后只读；恢复（restore）与清理归 `oma doctor` 子检查（命令面见 command-tree.md）。
 
 ## 10. 安全要点（实现规约见 security-contract.md）

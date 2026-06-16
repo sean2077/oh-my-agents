@@ -83,7 +83,7 @@ func TestFrontmatterRoundTrip(t *testing.T) {
 	in := 41
 	cor := 7
 	fm := &Frontmatter{
-		Schema: Schema, Seq: 42, Author: "claude", Peer: "codex",
+		Schema: ArtifactSchema, Seq: 42, Author: "claude", Peer: "codex",
 		Kind: "correction", Status: "timed_out",
 		Created:       time.Date(2026, 6, 11, 13, 0, 0, 0, time.UTC),
 		InReplyTo:     &in,
@@ -122,7 +122,7 @@ func TestWaitTimeoutAndTerminal(t *testing.T) {
 		t.Fatalf("wait = %+v err=%v, want timeout 10", res, err)
 	}
 
-	if err := claude.Close(s.Pair, "approve", "done", false); err != nil {
+	if err := claude.Close(s.Pair, "abandon", "done", false); err != nil {
 		t.Fatal(err)
 	}
 	// Archived with no undelivered peer artifact: deterministic 12
@@ -146,7 +146,7 @@ func TestWaitDeliversUnconsumedDecisionAfterCloseArchive(t *testing.T) {
 	}
 	mustPublish(t, claude, s.Pair, "plan", "body", "review")
 	mustPublish(t, codex, s.Pair, "decision", "approved, shipping", "none")
-	if err := codex.Close(s.Pair, "approve", "done", false); err != nil {
+	if err := codex.Close(s.Pair, "abandon", "done", false); err != nil {
 		t.Fatal(err)
 	}
 
@@ -270,7 +270,7 @@ func TestArchivedSessionTamperFailsClosed(t *testing.T) {
 	claude := testLedger(t, root, "claude", ck)
 	s := mustPair(t, claude, "tamper")
 	mustPublish(t, claude, s.Pair, "plan", "body", "next")
-	if err := claude.Close(s.Pair, "approve", "done", false); err != nil {
+	if err := claude.Close(s.Pair, "abandon", "done", false); err != nil {
 		t.Fatal(err)
 	}
 	sessPath := filepath.Join(root, "_archive", s.Pair, "session.json")
@@ -389,7 +389,7 @@ func TestSecretScannerShapes(t *testing.T) {
 }
 
 func TestParseRejectsDuplicateFrontmatterKeys(t *testing.T) {
-	fm := &Frontmatter{Schema: Schema, Seq: 1, Author: "claude", Peer: "codex",
+	fm := &Frontmatter{Schema: ArtifactSchema, Seq: 1, Author: "claude", Peer: "codex",
 		Kind: "note", Status: "ready", Created: time.Date(2026, 6, 11, 13, 0, 0, 0, time.UTC),
 		TouchedPaths: []string{}, PromptForNext: "x"}
 	raw := string(Render(fm, "body"))
@@ -424,7 +424,7 @@ func TestCloseArchivesAndRestoreBringsBack(t *testing.T) {
 	s := mustPair(t, claude, "topic")
 	mustPublish(t, claude, s.Pair, "decision", "final synthesis", "none")
 
-	if err := claude.Close(s.Pair, "approve", "shipped", false); err != nil {
+	if err := claude.Close(s.Pair, "abandon", "shipped", false); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(claude.PairDir(s.Pair)); !errors.Is(err, os.ErrNotExist) {
@@ -442,7 +442,7 @@ func TestCloseArchivesAndRestoreBringsBack(t *testing.T) {
 		t.Fatalf("restored session = %+v err=%v (must stay terminal)", got, err)
 	}
 	// Double close refused.
-	if err := claude.Close(s.Pair, "approve", "again", false); err == nil {
+	if err := claude.Close(s.Pair, "abandon", "again", false); err == nil {
 		t.Fatal("closing a terminal pair must refuse")
 	}
 }
@@ -494,7 +494,7 @@ func TestDryRunZeroWrites(t *testing.T) {
 	if _, err := claude.NewPair("another", "", "p", true); err != nil {
 		t.Fatal(err)
 	}
-	if err := claude.Close(s.Pair, "approve", "why", true); err != nil {
+	if err := claude.Close(s.Pair, "abandon", "why", true); err != nil {
 		t.Fatal(err)
 	}
 	if got := treeDigest(t, root); got != before {
@@ -549,7 +549,7 @@ func TestSetLeadPersistsSwap(t *testing.T) {
 		t.Fatal("dry-run set-lead wrote state")
 	}
 	// Terminal pair refuses.
-	if err := claude.Close(s.Pair, "approve", "done", false); err != nil {
+	if err := claude.Close(s.Pair, "abandon", "done", false); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := claude.SetLead(s.Pair, "claude", false); err == nil {

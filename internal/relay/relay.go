@@ -20,9 +20,10 @@ import (
 
 // Schema constants (docs/schemas.md §4).
 const (
-	Schema        = "oma-relay/2"
-	BindingSchema = "oma-relay-binding/1"
-	sentinelName  = ".oma-relay-v2"
+	Schema         = "oma-relay/2" // session + sentinel (ledger format)
+	ArtifactSchema = "oma-relay/3" // artifact frontmatter (A1/A2: + verdict/receipt fields)
+	BindingSchema  = "oma-relay-binding/1"
+	sentinelName   = ".oma-relay-v2"
 )
 
 // ErrRelay marks fail-closed relay refusals (exit 3 at the CLI).

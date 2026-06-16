@@ -39,6 +39,9 @@ func newRalphStartCmd() *cobra.Command {
 				return err
 			}
 			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s phase=%s max_rounds=%d stall_window=%d\n", s.ID, s.Phase, s.MaxRounds, s.StallWindow)
+			if adv := fuzzyStartAdvisory(goal); adv != "" {
+				_, _ = fmt.Fprintln(cmd.ErrOrStderr(), adv)
+			}
 			if DryRun() {
 				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "dry-run: would create %s\n", eng.StatePath(s.ID))
 			}

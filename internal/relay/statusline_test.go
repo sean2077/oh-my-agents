@@ -68,7 +68,7 @@ func TestStatuslineTurnLogic(t *testing.T) {
 		t.Fatalf("latest = %d %s %s", st.LatestSeq, st.LatestKind, st.LatestAuthor)
 	}
 	// Close → done.
-	if err := claude.Close(s.Pair, "approve", "x", false); err != nil {
+	if err := claude.Close(s.Pair, "abandon", "x", false); err != nil {
 		t.Fatal(err)
 	}
 	if st := claude.Statusline(s.Pair); st.Turn != "done" {

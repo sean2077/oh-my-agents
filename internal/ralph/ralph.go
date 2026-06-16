@@ -6,6 +6,8 @@
 package ralph
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -53,6 +55,10 @@ type State struct {
 	StallWindow int       `json:"stall_window"`
 	Created     time.Time `json:"created"`
 	Updated     time.Time `json:"updated"`
+	// Receipt (A1): sha256 over {goal, checks, terminal_check}, set when the
+	// loop reaches PhasePassed. It makes "passed" falsifiable — note it
+	// proves the recorded exit code, not that the agent truly ran the command.
+	Receipt string `json:"receipt,omitempty"`
 }
 
 // Terminal reports an end state.
@@ -219,6 +225,7 @@ func (e *Engine) RecordCheck(id string, verifierExit int, note string, dryRun bo
 	switch {
 	case verifierExit == 0:
 		s.Phase = PhasePassed
+		s.Receipt = ralphReceipt(s)
 	case e.stalled(s):
 		s.Phase = PhaseStalled
 	}
@@ -254,6 +261,25 @@ func (e *Engine) stalled(s *State) bool {
 		}
 	}
 	return true
+}
+
+// ralphReceipt hashes the loop's terminal evidence (A1). Caller guarantees
+// at least one recorded check (the passing one).
+func ralphReceipt(s *State) string {
+	payload := struct {
+		Schema        string  `json:"schema"`
+		Goal          string  `json:"goal"`
+		Checks        []Check `json:"checks"`
+		TerminalCheck Check   `json:"terminal_check"`
+	}{
+		Schema:        "oma-ralph-receipt/1",
+		Goal:          s.Goal,
+		Checks:        s.Checks,
+		TerminalCheck: s.Checks[len(s.Checks)-1],
+	}
+	raw, _ := json.Marshal(payload)
+	sum := sha256.Sum256(raw)
+	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
 // Abort ends a running loop.

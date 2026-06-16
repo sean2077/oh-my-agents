@@ -19,6 +19,11 @@ type PublishInput struct {
 	Prompt  string
 	Touched []string
 	Status  string // default "ready"
+	// A1/A2 (kind:review): the typed verdict and the seq it judges. An
+	// empty Verdict leaves the draft's value untouched (idempotent re-run);
+	// ReviewTarget defaults to the draft's in_reply_to when omitted.
+	Verdict      string
+	ReviewTarget *int
 }
 
 // Publish runs the §7 transaction: render the draft into its final form
@@ -69,6 +74,30 @@ func (l *Ledger) Publish(draftPath string, in PublishInput, dryRun bool) (string
 	}
 	if fm.Status == "" {
 		fm.Status = "ready"
+	}
+	// A1/A2: a review carries its verdict + target; a decision auto-builds
+	// the completion receipt the close gate verifies. The receipt is built
+	// only once (guarded by ReceiptID): an interrupted re-publish re-parses
+	// the already-rendered draft and must reproduce identical bytes, so its
+	// VerifiedAt timestamp must not change between runs.
+	if fm.Kind == "review" {
+		if in.Verdict != "" {
+			fm.Verdict = in.Verdict
+		}
+		if in.ReviewTarget != nil {
+			fm.ReviewTargetSeq = in.ReviewTarget
+		} else if fm.ReviewTargetSeq == nil {
+			fm.ReviewTargetSeq = fm.InReplyTo
+		}
+	}
+	if fm.Kind == "decision" && fm.ReceiptID == "" {
+		rcpt, rerr := l.buildDecisionReceipt(slug, fm.Seq)
+		if rerr != nil {
+			return "", rerr
+		}
+		if rcpt != nil {
+			rcpt.applyTo(fm)
+		}
 	}
 	if err := fm.Validate(); err != nil {
 		return "", err

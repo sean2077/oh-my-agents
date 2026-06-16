@@ -48,7 +48,8 @@
   "created": "ISO-8601", "closed": null, "outcome": null, "reason": null
 }
 ```
-- artifact frontmatter schema 同协议文档 §5；`.oma-relay-v2` sentinel：`{"schema":"oma-relay/2","created":"..."}`。
+- artifact frontmatter schema `oma-relay/3`（详见协议 §5；A1/A2：`kind:review` 增 `verdict`/`review_target_seq`，`kind:decision` 增完成回执字段；session 与 sentinel 仍 `oma-relay/2`）；`.oma-relay-v2` sentinel：`{"schema":"oma-relay/2","created":"..."}`。
+- 完成回执 `oma-completion-receipt/1`（嵌入 decision frontmatter，A1）：`{schema, pair, decision_seq, plan_ref{seq,hash}, quality_gate_ref{seq,verdict,hash}, ledger_head{seq,hash}, verified_at}`；其 sha256 存为 frontmatter `receipt_id`，`close --outcome approve` 据此 fail-closed 校验（协议 §9）。review 证据可选正文 fenced JSON `oma-review-evidence/1`：`{schema, findings[], commands_run[], limitations[]}`。
 - pair 绑定 `.oma/relay/_bindings/<author-session>.json`（`oma-relay-binding/1`）：`{"schema":"oma-relay-binding/1","author":"claude","session_hash":"<平台会话id哈希>","pair":"20260611-topic","created":"ISO-8601","updated":"ISO-8601"}`；解析顺序与 fail-closed 语义见协议 §4a。
 
 ## 5. interview 状态 `.oma/state/interview-<id>.json`（`oma-interview/1`）
@@ -70,7 +71,7 @@
 
 ## 6. ralph 状态 `.oma/state/ralph-<id>.json`（`oma-ralph/1`）
 
-字段集见 workflows.md §2.1（id/phase/goal/max_rounds/round/checks[]/stall_window/created/updated）。
+字段集见 workflows.md §2.1（id/phase/goal/max_rounds/round/checks[]/stall_window/created/updated）。PhasePassed 时增 `receipt`（A1：sha256 over {goal, checks, terminal_check}；证明记录的 exit code，非命令真跑过）。
 
 ## 7. 用户配置 `config.toml`（`oma-config/1`）
 

@@ -110,7 +110,7 @@ func (l *Ledger) CreateDraft(slug, kind string, inReplyTo, corrects *int, dryRun
 		return "", err
 	}
 	fm := &Frontmatter{
-		Schema: Schema, Seq: seq, Author: l.Identity.Author, Peer: peer,
+		Schema: ArtifactSchema, Seq: seq, Author: l.Identity.Author, Peer: peer,
 		Kind: kind, Status: "ready", Created: l.Now().UTC(),
 		InReplyTo: inReplyTo, Corrects: corrects, TouchedPaths: []string{},
 	}

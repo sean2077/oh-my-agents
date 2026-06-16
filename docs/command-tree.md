@@ -18,6 +18,7 @@ oma asset list [--installed] [--json]
 oma asset update [<name>...] [--dry-run]        # 别名：oma update
 oma asset remove <name>... [--dry-run]
 oma asset rollback <name> [--to <backup-id>]
+oma asset catalog [--from <root>] [--json]      # 由 manifest 生成的目录视图（status 生命周期）
 oma asset link --dev [--repo <path>]            # dogfood：软链本地 checkout
 ```
 
@@ -25,6 +26,7 @@ oma asset link --dev [--repo <path>]            # dogfood：软链本地 checkou
 - 覆盖语义：目标已存在且非 oma 管理 → 拒绝；`--force` 先备份再覆盖（见 security-contract.md §2）。
 - `rollback`：从 `~/.config/oma/backups/` 恢复；`--to` 省略时取最近备份。
 - `link --dev`：规范位条目改为指向仓库 checkout 的软链；registry 标记 `dev: true`。
+- `catalog`（A7）：扫描 `<root>/{skills,agents,hooks,prompts}/*/manifest.json` 生成名称排序的目录（name/type/status/targets/canonical），默认 `--from ./assets`；与 install/registry 同源、不引入第二真源；重复名或名与目录不符 fail-closed。manifest 可选 `status(active|deprecated|merged|alias)` + `canonical`。
 
 ## 3. `oma state` —— 通用项目级状态
 
@@ -69,6 +71,7 @@ oma ralph status [--id <id>] [--json]
 - 状态落 `.oma/state/interview-<id>.json` / `.oma/state/ralph-<id>.json`；`--id` 省略时取该类型**唯一**非终态实例，歧义（>1 活跃）则拒绝并列候选。
 - `gate`/`next` 的判定输出必须包含：判定结果、依据数值、下一步建议（机器可读 + 人类可读双形态）。
 - **无 `oma autopilot *` 命令面**（autopilot 纯 markdown，用通用 `oma state`；重开 spec 才可改变）。
+- **ralph start 模糊门（wave2，advisory）**：`--goal` 过于模糊（≤15 词且无 文件/issue/符号/测试运行器 锚点）→ 向 stderr 打印一条建议（先 deep-interview 澄清或 ralplan 规划），**不阻断**启动。
 - **B9/B10 修订记录**：状态机要求的迁移入口在原命令面缺失，补齐——interview 增 `crystallize`（gate_passed|gate_waived → crystallized，记录 spec 路径）、`complete`、`abort`、`gate --waive`（早退记录警示，对应 gate_waived 态）；ralph 增 `abort`。拓扑锁定（topology_pending → interviewing）经 `score` 的 round-0 输入承载（schemas.md §5），不增独立命令。
 
 ## 6. `oma relay` —— 结对账本（协议见 docs/relay-v2-protocol.md）
@@ -76,7 +79,7 @@ oma ralph status [--id <id>] [--json]
 ```
 oma relay init [--ledger-root <path>]
 oma relay preflight [--json]
-oma relay statusline [--json] [--watch] [--no-color] [--pair <slug>]
+oma relay statusline [--json] [--watch] [--no-color] [--preset minimal|focused|full] [--pair <slug>]
 # (hidden) oma relay hook <event>   — machine-invoked dispatcher; not a public group
 # 宿主写入命令 statusline/hooks install|uninstall|doctor 已删（2026-06-15）；手动接线见 relay-v2-protocol.md §12.4
 oma relay pair new <topic-slug> [--peer <name>] [--json]
@@ -86,7 +89,7 @@ oma relay pair show [--pair <slug>] [--json]
 oma relay pair list [--json]
 oma relay pair set-lead <participant> [--pair <slug>]
 oma relay draft --kind <kind> [--in-reply-to <seq>] [--corrects <seq>] [--pair <slug>] [--json]
-oma relay publish <draft> --body-file <f> --prompt-file <f> [--touched <path>]... [--status <s>] [--pair <slug>]
+oma relay publish <draft> --body-file <f> --prompt-file <f> [--touched <path>]... [--status <s>] [--verdict <v>] [--review-target <seq>] [--pair <slug>]
 oma relay wait [--timeout <sec>] [--pair <slug>] [--json]
 oma relay status [--last N] [--pair <slug>] [--json]
 oma relay close --outcome <approve|reject|abandon> --reason <text> [--pair <slug>]
@@ -101,6 +104,7 @@ oma relay close --outcome <approve|reject|abandon> --reason <text> [--pair <slug
 - **pair 解析顺序**（协议 §4a）：显式 `--pair` ＞ author-session 绑定文件（`.oma/relay/_bindings/`，`pair join|ensure` 写入）＞ 恰一 active pair 自动绑定 ＞ exit 3 列候选、零写入。
 - **草稿生命周期**：临发布前才建 draft（工作期静默 = wait 超时而非 stale；exit 11 = 对端建意图后崩溃）。
 - `publish` 支持把 draft 填充与发布合为一步（body/prompt 从文件读入，校验后走 §7 发布事务）；草稿仍含 `TODO:` 占位 → 拒绝。
+- **A1/A2 质量门**：`publish` 对 `kind:review` 接受 `--verdict`（approve|approve-with-changes|revise）与 `--review-target`（默认取 `--in-reply-to`）；`kind:decision` 自动据最新非-lead approve review 盖完成回执。`close --outcome approve` 走 fail-closed 质量门（协议 §9）；`approve-with-changes` 不满足。
 - `wait` 退出码 `0/10/11/12/3`（语义见协议 §8；用法错误维持全局 `2`）。
 
 ## 7. 其他

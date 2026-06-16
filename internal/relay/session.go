@@ -261,6 +261,16 @@ func (l *Ledger) Close(slug, outcome, reason string, dryRun bool) error {
 	if s.Terminal() {
 		return fmt.Errorf("%w: pair %s is already %s", ErrRelay, slug, s.Status)
 	}
+	// A2 quality gate: `approve` is fail-closed unless the lead's latest
+	// kind:decision carries a valid completion receipt over a non-lead
+	// approve review (the referenced plan + review must still hash-match).
+	// reject and abandon need no receipt. Runs under --dry-run too so it
+	// previews the refusal.
+	if outcome == "approve" {
+		if err := l.verifyApproveClose(slug); err != nil {
+			return err
+		}
+	}
 	if dryRun {
 		return nil
 	}
