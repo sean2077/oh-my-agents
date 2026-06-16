@@ -37,7 +37,7 @@ Clean AI-generated code slop — bloated, repetitive, weakly-tested, over-abstra
    - **Needless abstraction** — pass-through wrappers, speculative indirection, single-use layers.
    - **Boundary violations** — hidden coupling, misplaced responsibility, wrong-layer imports/side-effects.
    - **Missing tests** — unlocked behavior, weak coverage, edge-case gaps.
-   - **Masking fallbacks** — catch-all/default branches that hide failures instead of surfacing them (distinguish from *grounded* compatibility fallbacks that are intentional and documented).
+   - **Masking fallbacks** — catch-all/default branches that hide failures instead of surfacing them; grep for `quick hack` / `temporary workaround`, swallowed exceptions (bare `except:` / empty `catch {}`), silent default returns, `|| true` (distinguish from *grounded* compatibility fallbacks that are intentional and documented).
 4. **One smell-focused pass at a time**, re-verifying between passes: dead-code deletion → duplicate removal → naming & error-handling → test reinforcement. Never bundle unrelated refactors into one edit set.
 5. **Quality gates.** Keep regression green; run the relevant lint/typecheck/tests for the touched area; run existing static/security checks. If a gate fails, fix it or back out the risky cleanup — never force it through.
 6. **Close with an evidence-dense report:** changed files · simplifications · behavior-lock / verification run (commands + result) · remaining risks.
@@ -69,3 +69,4 @@ Can be bounded to an explicit file list or a session's changed files. Preserve t
 2. Deletion over addition; reuse over new abstraction; no new deps unprompted.
 3. One smell per pass; re-verify between passes.
 4. Not done without a green verifier or a user-approved no-test rationale.
+5. When invoked as ralph's deslop step, do not spawn a nested cleanup or ralph loop — run the pass, record it via `oma ralph check`, and return.

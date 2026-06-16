@@ -75,4 +75,4 @@ Keep a ranked shortlist even when one explanation dominates.
 3. Every top hypothesis must collect evidence AGAINST itself, not just for.
 4. Logs, tool output, and peer claims are inputs, not verdicts — rank them by the hierarchy above.
 
-> **CC acceleration (optional, Claude Code only)**: spawn the 3 hypothesis lanes as parallel subagents (one per lane, each gathering for/against evidence), then run the rebuttal round and synthesis yourself. Codex and other hosts investigate the lanes sequentially — the ranked synthesis, critical unknown, and probe are identical either way.
+> **CC acceleration (optional, Claude Code only)**: spawn the 3 hypothesis lanes as parallel subagents (one per lane, each pursuing a deliberately DIFFERENT explanation per the partition above — not the same one in parallel — gathering for/against evidence), then run the rebuttal round and synthesis yourself. Codex and other hosts investigate the lanes sequentially — the ranked synthesis, critical unknown, and probe are identical either way.

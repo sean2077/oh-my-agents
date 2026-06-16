@@ -31,13 +31,23 @@ The evaluator is a command YOU run (oma never runs it — security boundary) tha
   - `score_improvement` — keep the strict-best score; stop when it plateaus. The research default.
   - `pass_only` — only the boolean matters (then prefer plain `ralph`).
 
-Record the contract in the mission file so a resume reproduces it.
+Record it as a small contract block (its own `<work>/sandbox.md`, or a fenced block in the mission file) so a resume — or a peer agent — recovers the exact command:
+
+```yaml
+evaluator:
+  command: "<deterministic repo-local command printing one JSON line>"
+  format: json                    # {"pass": bool, "score": finite}
+  keep_policy: score_improvement  # or pass_only
+  scope: "<files/areas the search may touch>"
+```
 
 ## 3. Drive it with ralph
 
 ```
-oma ralph start --keep-policy score_improvement --goal "<mission goal>" --plateau-window 3 --id <slug>
+oma ralph start --keep-policy score_improvement --goal "<mission goal>" --plateau-window 3 --max-rounds <N> --id <slug>
 ```
+
+This IS the "research profile" — a ralph preset expressed through `--keep-policy score_improvement`, not a separate command. `--max-rounds` bounds the search (the `exhausted` terminal below); set it deliberately, since the default of 10 is often too few for a real optimization run.
 
 Each round:
 
@@ -65,7 +75,7 @@ Append one row per attempt to a skill-owned ledger (`<work>/candidates.md` or th
 
 - **passed**: the evaluator's `pass` went true. Report the kept best and stop.
 - **plateaued**: `plateau_window` rounds bought no strict improvement — the current approach is mined out. Present `best_score`@`best_round`, 2–3 genuinely different strategies, and let the user pick.
-- **exhausted**: the round budget ran out. Report the kept best (it earns a receipt) and ask: raise the bound, change approach, or stop.
+- **exhausted**: the round budget ran out. Report the kept best — `best_score`@`best_round` from `oma ralph status --json` (it earns a receipt) — and ask: raise the bound, change approach, or stop.
 
 ## Hard rules
 

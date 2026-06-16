@@ -13,16 +13,20 @@ Before writing anything, answer honestly:
 
 1. **Reusable?** Will this recur across sessions/projects, or was it a one-off? One-offs do not become skills.
 2. **General?** Does it encode a *workflow* (judgment, sequence, stop conditions), not a single concrete task? A skill is a method, not a memory.
-3. **Worth the resident cost?** Every installed skill's name+description is always-loaded context. Is the recurring value worth that tax? If unsure, it is not.
+3. **Worth the resident cost?** Every installed skill's name+description is always-loaded context (measure it with `oma doctor budget`). Is the recurring value worth that tax? If unsure, it is not.
 
 If any answer is no, stop — record it as a note or memory instead, not a skill.
+
+## Extract the method first
+
+Before writing, distill what you just did into the reusable shape: the trigger / inputs, the ordered steps, the judgment at each, the stop conditions, and how you verified success. If you cannot name those, the workflow is not abstracted enough to skillify yet.
 
 ## Write the skill
 
 1. **Name** — lowercase-kebab, unique in the catalog. Check existing names and intents first:
 
    ```
-   oma asset catalog --from assets
+   oma asset catalog
    ```
 
    Don't collide or duplicate another skill's purpose — extend it or pick a sharper boundary.

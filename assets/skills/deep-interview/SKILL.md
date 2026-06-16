@@ -65,7 +65,7 @@ Never ask the user for something you can read. **Cadence guard**: after 2 consec
 
 **CRITICAL-axis filter** — emit a `[from-user]` question only when the answer would make the plan diverge on one of five CRITICAL axes: **scope boundary · acceptance criterion · rollback contract · lane assignment · handoff target**. If a gap moves none of them, do not spend a user turn: take the conservative default and record it in the round `answer` as `Default: <value>; revisit if <trigger>`, then score. When unsure whether two readings yield structurally different plans, default to absorbing with a stated default. (The cadence guard still wins: when it forces a `[from-user]` round, ask the user to confirm the default nearest a CRITICAL axis rather than open a low-value question.)
 
-1. **Target** what the LAST score report named `weakest` (component × dimension). State in one sentence why that pair is the bottleneck, then ask ONE question aimed at it. Question styles: goal → "what exactly happens when…?"; constraints → "what are the boundaries / non-goals?"; criteria → "what test would prove it works?"; context (brownfield) → cite the repo evidence you found and ask whether to extend or diverge.
+1. **Target** what the LAST score report named `weakest` (component × dimension). State in one sentence why that pair is the bottleneck, then ask ONE question aimed at it. Question styles: goal → "what exactly happens when…?"; constraints → "what are the boundaries / non-goals?"; criteria → "what test would prove it works?"; context (brownfield) → cite the repo evidence you found and ask whether to extend or diverge; if a user term conflicts with repo/doc wording, name both and ask which governs.
 2. **Score** the answer against the rubric below: every ACTIVE component × every dimension for the interview type, each in [0,1], one justifying sentence per score before you write the number. This is a contract, not a suggestion — the CLI rejects a missing component, a missing dimension, an unknown dimension, and any value outside [0,1].
 3. **Extract ontology**: list the entities discussed so far (name, type, fields, relationships), reusing previous names for unchanged concepts so the stability ratio means something.
 4. **Submit**:
@@ -91,6 +91,8 @@ Never ask the user for something you can read. **Cadence guard**: after 2 consec
 
 **Challenge modes**: when the report lists a suggestion (`contrarian` ≥ round 4, `simplifier` ≥ 6, `ontologist` ≥ 8 while ambiguity > 0.3), you decide whether the next question should adopt that stance — contrarian attacks assumptions, simplifier hunts for scope cuts, ontologist re-asks what the core thing IS. If you use one, set `challenge_mode_used` in that round's input so it is not re-suggested.
 
+**Stall escalation**: if ambiguity has not moved more than 0.05 across the last 3 rounds, the next question MUST adopt the ontologist stance — a stuck score usually means a mislabeled or wrongly-scoped component, not one more missing detail.
+
 ### Scoring rubric (reuse verbatim every round)
 
 - **goal**: can the component's objective be stated in one unqualified sentence, with its key nouns and verbs unambiguous?
@@ -106,7 +108,32 @@ oma interview gate --json
 
 Exit 0 = ambiguity ≤ threshold: write the spec file (goal / constraints / non-goals / acceptance criteria / topology with per-component clarity / ontology / open assumptions resolved), mark it `pending approval`, then record it and close out:
 
-**Mandatory content gate (independent of the score)**: even at ambiguity ≤ threshold, do NOT crystallize until the spec carries an explicit, non-empty **Non-goals** section AND an explicit **Decision Boundaries** section (which choices are locked, which stay open, and who owns each). If either is missing, the numeric gate is not enough — ask the targeted `[from-user]` questions to fill them first. A clean ambiguity number with no stated non-goals or boundaries is a false green.
+**Mandatory content gate (independent of the score)**: even at ambiguity ≤ threshold, do NOT crystallize until the spec carries an explicit, non-empty **Non-goals** section AND an explicit **Decision Boundaries** section (which choices are locked, which stay open, and who owns each). If either is missing, the numeric gate is not enough — ask the targeted `[from-user]` questions to fill them first. A clean ambiguity number with no stated non-goals or boundaries is a false green. And do not crystallize until at least one earlier answer has been through a pressure pass — revisited with a deeper assumption/tradeoff follow-up — so the spec does not rest on unchallenged first answers.
+
+The spec file follows this shape (your judgment fills it; the structure is fixed):
+
+```md
+# <title> — pending approval
+
+## Goal
+<one unqualified sentence>
+
+## Topology
+<one row per ACTIVE component — name: what "done" means for it>
+
+## Constraints
+## Non-goals            # mandatory, non-empty (content gate)
+## Decision Boundaries  # mandatory: locked vs open choices + who owns each
+
+## Acceptance Criteria
+- [ ] <concrete, testable bar>
+
+## Ontology
+<entities + relationships at convergence>
+
+## Open Assumptions
+<resolved defaults: "Default: X; revisit if Y">
+```
 
 ```
 oma interview crystallize --spec <path-to-spec>

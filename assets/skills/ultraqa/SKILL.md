@@ -26,6 +26,7 @@ Build a matrix across these axes — pick the ones that fit the target:
 - **Boundary** — zero / one / max / max+1, empty collection, missing optional fields, expired or reused tokens.
 - **State / environment** — stale cache, partial write, missing dependency, permission denied, network failure / timeout.
 - **Adversarial user** — someone trying to break it, escalate privilege, or reach another tenant's data.
+- **Misleading success** — a 0 exit with failure text in the output, a SUCCESS message over a partial write, a swallowed error reported as done. The exit code and the observable result must agree.
 
 Each scenario states: setup → action → **expected safe behavior** (reject / degrade / recover — never crash, corrupt, or leak).
 
@@ -42,11 +43,14 @@ Each scenario states: setup → action → **expected safe behavior** (reject / 
 
    exit 0 only when EVERY scenario passes. The `--note` is the stall signature: same scenario failing → same note; a new failure → a new note.
 
+**Coverage-scored variant (optional)** — for a large matrix where partial progress matters, drive the loop under `--keep-policy score_improvement` and report `--score <fraction safe>` (e.g. 7 of 9 → 0.78) each round instead of a binary pass; ralph keeps the best coverage and reports `plateaued` when fixes stop raising it (see the ralph skill).
+
 ## Terminal states (from ralph)
 
 - **passed** — every scenario behaves safely. Report the matrix + outcomes.
 - **exhausted** — budget ran out: list scenarios still failing and the closest-safe state; ask to raise the bound or stop.
 - **stalled** — the same scenario keeps failing the same way: the fix approach is wrong; present 2–3 genuinely different strategies.
+- **plateaued** (coverage-scored runs) — safe-scenario coverage stopped improving for plateau_window rounds: the current fixes are mined out; report best coverage and switch to 2–3 different strategies.
 
 ## Hard rules
 
@@ -54,3 +58,4 @@ Each scenario states: setup → action → **expected safe behavior** (reject / 
 2. A scenario "passes" only on observed safe behavior, never assumption. You run the checks; you never fake an exit code.
 3. Expand the matrix when a defect reveals a missed axis — coverage grows with what you learn.
 4. Done = every matrix scenario green, recorded via `oma ralph check`.
+5. Keep your OWN probes inside safe bounds: bounded timeouts, no destructive / production / secret-exfil actions, no unbounded spawns. You are firing hostile inputs — don't let the harness become the incident.

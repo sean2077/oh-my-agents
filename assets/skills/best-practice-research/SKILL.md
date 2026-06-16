@@ -26,7 +26,7 @@ This skill gathers evidence and produces a cited recommendation + handoff, then 
 
 1. Classify the question: conceptual best practice / implementation guidance / migration-version / standards-compliance / mixed local+external.
 2. Gather repo-local context first (read/grep, or `analyze`) when local usage or constraints shape the answer.
-3. Gather external evidence — agent-neutral: use whatever your host provides (web search, official docs, context7 or equivalent).
+3. Gather external evidence — agent-neutral: use whatever your host provides (web search, official docs, or an MCP docs server such as context7).
 4. Synthesize with source quality, version/date context, caveats, and a handoff.
 5. Stop when the answer is grounded enough for the caller; otherwise report the exact blocker.
 
@@ -61,3 +61,4 @@ This skill gathers evidence and produces a cited recommendation + handoff, then 
 2. Always state version/date context — undated best-practice is a liability.
 3. Terminal: never implement. After the recommendation + handoff, stop; resume only when the user explicitly switches to a named workflow.
 4. Do not over-fetch or polish wording that will not change the recommendation.
+5. Adopt / replace / compare-dependency questions are surfaced here as *evidence*, never decided here — the choice itself is a planning call; hand it to `deep-interview` / `pair-delivery`.

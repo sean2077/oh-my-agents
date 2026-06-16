@@ -61,5 +61,6 @@ Down-rank a reading that rests on lower tiers when stronger contradictory eviden
 2. Ranked, not flat; explicit about confidence; concrete about `file:line`.
 3. No normative filler or speculation that outruns the evidence.
 4. If asked to then change something, hand off to an implementation lane (`ralph` / `pair-delivery`) — analyze itself stops at the synthesis.
+5. "Insufficient evidence" is a legitimate rank-1 — when the repo genuinely does not settle the question, say so rather than manufacturing a confident answer.
 
 > **CC acceleration (optional, Claude Code only)**: for a broad question, fan out bounded read-only subagents (one per subsystem — primary code path / config / tests) and synthesize their findings yourself. Codex and other hosts read the lanes sequentially — the ranked synthesis is identical either way.
