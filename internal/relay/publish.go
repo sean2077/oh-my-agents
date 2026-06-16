@@ -89,6 +89,14 @@ func (l *Ledger) Publish(draftPath string, in PublishInput, dryRun bool) (string
 		} else if fm.ReviewTargetSeq == nil {
 			fm.ReviewTargetSeq = fm.InReplyTo
 		}
+		// R3: a ready kind:review MUST carry a typed verdict and target the
+		// seq it judges; prose-only commentary belongs in kind:note/addendum.
+		if fm.Verdict == "" {
+			return "", fmt.Errorf("%w: a kind:review must carry --verdict (approve|approve-with-changes|revise); use kind:note for prose-only commentary", ErrRelay)
+		}
+		if fm.ReviewTargetSeq == nil || *fm.ReviewTargetSeq < 1 {
+			return "", fmt.Errorf("%w: a kind:review must target the seq it judges via --review-target (or the draft's --in-reply-to)", ErrRelay)
+		}
 	}
 	if fm.Kind == "decision" && fm.ReceiptID == "" {
 		rcpt, rerr := l.buildDecisionReceipt(slug, fm.Seq)

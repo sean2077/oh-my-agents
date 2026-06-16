@@ -409,7 +409,7 @@ func TestWaitReturnsImmediatelyOnUnconsumedPeerArtifact(t *testing.T) {
 		t.Fatal(err)
 	}
 	mustPublish(t, claude, s.Pair, "plan", "body", "review please")
-	formal := mustPublish(t, codex, s.Pair, "review", "lgtm", "proceed")
+	formal := mustPublishReview(t, codex, s.Pair, VerdictApprove, 1)
 
 	res, err := claude.Wait(s.Pair, time.Hour)
 	if err != nil || res.Code != WaitNewArtifact || res.ArtifactPath != formal {

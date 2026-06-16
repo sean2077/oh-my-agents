@@ -240,7 +240,7 @@ func TestHookDedupResetsOnNewArtifact(t *testing.T) {
 		t.Fatal("dedup silent")
 	}
 	// codex replies, claude publishes again → a NEW artifact resets dedup.
-	mustPublish(t, codex, s.Pair, "review", "lgtm", "proceed")
+	mustPublishReview(t, codex, s.Pair, VerdictApprove, 1)
 	mustPublish(t, claude, s.Pair, "fix", "fixed", "recheck")
 	out := codex.Hook(HookStop, stopPayload(false))
 	if out == nil || !strings.Contains(out.Reason, "seq=003") {

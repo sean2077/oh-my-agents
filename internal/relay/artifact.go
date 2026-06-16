@@ -67,14 +67,12 @@ type Frontmatter struct {
 	// makes "done" falsifiable: it binds the approved plan, the non-lead
 	// approve review and the ledger head by content hash, so a decision can
 	// be proven to have been reviewed against the exact artifacts named.
-	ReceiptID       string     // sha256:<hex> of the canonical receipt JSON
-	PlanRefSeq      *int       // the approved plan artifact
-	PlanRefHash     string     // sha256:<hex> of that plan's rendered bytes
-	QualityGateSeq  *int       // the non-lead approve review
-	QualityGateHash string     // sha256:<hex> of that review's rendered bytes
-	LedgerHeadSeq   *int       // latest ready artifact at receipt time
-	LedgerHeadHash  string     // sha256:<hex> of that artifact's rendered bytes
-	VerifiedAt      *time.Time // receipt timestamp
+	ReceiptID        string     // sha256:<hex> of the canonical receipt JSON
+	ReviewedHeadSeq  *int       // the work being approved (latest non-review/non-decision artifact)
+	ReviewedHeadHash string     // sha256:<hex> of that artifact's rendered bytes
+	QualityGateSeq   *int       // the non-lead approve review that targets the reviewed head
+	QualityGateHash  string     // sha256:<hex> of that review's rendered bytes
+	VerifiedAt       *time.Time // receipt timestamp
 }
 
 // Validate enforces the §5 contract on a parsed or about-to-render header.
@@ -122,16 +120,20 @@ func (f *Frontmatter) validateGateFields() error {
 			return fmt.Errorf("%w: verdict is only valid on kind:review (got %s)", ErrRelay, f.Kind)
 		}
 	}
-	if f.ReviewTargetSeq != nil && f.Kind != "review" {
-		return fmt.Errorf("%w: review_target_seq is only valid on kind:review (got %s)", ErrRelay, f.Kind)
+	if f.ReviewTargetSeq != nil {
+		if f.Kind != "review" {
+			return fmt.Errorf("%w: review_target_seq is only valid on kind:review (got %s)", ErrRelay, f.Kind)
+		}
+		if *f.ReviewTargetSeq < 1 {
+			return fmt.Errorf("%w: review_target_seq %d must be >= 1", ErrRelay, *f.ReviewTargetSeq)
+		}
 	}
-	receiptSet := f.ReceiptID != "" || f.PlanRefSeq != nil || f.PlanRefHash != "" ||
-		f.QualityGateSeq != nil || f.QualityGateHash != "" || f.LedgerHeadSeq != nil ||
-		f.LedgerHeadHash != "" || f.VerifiedAt != nil
+	receiptSet := f.ReceiptID != "" || f.ReviewedHeadSeq != nil || f.ReviewedHeadHash != "" ||
+		f.QualityGateSeq != nil || f.QualityGateHash != "" || f.VerifiedAt != nil
 	if receiptSet && f.Kind != "decision" {
 		return fmt.Errorf("%w: receipt fields are only valid on kind:decision (got %s)", ErrRelay, f.Kind)
 	}
-	for _, h := range []string{f.ReceiptID, f.PlanRefHash, f.QualityGateHash, f.LedgerHeadHash} {
+	for _, h := range []string{f.ReceiptID, f.ReviewedHeadHash, f.QualityGateHash} {
 		if h != "" && !strings.HasPrefix(h, "sha256:") {
 			return fmt.Errorf("%w: hash %q must be sha256:<hex>", ErrRelay, h)
 		}
@@ -204,12 +206,10 @@ func Render(f *Frontmatter, body string) []byte {
 	renderScalar(&b, "verdict", f.Verdict)
 	renderOptInt(&b, "review_target_seq", f.ReviewTargetSeq)
 	renderScalar(&b, "receipt_id", f.ReceiptID)
-	renderOptInt(&b, "plan_ref_seq", f.PlanRefSeq)
-	renderScalar(&b, "plan_ref_hash", f.PlanRefHash)
+	renderOptInt(&b, "reviewed_head_seq", f.ReviewedHeadSeq)
+	renderScalar(&b, "reviewed_head_hash", f.ReviewedHeadHash)
 	renderOptInt(&b, "quality_gate_seq", f.QualityGateSeq)
 	renderScalar(&b, "quality_gate_hash", f.QualityGateHash)
-	renderOptInt(&b, "ledger_head_seq", f.LedgerHeadSeq)
-	renderScalar(&b, "ledger_head_hash", f.LedgerHeadHash)
 	if f.VerifiedAt != nil {
 		fmt.Fprintf(&b, "verified_at: %s\n", f.VerifiedAt.UTC().Format(time.RFC3339))
 	}
@@ -276,18 +276,14 @@ func Parse(raw []byte) (*Frontmatter, string, error) {
 			f.ReviewTargetSeq, err = parseOptInt(value)
 		case "receipt_id":
 			f.ReceiptID = value
-		case "plan_ref_seq":
-			f.PlanRefSeq, err = parseOptInt(value)
-		case "plan_ref_hash":
-			f.PlanRefHash = value
+		case "reviewed_head_seq":
+			f.ReviewedHeadSeq, err = parseOptInt(value)
+		case "reviewed_head_hash":
+			f.ReviewedHeadHash = value
 		case "quality_gate_seq":
 			f.QualityGateSeq, err = parseOptInt(value)
 		case "quality_gate_hash":
 			f.QualityGateHash = value
-		case "ledger_head_seq":
-			f.LedgerHeadSeq, err = parseOptInt(value)
-		case "ledger_head_hash":
-			f.LedgerHeadHash = value
 		case "verified_at":
 			f.VerifiedAt, err = parseOptTime(value)
 		case "prompt_for_next":

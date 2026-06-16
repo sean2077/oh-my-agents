@@ -133,7 +133,7 @@
 - **wave1 skill `ai-slop-cleaner`** — `assets/skills/ai-slop-cleaner/`（含「green verifier 或用户批准 no-test 理由」完成门）。
 - **A4 deep-interview** — 事实/判断路由（`[from-code][auto-confirmed]`/`[from-user]`）、节奏守卫(连续 2 轮非用户→强制 [from-user])、input-lock、强制 Non-goals/Decision-Boundaries 内容门。
 - **A3 stop-hook 逃生阀** — `internal/relay/hook.go`：`HookPayload` 解析 stop_reason，context/rate/auth 静默(容错别名)；`TestHookStopEscapeValves` 覆盖。
-- **A1+A2** — `oma-relay/3` artifact schema（session/sentinel 仍 /2）；review `verdict` + decision 完成回执（`internal/relay/receipt.go`：build+verify，hash 绑定 plan + 非-lead approve review + ledger head）；`close --outcome approve` fail-closed 门（`session.go`）；CLI `--verdict`/`--review-target`；ralph PhasePassed 回执（`ralph.go`）；pair-delivery skill 已对齐新门。新增 `receipt_test.go` + 11 处 close-approve 测试级联修正，全 green。
+- **A1+A2** — `oma-relay/3` artifact schema（session/sentinel 仍 /2）；ready review `verdict` **必填** + decision 完成回执（`internal/relay/receipt.go`：build+verify，hash 绑定 **reviewed_head(最新工作) + 针对它的非-lead approve review**，且校验无更新的未评审工作）；`close --outcome approve` fail-closed 门（`session.go`，门未过 exit 4 / 损坏 exit 3）；CLI `--verdict`/`--review-target`；ralph PhasePassed 回执（`ralph.go`）；pair-delivery skill 已对齐新门。**Codex code-review R1–R4 已全部修复**（R1 未评审改动不得 close、R2 reviewed_head 强校验、R3 verdict 必填、R4 exit 4/3 分流）。
 
 **已完成（续）**
 - **A5** statusline 预设 — `oma relay statusline --preset minimal|focused|full`（纯格式化，不解析 transcript；`relay/statusline.go` `RenderPreset`）。

@@ -48,8 +48,8 @@
   "created": "ISO-8601", "closed": null, "outcome": null, "reason": null
 }
 ```
-- artifact frontmatter schema `oma-relay/3`（详见协议 §5；A1/A2：`kind:review` 增 `verdict`/`review_target_seq`，`kind:decision` 增完成回执字段；session 与 sentinel 仍 `oma-relay/2`）；`.oma-relay-v2` sentinel：`{"schema":"oma-relay/2","created":"..."}`。
-- 完成回执 `oma-completion-receipt/1`（嵌入 decision frontmatter，A1）：`{schema, pair, decision_seq, plan_ref{seq,hash}, quality_gate_ref{seq,verdict,hash}, ledger_head{seq,hash}, verified_at}`；其 sha256 存为 frontmatter `receipt_id`，`close --outcome approve` 据此 fail-closed 校验（协议 §9）。review 证据可选正文 fenced JSON `oma-review-evidence/1`：`{schema, findings[], commands_run[], limitations[]}`。
+- artifact frontmatter schema `oma-relay/3`（详见协议 §5；A1/A2：ready `kind:review` **必带** `verdict` + `review_target_seq`(≥1)，`kind:decision` 增完成回执字段；session 与 sentinel 仍 `oma-relay/2`）；`.oma-relay-v2` sentinel：`{"schema":"oma-relay/2","created":"..."}`。
+- 完成回执 `oma-completion-receipt/1`（嵌入 decision frontmatter，A1）：`{schema, pair, decision_seq, reviewed_head{seq,hash}, quality_gate_ref{seq,verdict,hash}, verified_at}`；`reviewed_head` = 被批准的「工作」(最新非 review/非 decision artifact)，`quality_gate_ref` = 针对它的非-lead approve review。其 sha256 存为 frontmatter `receipt_id`，`close --outcome approve` 据此 fail-closed 校验（协议 §9）。
 - pair 绑定 `.oma/relay/_bindings/<author-session>.json`（`oma-relay-binding/1`）：`{"schema":"oma-relay-binding/1","author":"claude","session_hash":"<平台会话id哈希>","pair":"20260611-topic","created":"ISO-8601","updated":"ISO-8601"}`；解析顺序与 fail-closed 语义见协议 §4a。
 
 ## 5. interview 状态 `.oma/state/interview-<id>.json`（`oma-interview/1`）

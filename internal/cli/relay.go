@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -468,7 +469,15 @@ func newRelayCloseCmd(rootFlag *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return l.Close(s.Pair, outcome, reason, DryRun())
+			// R4: an unsatisfied quality gate is a gate miss (exit 4);
+			// corrupt/tampered relay state stays exit 3.
+			if cerr := l.Close(s.Pair, outcome, reason, DryRun()); cerr != nil {
+				if errors.Is(cerr, relay.ErrGate) {
+					return Errf(ExitGate, "%v", cerr)
+				}
+				return cerr
+			}
+			return nil
 		}),
 	}
 	cmd.Flags().StringVar(&outcome, "outcome", "", "approve|reject|abandon")

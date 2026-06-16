@@ -104,7 +104,7 @@ oma relay close --outcome <approve|reject|abandon> --reason <text> [--pair <slug
 - **pair 解析顺序**（协议 §4a）：显式 `--pair` ＞ author-session 绑定文件（`.oma/relay/_bindings/`，`pair join|ensure` 写入）＞ 恰一 active pair 自动绑定 ＞ exit 3 列候选、零写入。
 - **草稿生命周期**：临发布前才建 draft（工作期静默 = wait 超时而非 stale；exit 11 = 对端建意图后崩溃）。
 - `publish` 支持把 draft 填充与发布合为一步（body/prompt 从文件读入，校验后走 §7 发布事务）；草稿仍含 `TODO:` 占位 → 拒绝。
-- **A1/A2 质量门**：`publish` 对 `kind:review` 接受 `--verdict`（approve|approve-with-changes|revise）与 `--review-target`（默认取 `--in-reply-to`）；`kind:decision` 自动据最新非-lead approve review 盖完成回执。`close --outcome approve` 走 fail-closed 质量门（协议 §9）；`approve-with-changes` 不满足。
+- **A1/A2 质量门**：ready `kind:review` **必带** `--verdict`（approve|approve-with-changes|revise）+ 目标 seq（`--review-target`，默认取 `--in-reply-to`，须 ≥1；否则 publish 拒绝）；`kind:decision` 自动据「针对最新工作(reviewed_head)的非-lead approve review」盖完成回执。`close --outcome approve` 走 fail-closed 质量门（协议 §9）：门未过 → **exit 4**，回执/状态损坏 → **exit 3**。
 - `wait` 退出码 `0/10/11/12/3`（语义见协议 §8；用法错误维持全局 `2`）。
 
 ## 7. 其他

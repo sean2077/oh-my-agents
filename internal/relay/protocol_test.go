@@ -259,7 +259,7 @@ func TestStaleIntentCleanupAndSeqHoles(t *testing.T) {
 		t.Fatalf("reservations after clean = %d", n)
 	}
 	// codex publishes after cleanup: a seq hole (002 cleaned) is legal.
-	formal := mustPublish(t, codex, s.Pair, "review", "late but alive", "next")
+	formal := mustPublish(t, codex, s.Pair, "note", "late but alive", "next")
 	if _, _, err := ReadArtifact(formal); err != nil {
 		t.Fatalf("read across seq hole: %v", err)
 	}

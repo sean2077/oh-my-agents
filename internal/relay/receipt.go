@@ -4,29 +4,36 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
 )
 
+// ErrGate marks an UNSATISFIED quality gate (R4): an expected "not approvable
+// yet" condition — no lead decision/receipt, no non-lead approve review of the
+// latest work, wrong verdict, or a target that does not match the reviewed
+// head. The CLI maps it to exit 4. Corruption (malformed receipt, missing
+// referenced artifact, hash mismatch, tamper) stays ErrRelay → exit 3.
+var ErrGate = errors.New("relay quality gate not satisfied")
+
 // ReceiptSchema versions the completion-receipt payload (A1).
 const ReceiptSchema = "oma-completion-receipt/1"
 
 // Receipt is the canonical completion-receipt embedded in a kind:decision
-// artifact. It makes "done" falsifiable (A1, docs/borrow-from-omx-omc.md):
-// hashing the receipt — and re-hashing the artifacts it names at close
-// time — proves the decision was reviewed against the EXACT approved plan,
-// the non-lead approve review, and the ledger head recorded, defeating the
-// "agent declared done after the plan drifted" failure mode.
+// artifact. It makes "done" falsifiable (A1/A2): it binds the WORK being
+// approved (reviewed_head — the latest non-review/non-decision artifact) to
+// the non-lead approve review that TARGETED it, by content hash.
+// close --outcome approve re-verifies all of it and refuses if newer
+// unreviewed work has appeared since.
 type Receipt struct {
-	Schema      string    `json:"schema"`
-	Pair        string    `json:"pair"`
-	DecisionSeq int       `json:"decision_seq"`
-	PlanRef     Ref       `json:"plan_ref"`
-	QualityGate GateRef   `json:"quality_gate_ref"`
-	LedgerHead  Ref       `json:"ledger_head"`
-	VerifiedAt  time.Time `json:"verified_at"`
+	Schema       string    `json:"schema"`
+	Pair         string    `json:"pair"`
+	DecisionSeq  int       `json:"decision_seq"`
+	ReviewedHead Ref       `json:"reviewed_head"`
+	QualityGate  GateRef   `json:"quality_gate_ref"`
+	VerifiedAt   time.Time `json:"verified_at"`
 }
 
 // Ref binds an artifact by seq and the sha256 of its rendered bytes.
@@ -53,12 +60,11 @@ func (r *Receipt) ID() string {
 
 // applyTo writes the receipt's fields onto a decision frontmatter.
 func (r *Receipt) applyTo(fm *Frontmatter) {
-	planSeq, gateSeq, headSeq := r.PlanRef.Seq, r.QualityGate.Seq, r.LedgerHead.Seq
+	headSeq, gateSeq := r.ReviewedHead.Seq, r.QualityGate.Seq
 	t := r.VerifiedAt
 	fm.ReceiptID = r.ID()
-	fm.PlanRefSeq, fm.PlanRefHash = &planSeq, r.PlanRef.Hash
+	fm.ReviewedHeadSeq, fm.ReviewedHeadHash = &headSeq, r.ReviewedHead.Hash
 	fm.QualityGateSeq, fm.QualityGateHash = &gateSeq, r.QualityGate.Hash
-	fm.LedgerHeadSeq, fm.LedgerHeadHash = &headSeq, r.LedgerHead.Hash
 	fm.VerifiedAt = &t
 }
 
@@ -105,11 +111,23 @@ func (l *Ledger) readyArtifacts(slug string) ([]readyArtifact, error) {
 	return out, nil
 }
 
+// latestWork returns the latest artifact that is neither a review nor a
+// decision — the substantive work a close --outcome approve must have had
+// reviewed. nil when only reviews/decisions exist.
+func latestWork(arts []readyArtifact) *readyArtifact {
+	for i := len(arts) - 1; i >= 0; i-- {
+		if k := arts[i].Kind; k != "review" && k != "decision" {
+			return &arts[i]
+		}
+	}
+	return nil
+}
+
 // buildDecisionReceipt assembles the receipt for a decision at decisionSeq.
-// It returns (nil, nil) when no approve-receipt can be formed — i.e. there
-// is no approved plan plus a non-lead `kind:review` with verdict approve —
-// so a decision may still be published (e.g. summarizing a rejected pair),
-// it just will not satisfy `close --outcome approve`.
+// It returns (nil, nil) when no approve-receipt can be formed — i.e. the
+// latest work has no non-lead `kind:review` with verdict approve that
+// TARGETS it (R1). A decision may still be published (e.g. summarizing a
+// rejected pair); it just will not satisfy close --outcome approve.
 func (l *Ledger) buildDecisionReceipt(slug string, decisionSeq int) (*Receipt, error) {
 	s, err := l.LoadSession(slug)
 	if err != nil {
@@ -120,33 +138,34 @@ func (l *Ledger) buildDecisionReceipt(slug string, decisionSeq int) (*Receipt, e
 	if err != nil {
 		return nil, err
 	}
-	var plan, review, head *readyArtifact
+	head := latestWork(arts)
+	if head == nil {
+		return nil, nil
+	}
+	var review *readyArtifact
 	for i := range arts {
 		a := &arts[i]
-		head = a // sorted by seq → last wins = latest ready
-		switch {
-		case a.Kind == "plan":
-			plan = a
-		case a.Kind == "review" && a.Author != lead && a.FM.Verdict == VerdictApprove:
-			review = a
+		if a.Kind == "review" && a.Author != lead && a.FM.Verdict == VerdictApprove &&
+			a.FM.ReviewTargetSeq != nil && *a.FM.ReviewTargetSeq == head.Seq {
+			review = a // sorted ascending → keep the latest matching review
 		}
 	}
-	if plan == nil || review == nil || head == nil {
+	if review == nil {
 		return nil, nil
 	}
 	return &Receipt{
 		Schema: ReceiptSchema, Pair: slug, DecisionSeq: decisionSeq,
-		PlanRef:     Ref{Seq: plan.Seq, Hash: plan.Hash},
-		QualityGate: GateRef{Seq: review.Seq, Verdict: review.FM.Verdict, Hash: review.Hash},
-		LedgerHead:  Ref{Seq: head.Seq, Hash: head.Hash},
-		VerifiedAt:  l.Now().UTC().Truncate(time.Second),
+		ReviewedHead: Ref{Seq: head.Seq, Hash: head.Hash},
+		QualityGate:  GateRef{Seq: review.Seq, Verdict: review.FM.Verdict, Hash: review.Hash},
+		VerifiedAt:   l.Now().UTC().Truncate(time.Second),
 	}, nil
 }
 
-// verifyApproveClose is the A2 close gate: `close --outcome approve` is
+// verifyApproveClose is the A2 close gate: close --outcome approve is
 // fail-closed unless the latest lead kind:decision carries a valid receipt
-// whose referenced plan and non-lead approve review still hash-match.
-// approve-with-changes never satisfies it. reject/abandon do not call this.
+// over a non-lead approve review that targeted the reviewed head, the
+// referenced artifacts still hash-match, and no newer unreviewed work exists
+// (R1/R2). reject/abandon never call this.
 func (l *Ledger) verifyApproveClose(slug string) error {
 	s, err := l.LoadSession(slug)
 	if err != nil {
@@ -167,40 +186,53 @@ func (l *Ledger) verifyApproveClose(slug string) error {
 		}
 	}
 	if decision == nil {
-		return fmt.Errorf("%w: close --outcome approve needs a lead kind:decision carrying a completion receipt; publish one after a non-lead approve review (or close --outcome reject|abandon)", ErrRelay)
+		return fmt.Errorf("%w: close --outcome approve needs a lead kind:decision with a completion receipt (publish one after a non-lead approve review of the latest work)", ErrGate)
 	}
 	fm := decision.FM
-	if fm.ReceiptID == "" || fm.PlanRefSeq == nil || fm.QualityGateSeq == nil || fm.LedgerHeadSeq == nil || fm.VerifiedAt == nil {
-		return fmt.Errorf("%w: lead decision seq %d carries no completion receipt; approve is not falsifiable", ErrRelay, fm.Seq)
+	if fm.ReceiptID == "" || fm.ReviewedHeadSeq == nil || fm.QualityGateSeq == nil || fm.VerifiedAt == nil {
+		return fmt.Errorf("%w: lead decision seq %d carries no completion receipt", ErrGate, fm.Seq)
 	}
 	// Re-derive the receipt id from the stored fields: a mismatch means the
-	// decision header was hand-edited or is malformed.
+	// decision header was hand-edited or is malformed (corruption → exit 3).
 	r := &Receipt{
 		Schema: ReceiptSchema, Pair: slug, DecisionSeq: fm.Seq,
-		PlanRef:     Ref{Seq: *fm.PlanRefSeq, Hash: fm.PlanRefHash},
-		QualityGate: GateRef{Seq: *fm.QualityGateSeq, Verdict: VerdictApprove, Hash: fm.QualityGateHash},
-		LedgerHead:  Ref{Seq: *fm.LedgerHeadSeq, Hash: fm.LedgerHeadHash},
-		VerifiedAt:  fm.VerifiedAt.UTC(),
+		ReviewedHead: Ref{Seq: *fm.ReviewedHeadSeq, Hash: fm.ReviewedHeadHash},
+		QualityGate:  GateRef{Seq: *fm.QualityGateSeq, Verdict: VerdictApprove, Hash: fm.QualityGateHash},
+		VerifiedAt:   fm.VerifiedAt.UTC(),
 	}
 	if r.ID() != fm.ReceiptID {
 		return fmt.Errorf("%w: decision seq %d receipt id mismatch (tampered or malformed)", ErrRelay, fm.Seq)
 	}
+	// The reviewed head must still exist and hash-match (corruption → exit 3).
+	head := bySeq[*fm.ReviewedHeadSeq]
+	if head == nil {
+		return fmt.Errorf("%w: receipt reviewed-head seq %d is not a ready artifact", ErrRelay, *fm.ReviewedHeadSeq)
+	}
+	if head.Hash != fm.ReviewedHeadHash {
+		return fmt.Errorf("%w: reviewed-head seq %d changed since the receipt (hash mismatch)", ErrRelay, head.Seq)
+	}
+	// R1: no newer substantive work may exist after the reviewed head.
+	if lw := latestWork(arts); lw != nil && lw.Seq > head.Seq {
+		return fmt.Errorf("%w: seq %d (%s) was published after the reviewed head seq %d with no approve review", ErrGate, lw.Seq, lw.Kind, head.Seq)
+	}
+	// The quality-gate review must still exist (corruption → exit 3) ...
 	rev := bySeq[*fm.QualityGateSeq]
 	if rev == nil || rev.Kind != "review" {
 		return fmt.Errorf("%w: receipt references seq %d which is not a ready review", ErrRelay, *fm.QualityGateSeq)
 	}
-	if rev.Author == lead {
-		return fmt.Errorf("%w: the approve review (seq %d) must be by the non-lead reviewer, not the lead", ErrRelay, rev.Seq)
-	}
-	if rev.FM.Verdict != VerdictApprove {
-		return fmt.Errorf("%w: review seq %d verdict is %q, not approve (approve-with-changes does not satisfy close)", ErrRelay, rev.Seq, rev.FM.Verdict)
-	}
 	if rev.Hash != fm.QualityGateHash {
 		return fmt.Errorf("%w: approve review seq %d changed since the receipt (hash mismatch)", ErrRelay, rev.Seq)
 	}
-	plan := bySeq[*fm.PlanRefSeq]
-	if plan == nil || plan.Hash != fm.PlanRefHash {
-		return fmt.Errorf("%w: receipt plan seq %d missing or changed since the receipt (hash mismatch)", ErrRelay, *fm.PlanRefSeq)
+	// ... and satisfy the gate: non-lead, approve, targeting the reviewed head
+	// (gate miss → exit 4).
+	if rev.Author == lead {
+		return fmt.Errorf("%w: the approve review (seq %d) must be by the non-lead reviewer, not the lead", ErrGate, rev.Seq)
+	}
+	if rev.FM.Verdict != VerdictApprove {
+		return fmt.Errorf("%w: review seq %d verdict is %q, not approve (approve-with-changes does not satisfy close)", ErrGate, rev.Seq, rev.FM.Verdict)
+	}
+	if rev.FM.ReviewTargetSeq == nil || *rev.FM.ReviewTargetSeq != head.Seq {
+		return fmt.Errorf("%w: approve review seq %d does not target the reviewed head seq %d", ErrGate, rev.Seq, head.Seq)
 	}
 	return nil
 }
