@@ -24,9 +24,23 @@ Four core workflow skills (the "core4"):
 | Skill | What it does |
 |---|---|
 | **deep-interview** | Socratic requirements crystallization with deterministic ambiguity gating. Turns a vague idea into a `pending approval` spec, never straight to code. |
-| **ralph** | A persistent improvement loop that iterates until a verifier passes. `oma` counts rounds and judges the stop; the agent runs the verifier itself and reports the exit code. |
+| **ralph** | A persistent improvement loop that iterates until a verifier passes — or, under the `score_improvement` keep-policy, until a scored evaluator plateaus. `oma` counts rounds and judges the stop; the agent runs the verifier itself and reports the exit code (and score). |
 | **autopilot** | End-to-end autonomous delivery (clarify -> plan -> implement -> verify -> deliver) with resumable phase state in `oma state`. Pure markdown; no dedicated command group. |
 | **pair-delivery** | Cross-agent delivery over the `oma relay` ledger (plan -> review -> implement -> review -> decision) with an explicit lead and rule-based role-swap escalation. |
+
+On-demand skills (install only when a task needs them — zero resident cost otherwise):
+
+| Skill | What it does |
+|---|---|
+| **trace** | Adversarial root-cause investigation: competing hypotheses, evidence-strength ranking, self-falsification, ending at the single highest-value discriminating probe. |
+| **analyze** | Read-only deep repository analysis: a ranked, confidence-tagged synthesis with `file:line` evidence and a strict evidence / inference / unknown split. |
+| **best-practice-research** | Bounded external best-practice research with official/upstream sourcing, version/date context, and a terminal read-only handoff. |
+| **research-mission** | Scaffold a falsifiable research/optimization mission (deterministic evaluator contract + candidate ledger) and drive it with ralph's `score_improvement` keep-policy. |
+| **ai-slop-cleaner** | Regression-safe, deletion-first cleanup of AI code slop, gated by a green verifier. |
+| **ultraqa** | Adversarial end-to-end QA as a ralph profile (hostile-scenario matrix). |
+| **skillify** | Capture a repeatable workflow into a new oma skill, gated by a 3-question quality test. |
+
+The full installed catalog (with lifecycle status) is `oma asset catalog`; `oma asset audit` flags catalog bloat (orphan / oversized / retire) as advisory-only signals.
 
 > **The skills require the `oma` CLI.** They are deliberately *not* standalone prompts: every mechanical step (state, scoring gates, sequence-numbered ledger operations) shells out to `oma`, and a skill invoked without the binary on `PATH` stops at its first command. Install the CLI first, then the skills. By the same principle, skill bodies carry only the core workflow — installation and platform guidance live here in the README, never in a `SKILL.md`.
 
@@ -134,11 +148,11 @@ oma doctor budget --agent claude --profile core4
 
 `oma` is organized into a few command groups (full reference: [`docs/command-tree.md`](docs/command-tree.md)):
 
-- **`oma asset`**: install / list / remove / rollback assets; canonical placement plus per-agent projection.
+- **`oma asset`**: install / list / remove / rollback assets; canonical placement plus per-agent projection. `catalog` derives a status-lifecycle view from manifests; `audit` flags catalog bloat (orphan / oversized / retire), advisory-only.
 - **`oma doctor`**: installation diagnostics and the resident-token budget gate.
 - **`oma interview`**: the solidified surface of deep-interview: scoring math, threshold gate, and state. Math in the CLI; judgment in the agent.
-- **`oma ralph`**: the solidified surface of the loop: round counting, stall detection, terminal-state judgment. `oma` never runs your verifier.
-- **`oma relay`**: the v2 pair ledger: append-only artifacts, atomic publish with integrity sidecars, sequence reservation, and `wait`-based handoff.
+- **`oma ralph`**: the solidified surface of the loop: round counting, stall detection (`pass_only`) or score-plateau detection (`score_improvement`), terminal-state judgment with a falsifiable receipt. `oma` never runs your verifier.
+- **`oma relay`**: the v2 pair ledger: append-only artifacts, atomic publish with integrity sidecars, sequence reservation, `wait`-based handoff, and a fail-closed approve-close gate (completion receipt binding the reviewed work + a non-lead approve review + its structured review-evidence by content hash).
 - **`oma state`**: generic project-level key/value state for workflows.
 - **`oma config`**, **`oma self-update`**, **`oma version`**.
 

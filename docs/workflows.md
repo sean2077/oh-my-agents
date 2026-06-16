@@ -40,23 +40,24 @@ created ──start──▶ topology_pending ──(锁定拓扑)──▶ inte
 
 固化原则：**计数、判停、历史进 CLI；做事与验证执行留给 agent**。oma **绝不执行** verifier 命令（安全契约）；agent 自己跑验证，把退出码报给 CLI。
 
-### 2.1 状态机与持久化（`.oma/state/ralph-<id>.json`，schema `oma-ralph/1`）
+### 2.1 状态机与持久化（`.oma/state/ralph-<id>.json`，schema `oma-ralph/2`）
 
 ```
 created ──start──▶ running ──next──▶ running（round+1）
 running ──check(verifier-exit=0)──▶ passed（终态）
 running ──next 且 round>max_rounds──▶ exhausted（终态）
-running ──连续 N 次相同失败签名──▶ stalled（终态，建议换策略）
+running ──连续 stall_window 次相同失败签名（pass_only）──▶ stalled（终态，换策略）
+running ──连续 plateau_window 轮 score 无 strict 提升（score_improvement）──▶ plateaued（终态，换策略）
 任意态 ──abort──▶ aborted
 ```
 
-字段：`id, phase, goal, max_rounds(默认 10), round, checks[{round, verifier_exit, note, at}], stall_window(默认 3), created, updated`。
+字段：`id, phase, goal, keep_policy(pass_only|score_improvement，默认 pass_only), max_rounds(默认 10), round, checks[{round, verifier_exit, score?, note, at}], stall_window(默认 3), plateau_window(默认 3), best_round, best_score, created, updated`。score_improvement 下 `checks[].score` 必填且有限，`best_round`/`best_score` 记 strict-best；`receipt` 见 schemas.md §6。
 
 ### 2.2 命令语义
 
-- `start --goal <text>`：初始化；goal 必填（判停语义锚点）。
-- `next`：round+1；输出 continue|stop 与原因（passed/exhausted/stalled 时 stop，退出码 4）。
-- `check --verifier-exit <code> [--note]`：记录一次验证结果；exit 0 → passed。`--note` 建议填失败签名（如测试名），CLI 据 note 串判断 stalled（连续 stall_window 次相同 note）。
+- `start --goal <text> [--keep-policy pass_only|score_improvement] [--max-rounds N] [--stall-window N] [--plateau-window N]`：初始化；goal 必填（判停语义锚点）。keep-policy 默认 pass_only。
+- `next`：round+1；输出 continue|stop 与原因（passed/exhausted/stalled/plateaued 时 stop，退出码 4）。
+- `check --verifier-exit <code> [--note] [--score <float>]`：记录一次验证结果；exit 0 → passed。`--note` 建议填失败签名（如测试名），CLI 据 note 串判断 stalled（连续 stall_window 次相同 note，pass_only）。`--score` 在 score_improvement 下**必填且有限**（缺则拒；pass_only 下传 `--score` 亦拒）；连续 plateau_window 轮无 strict 提升 → plateaued。
 - `status`：当前轮次、历史、判停态。
 
 ## 3. autopilot —— 纯 markdown 工作流（无专属命令面）

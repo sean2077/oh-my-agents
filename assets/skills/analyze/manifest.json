@@ -1,0 +1,7 @@
+{
+  "schema": "oma-asset/1",
+  "name": "analyze",
+  "type": "skill",
+  "targets": ["claude", "codex"],
+  "description_budget_tokens": 80
+}

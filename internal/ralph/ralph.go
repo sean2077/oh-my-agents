@@ -2,7 +2,8 @@
 // improvement loop (docs/workflows.md §2): counting, stop-judgment and
 // history live HERE; doing the work and RUNNING the verifier stay with
 // the agent — oma never executes verifier commands (security contract),
-// the agent reports the exit code via `oma ralph check`.
+// the agent reports the exit code (and, under score_improvement, the
+// evaluator score) via `oma ralph check`.
 package ralph
 
 import (
@@ -11,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -20,8 +22,11 @@ import (
 	"time"
 )
 
-// Schema is the persisted document schema (docs/schemas.md §6).
-const Schema = "oma-ralph/1"
+// Schema is the persisted document schema (docs/schemas.md §6). The /2 bump
+// (R1) adds the keep-policy state contract (KeepPolicy/PlateauWindow/
+// BestRound/BestScore + the PhasePlateaued terminal). Load rejects any other
+// major fail-closed; there is no /1→/2 migration layer (terminal design).
+const Schema = "oma-ralph/2"
 
 // Ralph phases (workflows.md §2.1).
 const (
@@ -29,35 +34,56 @@ const (
 	PhasePassed    = "passed"
 	PhaseExhausted = "exhausted"
 	PhaseStalled   = "stalled"
+	PhasePlateaued = "plateaued" // score_improvement: no score gain for plateau_window rounds
 	PhaseAborted   = "aborted"
+)
+
+// Keep-policy values (R1). pass_only is the historical behavior (verifier
+// exit 0 passes; same-signature failures stall). score_improvement keeps the
+// best score and stops when it plateaus.
+const (
+	KeepPassOnly         = "pass_only"
+	KeepScoreImprovement = "score_improvement"
 )
 
 // ErrRalph marks fail-closed ralph-state refusals.
 var ErrRalph = errors.New("ralph refused (fail-closed)")
 
-// Check is one verifier result reported by the agent.
+// Check is one verifier result reported by the agent. Score is set only
+// under keep-policy score_improvement (the evaluator's numeric result); it
+// stays nil for pass_only, so a pass_only Check marshals identically to the
+// pre-/2 shape (receipt hashes stay stable).
 type Check struct {
 	Round        int       `json:"round"`
 	VerifierExit int       `json:"verifier_exit"`
+	Score        *float64  `json:"score,omitempty"`
 	Note         string    `json:"note,omitempty"`
 	At           time.Time `json:"at"`
 }
 
-// State is the oma-ralph/1 document.
+// State is the oma-ralph/2 document.
 type State struct {
-	Schema      string    `json:"schema"`
-	ID          string    `json:"id"`
-	Phase       string    `json:"phase"`
-	Goal        string    `json:"goal"`
-	MaxRounds   int       `json:"max_rounds"`
-	Round       int       `json:"round"`
-	Checks      []Check   `json:"checks"`
-	StallWindow int       `json:"stall_window"`
-	Created     time.Time `json:"created"`
-	Updated     time.Time `json:"updated"`
+	Schema      string  `json:"schema"`
+	ID          string  `json:"id"`
+	Phase       string  `json:"phase"`
+	Goal        string  `json:"goal"`
+	KeepPolicy  string  `json:"keep_policy"`
+	MaxRounds   int     `json:"max_rounds"`
+	Round       int     `json:"round"`
+	Checks      []Check `json:"checks"`
+	StallWindow int     `json:"stall_window"`
+	// PlateauWindow/BestRound/BestScore drive score_improvement keep-best and
+	// the plateau stop. BestRound is 0 until the first scored check.
+	PlateauWindow int       `json:"plateau_window"`
+	BestRound     int       `json:"best_round,omitempty"`
+	BestScore     *float64  `json:"best_score,omitempty"`
+	Created       time.Time `json:"created"`
+	Updated       time.Time `json:"updated"`
 	// Receipt (A1): sha256 over {goal, checks, terminal_check}, set when the
-	// loop reaches PhasePassed. It makes "passed" falsifiable — note it
-	// proves the recorded exit code, not that the agent truly ran the command.
+	// loop reaches a meaningful terminal. For pass_only that is PhasePassed;
+	// for score_improvement it is also plateau/exhaustion (the kept best is
+	// the deliverable), and terminal_check is the best-score check. It proves
+	// the recorded results, not that the agent truly ran the command.
 	Receipt string `json:"receipt,omitempty"`
 }
 
@@ -77,11 +103,28 @@ func NewEngine(dir string) *Engine { return &Engine{Dir: dir, Now: time.Now} }
 
 func (e *Engine) path(id string) string { return filepath.Join(e.Dir, "ralph-"+id+".json") }
 
-// Start initializes a loop. goal is required: it anchors the stop
-// semantics the agent reasons against.
-func (e *Engine) Start(id, goal string, maxRounds, stallWindow int, dryRun bool) (*State, error) {
-	if strings.TrimSpace(goal) == "" {
+// StartOpts configures a new loop. Zero values take documented defaults
+// (KeepPolicy→pass_only, MaxRounds→10, StallWindow→3, PlateauWindow→3).
+type StartOpts struct {
+	Goal          string
+	KeepPolicy    string
+	MaxRounds     int
+	StallWindow   int
+	PlateauWindow int
+}
+
+// Start initializes a loop. Goal is required: it anchors the stop semantics
+// the agent reasons against.
+func (e *Engine) Start(id string, opts StartOpts, dryRun bool) (*State, error) {
+	if strings.TrimSpace(opts.Goal) == "" {
 		return nil, fmt.Errorf("%w: --goal is required (it anchors the stop judgment)", ErrRalph)
+	}
+	keep := opts.KeepPolicy
+	if keep == "" {
+		keep = KeepPassOnly
+	}
+	if keep != KeepPassOnly && keep != KeepScoreImprovement {
+		return nil, fmt.Errorf("%w: keep-policy %q must be %s or %s", ErrRalph, keep, KeepPassOnly, KeepScoreImprovement)
 	}
 	if id == "" {
 		id = e.Now().UTC().Format("20060102-150405")
@@ -89,19 +132,26 @@ func (e *Engine) Start(id, goal string, maxRounds, stallWindow int, dryRun bool)
 	if !idRe.MatchString(id) {
 		return nil, fmt.Errorf("%w: id %q (want %s)", ErrRalph, id, idRe)
 	}
+	maxRounds := opts.MaxRounds
 	if maxRounds <= 0 {
 		maxRounds = 10
 	}
+	stallWindow := opts.StallWindow
 	if stallWindow <= 0 {
 		stallWindow = 3
+	}
+	plateauWindow := opts.PlateauWindow
+	if plateauWindow <= 0 {
+		plateauWindow = 3
 	}
 	if _, err := os.Stat(e.path(id)); err == nil {
 		return nil, fmt.Errorf("%w: ralph %q already exists", ErrRalph, id)
 	}
 	now := e.Now().UTC()
 	s := &State{
-		Schema: Schema, ID: id, Phase: PhaseRunning, Goal: goal,
-		MaxRounds: maxRounds, StallWindow: stallWindow,
+		Schema: Schema, ID: id, Phase: PhaseRunning, Goal: opts.Goal,
+		KeepPolicy: keep,
+		MaxRounds:  maxRounds, StallWindow: stallWindow, PlateauWindow: plateauWindow,
 		Checks:  []Check{},
 		Created: now, Updated: now,
 	}
@@ -127,13 +177,30 @@ func (e *Engine) Load(id string) (*State, error) {
 	if err := json.Unmarshal(raw, &s); err != nil {
 		return nil, fmt.Errorf("%w: state not valid JSON (backup at %s.bak): %v", ErrRalph, e.path(id), err)
 	}
-	if major, ok := schemaMajor(s.Schema, "oma-ralph"); !ok || major != 1 {
+	if major, ok := schemaMajor(s.Schema, "oma-ralph"); !ok || major != 2 {
 		return nil, fmt.Errorf("%w: state schema %q, want %s", ErrRalph, s.Schema, Schema)
 	}
 	if s.ID != id {
 		return nil, fmt.Errorf("%w: state id %q does not match file %q", ErrRalph, s.ID, id)
 	}
+	if err := s.validate(); err != nil {
+		return nil, err
+	}
 	return &s, nil
+}
+
+// validate enforces the /2 keep-policy contract on LOADED persisted state, so a
+// hand-written or corrupt file cannot bypass the fail-closed rules Start applies
+// to new loops (codex gate-2 must-fix): an unknown keep_policy must not fall
+// through to pass_only, and score_improvement must keep a live plateau stop.
+func (s *State) validate() error {
+	if s.KeepPolicy != KeepPassOnly && s.KeepPolicy != KeepScoreImprovement {
+		return fmt.Errorf("%w: persisted keep_policy %q must be %s or %s", ErrRalph, s.KeepPolicy, KeepPassOnly, KeepScoreImprovement)
+	}
+	if s.KeepPolicy == KeepScoreImprovement && s.PlateauWindow <= 0 {
+		return fmt.Errorf("%w: score_improvement requires plateau_window > 0 (got %d)", ErrRalph, s.PlateauWindow)
+	}
+	return nil
 }
 
 // Resolve picks the instance for an omitted --id: exactly one running
@@ -185,7 +252,8 @@ type Verdict struct {
 
 // Next advances the loop one round. Terminal states report stop with
 // their reason and stay unchanged (idempotent — review 058 guardrail);
-// crossing max_rounds flips to exhausted.
+// crossing max_rounds flips to exhausted. Under score_improvement an
+// exhausted loop still earns a receipt over the kept best.
 func (e *Engine) Next(id string, dryRun bool) (*State, *Verdict, error) {
 	s, err := e.Resolve(id)
 	if err != nil {
@@ -197,6 +265,9 @@ func (e *Engine) Next(id string, dryRun bool) (*State, *Verdict, error) {
 	s.Round++
 	if s.Round > s.MaxRounds {
 		s.Phase = PhaseExhausted
+		if s.KeepPolicy == KeepScoreImprovement && len(s.Checks) > 0 {
+			s.Receipt = ralphReceipt(s)
+		}
 		if err := e.saveUnless(s, dryRun); err != nil {
 			return nil, nil, err
 		}
@@ -210,10 +281,12 @@ func (e *Engine) Next(id string, dryRun bool) (*State, *Verdict, error) {
 		Reason: fmt.Sprintf("round %d of %d", s.Round, s.MaxRounds)}, nil
 }
 
-// RecordCheck stores one verifier result. Exit 0 → passed. A run of
-// stall_window consecutive failures sharing the same non-empty note is a
-// stall (the note is the failure signature).
-func (e *Engine) RecordCheck(id string, verifierExit int, note string, dryRun bool) (*State, *Verdict, error) {
+// RecordCheck stores one verifier result. Exit 0 → passed. Under pass_only a
+// run of stall_window consecutive failures sharing the same non-empty note is
+// a stall (the note is the failure signature). Under score_improvement every
+// check must carry a finite --score; the loop keeps the strict-best score and
+// plateaus when no improvement lands within plateau_window rounds.
+func (e *Engine) RecordCheck(id string, verifierExit int, score *float64, note string, dryRun bool) (*State, *Verdict, error) {
 	s, err := e.Resolve(id)
 	if err != nil {
 		return nil, nil, err
@@ -221,13 +294,43 @@ func (e *Engine) RecordCheck(id string, verifierExit int, note string, dryRun bo
 	if s.Terminal() {
 		return nil, nil, fmt.Errorf("%w: loop %s is %s; check is not legal on a terminal loop", ErrRalph, s.ID, s.Phase)
 	}
-	s.Checks = append(s.Checks, Check{Round: s.Round, VerifierExit: verifierExit, Note: note, At: e.Now().UTC()})
+	// Score/policy validation is fail-closed: score_improvement demands a
+	// finite score on every check; pass_only forbids one (it would be inert).
+	switch s.KeepPolicy {
+	case KeepScoreImprovement:
+		if score == nil {
+			return nil, nil, fmt.Errorf("%w: keep-policy score_improvement requires --score on every check", ErrRalph)
+		}
+		if math.IsNaN(*score) || math.IsInf(*score, 0) {
+			return nil, nil, fmt.Errorf("%w: --score must be a finite number", ErrRalph)
+		}
+	default: // pass_only (and any legacy empty policy already normalized at Start)
+		if score != nil {
+			return nil, nil, fmt.Errorf("%w: --score is only valid under keep-policy score_improvement", ErrRalph)
+		}
+	}
+	s.Checks = append(s.Checks, Check{Round: s.Round, VerifierExit: verifierExit, Score: score, Note: note, At: e.Now().UTC()})
+	// keep-best: strict improvement only (no epsilon).
+	if s.KeepPolicy == KeepScoreImprovement && score != nil {
+		if s.BestScore == nil || *score > *s.BestScore {
+			v := *score
+			s.BestScore = &v
+			s.BestRound = s.Round
+		}
+	}
 	switch {
 	case verifierExit == 0:
 		s.Phase = PhasePassed
 		s.Receipt = ralphReceipt(s)
-	case e.stalled(s):
-		s.Phase = PhaseStalled
+	case s.KeepPolicy == KeepScoreImprovement:
+		if plateaued(s) {
+			s.Phase = PhasePlateaued
+			s.Receipt = ralphReceipt(s)
+		}
+	default: // pass_only
+		if e.stalled(s) {
+			s.Phase = PhaseStalled
+		}
 	}
 	if err := e.saveUnless(s, dryRun); err != nil {
 		return nil, nil, err
@@ -236,15 +339,21 @@ func (e *Engine) RecordCheck(id string, verifierExit int, note string, dryRun bo
 	switch s.Phase {
 	case PhasePassed:
 		v.Reason = "verifier passed"
+	case PhasePlateaued:
+		v.Reason = fmt.Sprintf("plateaued: no score improvement over %d rounds (best %s at round %d) — change strategy", s.PlateauWindow, fmtScore(s.BestScore), s.BestRound)
 	case PhaseStalled:
 		v.Reason = fmt.Sprintf("stalled: %d consecutive failures with signature %q — change strategy", s.StallWindow, note)
 	default:
-		v.Reason = fmt.Sprintf("verifier exit %d recorded", verifierExit)
+		if s.KeepPolicy == KeepScoreImprovement {
+			v.Reason = fmt.Sprintf("score %s recorded (best %s at round %d)", fmtScore(score), fmtScore(s.BestScore), s.BestRound)
+		} else {
+			v.Reason = fmt.Sprintf("verifier exit %d recorded", verifierExit)
+		}
 	}
 	return s, v, nil
 }
 
-// stalled reports stall_window consecutive same-signature failures.
+// stalled reports stall_window consecutive same-signature failures (pass_only).
 func (e *Engine) stalled(s *State) bool {
 	n := s.StallWindow
 	if len(s.Checks) < n {
@@ -263,23 +372,70 @@ func (e *Engine) stalled(s *State) bool {
 	return true
 }
 
-// ralphReceipt hashes the loop's terminal evidence (A1). Caller guarantees
-// at least one recorded check (the passing one).
+// plateaued reports that no strict score improvement has landed in the last
+// plateau_window rounds. BestRound is the round of the last strict best, so
+// round-current minus BestRound is the run of non-improving rounds. A tie
+// (== best) is not an improvement and counts toward the plateau. Round-based
+// to honor the "N rounds without improvement" contract (one improvement
+// judgment per round).
+func plateaued(s *State) bool {
+	if s.PlateauWindow <= 0 || s.BestRound == 0 {
+		return false
+	}
+	return s.Round-s.BestRound >= s.PlateauWindow
+}
+
+// bestScoreCheck returns the strict-best scored check (the kept result), or
+// nil if no check carried a score.
+func bestScoreCheck(s *State) *Check {
+	var best *Check
+	for i := range s.Checks {
+		c := &s.Checks[i]
+		if c.Score == nil {
+			continue
+		}
+		if best == nil || *c.Score > *best.Score {
+			best = c
+		}
+	}
+	return best
+}
+
+// ralphReceipt hashes the loop's terminal evidence (A1). Caller guarantees at
+// least one recorded check. For score_improvement the terminal_check is the
+// best-score check (the kept deliverable); otherwise it is the last check.
 func ralphReceipt(s *State) string {
+	terminal := s.Checks[len(s.Checks)-1]
+	if s.KeepPolicy == KeepScoreImprovement {
+		if bc := bestScoreCheck(s); bc != nil {
+			terminal = *bc
+		}
+	}
 	payload := struct {
 		Schema        string  `json:"schema"`
 		Goal          string  `json:"goal"`
+		KeepPolicy    string  `json:"keep_policy"`
 		Checks        []Check `json:"checks"`
 		TerminalCheck Check   `json:"terminal_check"`
 	}{
 		Schema:        "oma-ralph-receipt/1",
 		Goal:          s.Goal,
+		KeepPolicy:    s.KeepPolicy,
 		Checks:        s.Checks,
-		TerminalCheck: s.Checks[len(s.Checks)-1],
+		TerminalCheck: terminal,
 	}
 	raw, _ := json.Marshal(payload)
 	sum := sha256.Sum256(raw)
 	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+// fmtScore renders a *float64 for human verdict reasons (never used in the
+// receipt hash, which marshals the raw value).
+func fmtScore(p *float64) string {
+	if p == nil {
+		return "n/a"
+	}
+	return strconv.FormatFloat(*p, 'g', -1, 64)
 }
 
 // Abort ends a running loop.

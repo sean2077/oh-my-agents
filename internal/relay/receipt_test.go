@@ -12,11 +12,24 @@ func mustPublishReview(t *testing.T, l *Ledger, slug, verdict string, target int
 	if err != nil {
 		t.Fatal(err)
 	}
-	formal, err := l.Publish(draft, PublishInput{Body: "review body", Prompt: "next please", Verdict: verdict, ReviewTarget: &target}, false)
+	formal, err := l.Publish(draft, PublishInput{Body: reviewBody(verdict), Prompt: "next please", Verdict: verdict, ReviewTarget: &target}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return formal
+}
+
+// reviewBody returns a review body carrying a valid oma-review-evidence/1 block
+// whose shape matches the verdict (R5): approve carries basis_refs +
+// commands_run + limitations; revise / approve-with-changes carry findings.
+func reviewBody(verdict string) string {
+	var ev string
+	if verdict == VerdictApprove {
+		ev = `{"schema":"oma-review-evidence/1","findings":[],"basis_refs":[{"type":"repo","ref":"internal/relay/receipt.go:30"}],"commands_run":["go test ./internal/relay -> ok"],"limitations":["did not run full e2e"]}`
+	} else {
+		ev = `{"schema":"oma-review-evidence/1","findings":[{"severity":"high","confidence":"high","claim":"gate hole","refs":[{"type":"repo","ref":"internal/relay/publish.go:83"}]}],"basis_refs":[],"commands_run":["go test ./internal/relay -> fail"],"limitations":["none observed"]}`
+	}
+	return "review body\n\n```oma-review-evidence/1\n" + ev + "\n```\n"
 }
 
 // TestCompletionReceiptAndApproveGate: a lead decision after a non-lead

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/sean2077/oh-my-agents/internal/asset"
+	"github.com/sean2077/oh-my-agents/internal/assetaudit"
 	"github.com/spf13/cobra"
 )
 
@@ -74,7 +75,7 @@ func newAssetCmd() *cobra.Command {
 		Use:   "asset",
 		Short: "Manage content assets (skills, subagents, hooks, prompts)",
 	}
-	cmd.AddCommand(newAssetInstallCmd(), newAssetListCmd(), newAssetCatalogCmd(), newAssetRemoveCmd(), newAssetRollbackCmd())
+	cmd.AddCommand(newAssetInstallCmd(), newAssetListCmd(), newAssetCatalogCmd(), newAssetAuditCmd(), newAssetRemoveCmd(), newAssetRollbackCmd())
 	return cmd
 }
 
@@ -263,6 +264,38 @@ func newAssetCatalogCmd() *cobra.Command {
 					line += " -> " + e.Canonical
 				}
 				_, _ = fmt.Fprintln(cmd.OutOrStdout(), line)
+			}
+			return nil
+		}),
+	}
+	cmd.Flags().StringVar(&from, "from", "", "assets source root (default: ./assets)")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable output")
+	return cmd
+}
+
+func newAssetAuditCmd() *cobra.Command {
+	var from string
+	var asJSON bool
+	cmd := &cobra.Command{
+		Use:   "audit",
+		Short: "Advisory bloat audit of source assets (KEEP/ORPHAN/OVERSIZED/RETIRE; never deletes)",
+		Args:  cobra.NoArgs,
+		RunE: run(func(cmd *cobra.Command, _ []string) error {
+			if from == "" {
+				from = "assets"
+			}
+			entries, err := assetaudit.Audit(from)
+			if err != nil {
+				return Errf(ExitState, "%v", err)
+			}
+			if asJSON {
+				enc := json.NewEncoder(cmd.OutOrStdout())
+				enc.SetIndent("", "  ")
+				return enc.Encode(map[string]any{"schema": "oma-cli/1", "audit": entries})
+			}
+			for _, e := range entries {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%-24s %-8s %-10s %-10s loc=%-4d tok=%-4d refs=%-3d  %s\n",
+					e.Name, e.Type, e.Status, e.Label, e.LOC, e.ResidentTokens, e.RefCount, e.Reason)
 			}
 			return nil
 		}),

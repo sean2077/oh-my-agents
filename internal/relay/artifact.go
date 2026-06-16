@@ -43,7 +43,7 @@ func contains(set []string, v string) bool {
 	return false
 }
 
-// Frontmatter is the oma-relay/3 artifact header (protocol §5). The A1/A2
+// Frontmatter is the oma-relay/4 artifact header (protocol §5). The A1/A2
 // fields (verdict on kind:review, receipt on kind:decision) are optional
 // and absent (zero) on every other kind; the strict parser still rejects
 // any key it does not know.
@@ -60,7 +60,7 @@ type Frontmatter struct {
 	TouchedPaths  []string
 	Corrects      *int
 
-	// A1/A2 (oma-relay/3). Review-gate fields — set on kind:review only:
+	// A1/A2 review-gate fields — set on kind:review only:
 	Verdict         string // approve | approve-with-changes | revise
 	ReviewTargetSeq *int   // the seq this review judges
 	// Completion-receipt fields — set on kind:decision only. The receipt
@@ -73,11 +73,18 @@ type Frontmatter struct {
 	QualityGateSeq   *int       // the non-lead approve review that targets the reviewed head
 	QualityGateHash  string     // sha256:<hex> of that review's rendered bytes
 	VerifiedAt       *time.Time // receipt timestamp
+
+	// R5 (oma-relay/4). EvidenceHash is the canonical hash of the review
+	// body's oma-review-evidence/1 block — set on kind:review only.
+	// QualityGateEvidenceHash binds that evidence hash into the decision
+	// receipt — set on kind:decision only (additive over the A1/A2 receipt).
+	EvidenceHash            string
+	QualityGateEvidenceHash string
 }
 
 // Validate enforces the §5 contract on a parsed or about-to-render header.
 func (f *Frontmatter) Validate() error {
-	if major, ok := schemaMajor(f.Schema, "oma-relay"); !ok || major != 3 {
+	if major, ok := schemaMajor(f.Schema, "oma-relay"); !ok || major != 4 {
 		return fmt.Errorf("%w: artifact schema %q, want %s", ErrRelay, f.Schema, ArtifactSchema)
 	}
 	if f.Seq < 1 || f.Seq > 999 {
@@ -128,12 +135,15 @@ func (f *Frontmatter) validateGateFields() error {
 			return fmt.Errorf("%w: review_target_seq %d must be >= 1", ErrRelay, *f.ReviewTargetSeq)
 		}
 	}
+	if f.EvidenceHash != "" && f.Kind != "review" {
+		return fmt.Errorf("%w: evidence_hash is only valid on kind:review (got %s)", ErrRelay, f.Kind)
+	}
 	receiptSet := f.ReceiptID != "" || f.ReviewedHeadSeq != nil || f.ReviewedHeadHash != "" ||
-		f.QualityGateSeq != nil || f.QualityGateHash != "" || f.VerifiedAt != nil
+		f.QualityGateSeq != nil || f.QualityGateHash != "" || f.QualityGateEvidenceHash != "" || f.VerifiedAt != nil
 	if receiptSet && f.Kind != "decision" {
 		return fmt.Errorf("%w: receipt fields are only valid on kind:decision (got %s)", ErrRelay, f.Kind)
 	}
-	for _, h := range []string{f.ReceiptID, f.ReviewedHeadHash, f.QualityGateHash} {
+	for _, h := range []string{f.ReceiptID, f.ReviewedHeadHash, f.QualityGateHash, f.EvidenceHash, f.QualityGateEvidenceHash} {
 		if h != "" && !strings.HasPrefix(h, "sha256:") {
 			return fmt.Errorf("%w: hash %q must be sha256:<hex>", ErrRelay, h)
 		}
@@ -205,11 +215,13 @@ func Render(f *Frontmatter, body string) []byte {
 	// humans / stable digests).
 	renderScalar(&b, "verdict", f.Verdict)
 	renderOptInt(&b, "review_target_seq", f.ReviewTargetSeq)
+	renderScalar(&b, "evidence_hash", f.EvidenceHash)
 	renderScalar(&b, "receipt_id", f.ReceiptID)
 	renderOptInt(&b, "reviewed_head_seq", f.ReviewedHeadSeq)
 	renderScalar(&b, "reviewed_head_hash", f.ReviewedHeadHash)
 	renderOptInt(&b, "quality_gate_seq", f.QualityGateSeq)
 	renderScalar(&b, "quality_gate_hash", f.QualityGateHash)
+	renderScalar(&b, "quality_gate_evidence_hash", f.QualityGateEvidenceHash)
 	if f.VerifiedAt != nil {
 		fmt.Fprintf(&b, "verified_at: %s\n", f.VerifiedAt.UTC().Format(time.RFC3339))
 	}
@@ -274,6 +286,8 @@ func Parse(raw []byte) (*Frontmatter, string, error) {
 			f.Verdict = value
 		case "review_target_seq":
 			f.ReviewTargetSeq, err = parseOptInt(value)
+		case "evidence_hash":
+			f.EvidenceHash = value
 		case "receipt_id":
 			f.ReceiptID = value
 		case "reviewed_head_seq":
@@ -284,6 +298,8 @@ func Parse(raw []byte) (*Frontmatter, string, error) {
 			f.QualityGateSeq, err = parseOptInt(value)
 		case "quality_gate_hash":
 			f.QualityGateHash = value
+		case "quality_gate_evidence_hash":
+			f.QualityGateEvidenceHash = value
 		case "verified_at":
 			f.VerifiedAt, err = parseOptTime(value)
 		case "prompt_for_next":

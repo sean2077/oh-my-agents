@@ -54,7 +54,7 @@
 
 - 文件名 `NNN-<author>-<kind>.md`，NNN 三位十进制（001 起，允许空洞，读取按文件名排序）。
 - `kind ∈ plan | review | fix | note | question | decision | correction | addendum`。
-- frontmatter（YAML）：`schema("oma-relay/3"), seq(int), author, peer, kind, status, created(ISO-8601), in_reply_to(int|null), prompt_for_next(string), touched_paths([string]), corrects(int|null)`。**A1/A2 字段**：ready `kind:review` **必带** `verdict(approve|approve-with-changes|revise)` + `review_target_seq`(≥1，它判定的 seq)；`kind:decision` 增完成回执 `receipt_id, reviewed_head_seq, reviewed_head_hash, quality_gate_seq, quality_gate_hash, verified_at`（其他 kind 缺省）。严格 parser 仍拒绝任何未知 key；session/sentinel 仍 `oma-relay/2`。
+- frontmatter（YAML）：`schema("oma-relay/4"), seq(int), author, peer, kind, status, created(ISO-8601), in_reply_to(int|null), prompt_for_next(string), touched_paths([string]), corrects(int|null)`。**A1/A2 字段**：ready `kind:review` **必带** `verdict(approve|approve-with-changes|revise)` + `review_target_seq`(≥1，它判定的 seq)；**R5**：ready `kind:review` 另**必带** body 内 fenced `oma-review-evidence/1` 块 + frontmatter `evidence_hash`(其规范化 sha256)；`kind:decision` 增完成回执 `receipt_id, reviewed_head_seq, reviewed_head_hash, quality_gate_seq, quality_gate_hash, quality_gate_evidence_hash, verified_at`（其他 kind 缺省）。严格 parser 仍拒绝任何未知 key；session/sentinel 仍 `oma-relay/2`。
 - `status ∈ ready | closed | cancelled | failed | timed_out`；终态 = closed/cancelled/failed；`timed_out` 为可恢复暂停（用于 `@user:` 上抛）。
 - **append-only**：带 `.ready` 的文件永不修改；更正经 `kind: correction` + `corrects` 指向原 seq。
 
@@ -88,7 +88,7 @@ publish 步骤（严格顺序）：从草稿**渲染**正式内容 → 写 `NNN-
 ## 9. 终态与归档
 
 - `oma relay close --outcome <approve|reject|abandon> --reason <text>`：写 session.json 终态 → 写 `CLOSED` 哨兵 → 整体移入 `_archive/`。
-- **approve 质量门（A2，fail-closed）**：`--outcome approve` 拒绝，除非最新 lead `kind:decision` 携带合法回执，且：① 回执 `reviewed_head`(被批准的工作)按 hash 仍一致；② 存在**非-lead** `kind:review`(verdict=approve) **针对该 reviewed_head**(review_target_seq==reviewed_head) 且 hash 一致；③ reviewed_head 之后**无更新的未评审工作**。`approve-with-changes` / lead 自评 / 陈旧 target 均不满足。**退出码(R4)**：门未过（无 decision/review、verdict 不符、target 陈旧、有未评审新工作）→ **exit 4**；回执/artifact 损坏或 hash 不符 → **exit 3**。`reject`/`abandon` 无需回执。
+- **approve 质量门（A2，fail-closed）**：`--outcome approve` 拒绝，除非最新 lead `kind:decision` 携带合法回执，且：① 回执 `reviewed_head`(被批准的工作)按 hash 仍一致；② 存在**非-lead** `kind:review`(verdict=approve) **针对该 reviewed_head**(review_target_seq==reviewed_head) 且 hash 一致；③ reviewed_head 之后**无更新的未评审工作**；④（**R5**，附加）重算该 approve review body 的 `oma-review-evidence/1` 规范化 hash，须 == 其 frontmatter `evidence_hash` == 回执 `quality_gate_ref.evidence_hash`。`approve-with-changes` / lead 自评 / 陈旧 target 均不满足。**退出码(R4)**：门未过（无 decision/review、verdict 不符、target 陈旧、有未评审新工作）→ **exit 4**；回执/artifact 损坏、hash 或 evidence 不符 → **exit 3**。`reject`/`abandon` 无需回执。
 - 归档后只读；恢复（restore）与清理归 `oma doctor` 子检查（命令面见 command-tree.md）。
 
 ## 10. 安全要点（实现规约见 security-contract.md）
