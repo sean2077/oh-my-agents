@@ -143,3 +143,13 @@
 - **A6** 通知/远程注入 — 用户已决定延后、不实现（候选）。
 - **Codex code-review 门** — 对整批发起 relay 评审（用户驱动 Codex，codex 未在本机）。
 - dogfood：安装到 `~/.agents` 后跑 `oma doctor budget` 复核常驻足迹（catalog 现 8 skill）。
+
+## 7. 外部信号：宿主原生 `/goal`（= Ralph loop）验证 ralph 押注（2026-06-16）
+
+> 非 omx/omc 借鉴项，而是来自 Codex / Claude Code 的外部信号；因直接关乎 ralph（+ A1 receipt / B2 ultraqa）暂记于此。`docs/borrow-from-omx-omc-2.md` 现于 `feat/borrow-omx-omc-2` worktree、尚未并入 main；其并入后本节可迁移过去。
+
+- **发生了什么**：Codex 0.128.0、Claude Code 2.1.139 各自把 Ralph loop 做成**宿主原生** `/goal` —— 声明可验证终态 → 自治续 turn → 小模型（默认 Haiku）读 transcript 判停；两家都仍挂 experimental 门。
+- **判断：验证而非冗余。** 两家同时原生化此模式，反证 ralph 押注正确；但 `/goal` = 宿主耦合 + 版本门禁 + LLM 概率判停，oma 的**确定性计数 + stall 检测 + 终态持久化 + 跨宿主一致 + 可恢复**才是护城河 —— **不 deprecate ralph**。
+- **落地：组合而非取代。** `/goal` 作外层 driver（自治续 turn），判停**委托** `oma ralph`：goal condition 写成「每 turn 推进一轮 ralph，直到 `oma ralph status --json` 报 terminal（passed/exhausted/stalled），每轮打印该 JSON」，宿主 evaluator 退化为只确认 JSON。额外收益：契合**零宿主改写** —— 用 `/goal` 自治续 ralph 轮次**免装 Stop-hook**。
+- **已落地**：`assets/skills/{ralph,autopilot}/SKILL.md` 的 `/goal` driver 注脚（同 “CC acceleration (optional)” 约定：宿主能力是可选加速器，oma 契约跨宿主不变）。
+- **来源**：Claude Code docs `code.claude.com/docs/en/goal`、Codex `developers.openai.com/codex/use-cases/follow-goals`、Simon Willison「Codex 0.128.0 adds /goal」（2026-04-30）。

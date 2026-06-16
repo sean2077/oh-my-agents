@@ -45,3 +45,5 @@ Subflows are bounded, never recursive: deep-interview only from clarify, ralph o
 4. User escalations interrupt any phase; record where you stopped so resume is exact.
 
 > **CC acceleration (optional, Claude Code only)**: plan mode may host the plan phase, and independent implement steps may fan out to subagents. Codex and other hosts execute the same phases sequentially inline — the state keys and phase contract are identical either way.
+>
+> **`/goal` driver (optional, host-native)**: when `verify` runs the ralph subflow, a host-native `/goal` (Claude Code ≥2.1.139, Codex ≥0.128.0) may auto-continue its rounds — see ralph's `/goal` note. The phase contract is unchanged: oma still judges stop, and `autopilot/phase` advances past `verify` only on ralph `passed`.
