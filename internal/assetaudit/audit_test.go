@@ -1,0 +1,115 @@
+package assetaudit
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// writeSkill lays down assets/skills/<name>/{manifest.json,SKILL.md}.
+func writeSkill(t *testing.T, root, name, description, status, canonical, body string) {
+	t.Helper()
+	dir := filepath.Join(root, "skills", name)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mf := `{"schema":"oma-asset/1","name":"` + name + `","type":"skill","targets":["claude","codex"],"description_budget_tokens":80`
+	if status != "" {
+		mf += `,"status":"` + status + `"`
+	}
+	if canonical != "" {
+		mf += `,"canonical":"` + canonical + `"`
+	}
+	mf += "}\n"
+	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(mf), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	skill := "---\nname: " + name + "\ndescription: " + description + "\n---\n" + body + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(skill), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func find(entries []AuditEntry, name string) *AuditEntry {
+	for i := range entries {
+		if entries[i].Name == name {
+			return &entries[i]
+		}
+	}
+	return nil
+}
+
+func TestAuditLabels(t *testing.T) {
+	root := t.TempDir()
+	// keeper: short description, referenced by `referencer` below.
+	writeSkill(t, root, "keeper", "short and sweet", "", "", "body")
+	// referencer: its body cites `keeper` (an exact token ref).
+	writeSkill(t, root, "referencer", "also short", "", "", "use the keeper skill and the fat skill for X")
+	// orphan: short description, nobody references it.
+	writeSkill(t, root, "lonely", "short desc", "", "", "body")
+	// retire: deprecated status.
+	writeSkill(t, root, "old-thing", "short", "deprecated", "", "body")
+	// oversized: description longer than the 80-token (320-byte) budget.
+	writeSkill(t, root, "fat", strings.Repeat("verbose ", 50), "", "", "body")
+
+	entries, err := Audit(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := map[string]string{
+		"keeper":     LabelKeep,
+		"lonely":     LabelOrphan,
+		"old-thing":  LabelRetire,
+		"fat":        LabelOversized,
+		"referencer": LabelOrphan, // nobody references referencer itself
+	}
+	for name, want := range cases {
+		e := find(entries, name)
+		if e == nil {
+			t.Fatalf("%s missing from audit", name)
+		}
+		if e.Label != want {
+			t.Errorf("%s label = %s, want %s (reason: %s, refs=%d, tok=%d)", name, e.Label, want, e.Reason, e.RefCount, e.ResidentTokens)
+		}
+	}
+	// keeper must have been referenced exactly once and not count itself.
+	if e := find(entries, "keeper"); e.RefCount != 1 {
+		t.Errorf("keeper ref_count = %d, want 1", e.RefCount)
+	}
+}
+
+func TestAuditRefExcludesSelfAndCountsCanonical(t *testing.T) {
+	root := t.TempDir()
+	// successor referenced only via an alias's canonical pointer.
+	writeSkill(t, root, "successor", "short", "", "", "successor mentions successor successor") // self refs ignored
+	writeSkill(t, root, "old-alias", "short", "alias", "successor", "body")
+
+	entries, err := Audit(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	succ := find(entries, "successor")
+	// self-references in successor's own body do NOT count; the alias canonical edge does.
+	if succ.RefCount != 1 {
+		t.Fatalf("successor ref_count = %d, want 1 (only the canonical edge)", succ.RefCount)
+	}
+	if a := find(entries, "old-alias"); a.Label != LabelRetire {
+		t.Errorf("old-alias label = %s, want RETIRE", a.Label)
+	}
+}
+
+func TestAuditFailsClosedOnBadManifest(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "skills", "broken")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// name disagrees with directory → catalog (and thus audit) fails closed.
+	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(`{"schema":"oma-asset/1","name":"mismatch","type":"skill","targets":["claude"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Audit(root); err == nil {
+		t.Fatal("audit must fail closed on a manifest whose name disagrees with its directory")
+	}
+}

@@ -23,8 +23,8 @@ func newRalphCmd() *cobra.Command {
 }
 
 func newRalphStartCmd() *cobra.Command {
-	var goal, id string
-	var maxRounds, stallWindow int
+	var goal, id, keepPolicy string
+	var maxRounds, stallWindow, plateauWindow int
 	cmd := &cobra.Command{
 		Use:   "start",
 		Short: "Initialize a loop (--goal anchors the stop semantics)",
@@ -34,11 +34,15 @@ func newRalphStartCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			s, err := eng.Start(id, goal, maxRounds, stallWindow, DryRun())
+			s, err := eng.Start(id, ralph.StartOpts{
+				Goal: goal, KeepPolicy: keepPolicy,
+				MaxRounds: maxRounds, StallWindow: stallWindow, PlateauWindow: plateauWindow,
+			}, DryRun())
 			if err != nil {
 				return err
 			}
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s phase=%s max_rounds=%d stall_window=%d\n", s.ID, s.Phase, s.MaxRounds, s.StallWindow)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s phase=%s keep_policy=%s max_rounds=%d stall_window=%d plateau_window=%d\n",
+				s.ID, s.Phase, s.KeepPolicy, s.MaxRounds, s.StallWindow, s.PlateauWindow)
 			if adv := fuzzyStartAdvisory(goal); adv != "" {
 				_, _ = fmt.Fprintln(cmd.ErrOrStderr(), adv)
 			}
@@ -50,8 +54,10 @@ func newRalphStartCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&goal, "goal", "", "what done means for this loop")
 	cmd.Flags().StringVar(&id, "id", "", "instance id (default: timestamp)")
+	cmd.Flags().StringVar(&keepPolicy, "keep-policy", "pass_only", "pass_only | score_improvement")
 	cmd.Flags().IntVar(&maxRounds, "max-rounds", 10, "exhaustion bound")
-	cmd.Flags().IntVar(&stallWindow, "stall-window", 3, "consecutive same-signature failures before stalled")
+	cmd.Flags().IntVar(&stallWindow, "stall-window", 3, "consecutive same-signature failures before stalled (pass_only)")
+	cmd.Flags().IntVar(&plateauWindow, "plateau-window", 3, "consecutive no-improvement rounds before plateaued (score_improvement)")
 	_ = cmd.MarkFlagRequired("goal")
 	return cmd
 }
@@ -61,7 +67,7 @@ func newRalphNextCmd() *cobra.Command {
 	var asJSON bool
 	cmd := &cobra.Command{
 		Use:   "next",
-		Short: "Advance one round; stop verdicts (passed/exhausted/stalled) exit 4",
+		Short: "Advance one round; stop verdicts (passed/exhausted/stalled/plateaued) exit 4",
 		Args:  cobra.NoArgs,
 		RunE: run(func(cmd *cobra.Command, _ []string) error {
 			eng, err := ralphEngine()
@@ -96,6 +102,7 @@ func newRalphNextCmd() *cobra.Command {
 func newRalphCheckCmd() *cobra.Command {
 	var id, note string
 	var verifierExit int
+	var score float64
 	var asJSON bool
 	cmd := &cobra.Command{
 		Use:   "check",
@@ -106,7 +113,13 @@ func newRalphCheckCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			st, v, err := eng.RecordCheck(id, verifierExit, note, DryRun())
+			// A nil score means "not provided"; --score 0 is a real value, so
+			// distinguish via Changed (RecordCheck enforces policy/score rules).
+			var scorePtr *float64
+			if cmd.Flags().Changed("score") {
+				scorePtr = &score
+			}
+			st, v, err := eng.RecordCheck(id, verifierExit, scorePtr, note, DryRun())
 			if err != nil {
 				return err
 			}
@@ -128,6 +141,7 @@ func newRalphCheckCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&id, "id", "", "instance id")
 	cmd.Flags().IntVar(&verifierExit, "verifier-exit", -1, "exit code of the verifier the agent ran")
+	cmd.Flags().Float64Var(&score, "score", 0, "evaluator score (required under keep-policy score_improvement)")
 	cmd.Flags().StringVar(&note, "note", "", "failure signature (stall detection compares these)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable output")
 	_ = cmd.MarkFlagRequired("verifier-exit")

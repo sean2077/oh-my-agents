@@ -48,8 +48,9 @@
   "created": "ISO-8601", "closed": null, "outcome": null, "reason": null
 }
 ```
-- artifact frontmatter schema `oma-relay/3`（详见协议 §5；A1/A2：ready `kind:review` **必带** `verdict` + `review_target_seq`(≥1)，`kind:decision` 增完成回执字段；session 与 sentinel 仍 `oma-relay/2`）；`.oma-relay-v2` sentinel：`{"schema":"oma-relay/2","created":"..."}`。
-- 完成回执 `oma-completion-receipt/1`（嵌入 decision frontmatter，A1）：`{schema, pair, decision_seq, reviewed_head{seq,hash}, quality_gate_ref{seq,verdict,hash}, verified_at}`；`reviewed_head` = 被批准的「工作」(最新非 review/非 decision artifact)，`quality_gate_ref` = 针对它的非-lead approve review。其 sha256 存为 frontmatter `receipt_id`，`close --outcome approve` 据此 fail-closed 校验（协议 §9）。
+- artifact frontmatter schema `oma-relay/4`（详见协议 §5；A1/A2：ready `kind:review` **必带** `verdict` + `review_target_seq`(≥1)；**R5**：ready `kind:review` 另**必带** body 内 fenced `oma-review-evidence/1` 块 + frontmatter `evidence_hash`，`kind:decision` 增完成回执字段含 `quality_gate_evidence_hash`；session 与 sentinel 仍 `oma-relay/2`）；`.oma-relay-v2` sentinel：`{"schema":"oma-relay/2","created":"..."}`。
+- 完成回执 `oma-completion-receipt/2`（嵌入 decision frontmatter，A1+R5）：`{schema, pair, decision_seq, reviewed_head{seq,hash}, quality_gate_ref{seq,verdict,hash,evidence_hash}, verified_at}`；`reviewed_head` = 被批准的「工作」(最新非 review/非 decision artifact)，`quality_gate_ref` = 针对它的非-lead approve review，其 `evidence_hash`(R5) = 该 review body `oma-review-evidence/1` 块的规范化 sha256。回执 sha256 存为 frontmatter `receipt_id`，`close --outcome approve` 据此 fail-closed 校验（协议 §9）。
+- review 证据 `oma-review-evidence/1`（R5，review body 内单个 fenced 块）：`{schema, findings[{severity(critical|high|medium|low), confidence(high|medium|low), claim, refs[{type(repo|official|source_reference|supplemental), ref, version_or_date?}]}], basis_refs[…], commands_run[], limitations[]}`。publish 按 verdict 校验（revise/approve-with-changes 必带 findings；approve 必带 basis_refs+commands_run+limitations）+ 非占位 + repo ref 须 `path:line[-line]` 无绝对/`..`、外部 ref 须 http(s) URL；规范化 sha256 = frontmatter `evidence_hash`，并绑入 decision 回执（协议 §9 close 门附加校验）。
 - pair 绑定 `.oma/relay/_bindings/<author-session>.json`（`oma-relay-binding/1`）：`{"schema":"oma-relay-binding/1","author":"claude","session_hash":"<平台会话id哈希>","pair":"20260611-topic","created":"ISO-8601","updated":"ISO-8601"}`；解析顺序与 fail-closed 语义见协议 §4a。
 
 ## 5. interview 状态 `.oma/state/interview-<id>.json`（`oma-interview/1`）
@@ -69,9 +70,9 @@
 
 - **round 0（拓扑锁定，B9 minor-additive）**：`{"schema":"oma-interview-scores/1","round":0,"topology":{"components":[{id,name,description,status,evidence?}],"deferrals":[{component_id,reason}]}}` —— phase topology_pending 仅接受此形态；锁定后进入 interviewing。评分轮从 1 起、必须连续（重放/跳轮拒绝）。
 
-## 6. ralph 状态 `.oma/state/ralph-<id>.json`（`oma-ralph/1`）
+## 6. ralph 状态 `.oma/state/ralph-<id>.json`（`oma-ralph/2`）
 
-字段集见 workflows.md §2.1（id/phase/goal/max_rounds/round/checks[]/stall_window/created/updated）。PhasePassed 时增 `receipt`（A1：sha256 over {goal, checks, terminal_check}；证明记录的 exit code，非命令真跑过）。
+字段集见 workflows.md §2.1（id/phase/goal/keep_policy/max_rounds/round/checks[]/stall_window/plateau_window/best_round/best_score/created/updated）。`/2`（R1）增 keep-policy 契约：`keep_policy`(pass_only|score_improvement)、`plateau_window`、`best_round`、`best_score`，`checks[]` 增可选 `score`，新增终态 `plateaued`；**无 /1→/2 迁移层**（`Load` 拒非 2 major，fail-closed）。`receipt`（A1：sha256 over {goal, keep_policy, checks, terminal_check}）在 pass_only 于 `passed` 产出；在 score_improvement 于 `passed`/`plateaued`/`exhausted` 终态均产出，`terminal_check` 取 best-score check（证明记录的结果，非命令真跑过）。
 
 ## 7. 用户配置 `config.toml`（`oma-config/1`）
 

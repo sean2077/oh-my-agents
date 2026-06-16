@@ -105,6 +105,13 @@ func (l *Ledger) Publish(draftPath string, in PublishInput, dryRun bool) (string
 		if !l.seqIsPublished(pairDir, *fm.ReviewTargetSeq) {
 			return "", fmt.Errorf("%w: review_target_seq %d is not a published artifact", ErrRelay, *fm.ReviewTargetSeq)
 		}
+		// R5: a ready review must carry a valid oma-review-evidence/1 block
+		// in its body (shape varies by verdict); bind its canonical hash.
+		evHash, eerr := reviewEvidenceHash(body, fm.Verdict)
+		if eerr != nil {
+			return "", eerr
+		}
+		fm.EvidenceHash = evHash
 	}
 	if fm.Kind == "decision" && fm.ReceiptID == "" {
 		rcpt, rerr := l.buildDecisionReceipt(slug, fm.Seq)

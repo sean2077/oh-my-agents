@@ -21,7 +21,7 @@ import (
 // Schema constants (docs/schemas.md §4).
 const (
 	Schema         = "oma-relay/2" // session + sentinel (ledger format)
-	ArtifactSchema = "oma-relay/3" // artifact frontmatter (A1/A2: + verdict/receipt fields)
+	ArtifactSchema = "oma-relay/4" // artifact frontmatter (R5: + review evidence_hash / decision quality_gate_evidence_hash)
 	BindingSchema  = "oma-relay-binding/1"
 	sentinelName   = ".oma-relay-v2"
 )

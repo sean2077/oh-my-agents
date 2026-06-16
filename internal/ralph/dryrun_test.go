@@ -37,13 +37,13 @@ func TestDryRunMutatorsValidateButNeverWrite(t *testing.T) {
 	if st, v, err := e.Next("r1", true); err != nil || !v.Continue || !v.Mutated || st.Round != 1 {
 		t.Fatalf("dry-run next: %+v err=%v", v, err)
 	}
-	if _, v, err := e.RecordCheck("r1", 1, "sig", true); err != nil || !v.Mutated {
+	if _, v, err := e.RecordCheck("r1", 1, nil, "sig", true); err != nil || !v.Mutated {
 		t.Fatalf("dry-run check: %+v err=%v", v, err)
 	}
 	if _, err := e.Abort("r1", true); err != nil {
 		t.Fatal(err)
 	}
-	if s, err := e.Start("fresh", "another goal", 5, 2, true); err != nil || s.ID != "fresh" {
+	if s, err := e.Start("fresh", StartOpts{Goal: "another goal", MaxRounds: 5, StallWindow: 2}, true); err != nil || s.ID != "fresh" {
 		t.Fatalf("dry-run start: %+v err=%v", s, err)
 	}
 	if got := dirDigest(t, e.Dir); got != before {
@@ -62,13 +62,13 @@ func TestDryRunStillFailsValidation(t *testing.T) {
 	if _, _, err := e.Next("", true); !errors.Is(err, ErrRalph) {
 		t.Fatalf("dry-run next with no loop: %v", err)
 	}
-	if _, _, err := e.RecordCheck("missing", 1, "x", true); !errors.Is(err, ErrRalph) {
+	if _, _, err := e.RecordCheck("missing", 1, nil, "x", true); !errors.Is(err, ErrRalph) {
 		t.Fatalf("dry-run check missing id: %v", err)
 	}
-	if _, err := e.Start("bad*id", "goal", 10, 3, true); !errors.Is(err, ErrRalph) {
+	if _, err := e.Start("bad*id", StartOpts{Goal: "goal", MaxRounds: 10, StallWindow: 3}, true); !errors.Is(err, ErrRalph) {
 		t.Fatalf("dry-run start bad id: %v", err)
 	}
-	if _, err := e.Start("ok", "", 10, 3, true); !errors.Is(err, ErrRalph) {
+	if _, err := e.Start("ok", StartOpts{Goal: "", MaxRounds: 10, StallWindow: 3}, true); !errors.Is(err, ErrRalph) {
 		t.Fatalf("dry-run start blank goal: %v", err)
 	}
 }

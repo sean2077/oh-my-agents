@@ -18,8 +18,9 @@ import (
 // referenced artifact, hash mismatch, tamper) stays ErrRelay → exit 3.
 var ErrGate = errors.New("relay quality gate not satisfied")
 
-// ReceiptSchema versions the completion-receipt payload (A1).
-const ReceiptSchema = "oma-completion-receipt/1"
+// ReceiptSchema versions the completion-receipt payload. /2 (R5) adds the
+// quality-gate review's evidence hash to the bound GateRef.
+const ReceiptSchema = "oma-completion-receipt/2"
 
 // Receipt is the canonical completion-receipt embedded in a kind:decision
 // artifact. It makes "done" falsifiable (A1/A2): it binds the WORK being
@@ -42,11 +43,13 @@ type Ref struct {
 	Hash string `json:"hash"`
 }
 
-// GateRef binds the non-lead approve review by seq, verdict and hash.
+// GateRef binds the non-lead approve review by seq, verdict, artifact hash,
+// and (R5) the canonical hash of its oma-review-evidence/1 block.
 type GateRef struct {
-	Seq     int    `json:"seq"`
-	Verdict string `json:"verdict"`
-	Hash    string `json:"hash"`
+	Seq          int    `json:"seq"`
+	Verdict      string `json:"verdict"`
+	Hash         string `json:"hash"`
+	EvidenceHash string `json:"evidence_hash"`
 }
 
 // ID is the sha256 of the canonical receipt JSON (struct field order is
@@ -65,6 +68,7 @@ func (r *Receipt) applyTo(fm *Frontmatter) {
 	fm.ReceiptID = r.ID()
 	fm.ReviewedHeadSeq, fm.ReviewedHeadHash = &headSeq, r.ReviewedHead.Hash
 	fm.QualityGateSeq, fm.QualityGateHash = &gateSeq, r.QualityGate.Hash
+	fm.QualityGateEvidenceHash = r.QualityGate.EvidenceHash
 	fm.VerifiedAt = &t
 }
 
@@ -156,7 +160,7 @@ func (l *Ledger) buildDecisionReceipt(slug string, decisionSeq int) (*Receipt, e
 	return &Receipt{
 		Schema: ReceiptSchema, Pair: slug, DecisionSeq: decisionSeq,
 		ReviewedHead: Ref{Seq: head.Seq, Hash: head.Hash},
-		QualityGate:  GateRef{Seq: review.Seq, Verdict: review.FM.Verdict, Hash: review.Hash},
+		QualityGate:  GateRef{Seq: review.Seq, Verdict: review.FM.Verdict, Hash: review.Hash, EvidenceHash: review.FM.EvidenceHash},
 		VerifiedAt:   l.Now().UTC().Truncate(time.Second),
 	}, nil
 }
@@ -197,7 +201,7 @@ func (l *Ledger) verifyApproveClose(slug string) error {
 	r := &Receipt{
 		Schema: ReceiptSchema, Pair: slug, DecisionSeq: fm.Seq,
 		ReviewedHead: Ref{Seq: *fm.ReviewedHeadSeq, Hash: fm.ReviewedHeadHash},
-		QualityGate:  GateRef{Seq: *fm.QualityGateSeq, Verdict: VerdictApprove, Hash: fm.QualityGateHash},
+		QualityGate:  GateRef{Seq: *fm.QualityGateSeq, Verdict: VerdictApprove, Hash: fm.QualityGateHash, EvidenceHash: fm.QualityGateEvidenceHash},
 		VerifiedAt:   fm.VerifiedAt.UTC(),
 	}
 	if r.ID() != fm.ReceiptID {
@@ -236,6 +240,23 @@ func (l *Ledger) verifyApproveClose(slug string) error {
 	}
 	if rev.Seq <= head.Seq {
 		return fmt.Errorf("%w: approve review seq %d is not newer than the reviewed head seq %d (it could not have reviewed its content)", ErrGate, rev.Seq, head.Seq)
+	}
+	// R5: re-derive the quality-gate review's evidence hash from its body and
+	// require it to agree with both the review frontmatter and the receipt
+	// (additive over the artifact-hash checks above; tamper/corruption → exit 3).
+	_, revBody, rerr := ReadArtifact(rev.Path)
+	if rerr != nil {
+		return rerr
+	}
+	recomputed, eerr := reviewEvidenceHash(revBody, VerdictApprove)
+	if eerr != nil {
+		return fmt.Errorf("%w: quality-gate review seq %d evidence is invalid: %v", ErrRelay, rev.Seq, eerr)
+	}
+	if recomputed != rev.FM.EvidenceHash {
+		return fmt.Errorf("%w: quality-gate review seq %d body evidence does not match its evidence_hash (tampered)", ErrRelay, rev.Seq)
+	}
+	if rev.FM.EvidenceHash != fm.QualityGateEvidenceHash {
+		return fmt.Errorf("%w: decision quality_gate_evidence_hash does not match approve review seq %d evidence_hash", ErrRelay, rev.Seq)
 	}
 	return nil
 }

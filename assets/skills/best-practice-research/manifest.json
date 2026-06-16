@@ -1,0 +1,7 @@
+{
+  "schema": "oma-asset/1",
+  "name": "best-practice-research",
+  "type": "skill",
+  "targets": ["claude", "codex"],
+  "description_budget_tokens": 80
+}
