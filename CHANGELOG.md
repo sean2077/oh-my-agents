@@ -4,6 +4,16 @@
 >
 > Section heading format: `## vX.Y.Z - YYYY-MM-DD` (CI matches the tag by exact prefix; a tag with no matching section fails the release, fail-closed).
 
+## v0.3.1 - 2026-06-16
+
+A skills-only release: the bundled skill bodies are re-synced to the contracts the binary already ships, and a few concrete templates that earlier compression had dropped are restored. No binary or schema change. Delivered through the project's own relay pair-delivery, double-gated by a second agent.
+
+- **Skills catch up to the binary**: `ralph` and `ultraqa` now surface the `score_improvement` keep-policy (`--score`, `--plateau-window`) and the `plateaued` terminal the binary shipped in v0.3.0; `pair-delivery` documents the fail-closed `oma-review-evidence/1` review block and the "no newer unreviewed work" approve-close rule; `autopilot` fixes a `plan-path` lifecycle inconsistency; `skillify` corrects the `oma asset catalog` invocation.
+- **Restored scaffolding**: `research-mission` regains a machine-parseable evaluator-contract block and `--max-rounds`; `deep-interview` gains a compact spec skeleton and a pre-crystallize pressure-pass gate; `ai-slop-cleaner` regains masking-fallback trigger phrases and a recursion guard.
+- **Cross-skill polish**: `autopilot` hands cross-reviewed delivery to `pair-delivery`; `deep-interview` adds ambiguity-stall escalation and brownfield term-conflict handling; `trace`, `best-practice-research`, and `analyze` get small correctness/boundary clarifications.
+
+Agent-neutral markdown only; resident footprint unchanged.
+
 ## v0.3.0 - 2026-06-16
 
 This release borrows a research/autonomy vein from oh-my-codex and adds a catalog self-audit. Every slice was delivered through the project's own relay pair-delivery, double-gated by a second agent (10 cross-reviews over one ledger).
