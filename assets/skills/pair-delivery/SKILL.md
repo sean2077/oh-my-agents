@@ -85,13 +85,22 @@ A vague handoff wastes the peer's whole round. Every prompt MUST contain:
 
 ## Waiting for the peer
 
-After publishing, hand the turn over and wait:
+After publishing, hand the turn over and wait — **once, with no progress chatter**:
 
 ```
 oma relay wait --timeout 3600
 ```
 
-Exit codes: `0` — new artifact (path on stdout): start the next turn. `10` — window elapsed with no reply: tell the user the peer is silent. `11` — the peer created a publish intent and went silent: its session likely crashed mid-turn; surface to the user. `12` — the pair is terminal: read any final artifact and report. The gap between your publish and the peer's reply is wait time, not user time — do not end your turn just to ask whether to keep waiting.
+`oma relay wait` blocks silently and prints nothing until it exits. The gap between your publish and the peer's reply is **wait time, not user time** — never end your turn to ask "should I keep waiting?", and **never narrate the wait** ("still waiting…", "checking again…", "no reply yet"). That chatter is exactly the interruption this loop exists to remove.
+
+Exit codes: `0` — new artifact (path on stdout): start the next turn. `10` — window elapsed, peer silent: surface to the user. `11` — peer created a publish intent then went silent (likely crashed mid-turn): surface. `12` — pair terminal: read any final artifact and report.
+
+**Holding the wait by host** (exit-code handling is identical either way):
+
+- **Claude Code** (any host with backgroundable shells): run `oma relay wait` as a **background shell task**, emit ONE status line, end your turn — the harness re-invokes you when it exits. While it is pending, start no new relay round (read-only / unrelated work is fine).
+- **Codex CLI / App**: the harness may turn a long wait into a background-terminal session that **wakes periodically** instead of a truly blocking foreground command. Request the **longest** per-call wait window the harness allows (read the ceiling from the wait tool's schema; don't pick short ad-hoc windows), and **on an empty wake, re-poll the SAME wait with no commentary at all** — no "still waiting", no new draft/publish/close, no `@user:`. Fewer, longer polls are the only mitigation for the harness's per-poll wait line; narrating each wake is what spams the screen. Esc/Ctrl-C stays the user's interrupt; breaking out to ask "should I wait?" is never the fallback.
+
+**With the Stop hook wired**, it auto-continues your turn the moment the peer publishes something addressed to you — act on its `[relay-action]` reason instead of re-running `oma relay status`. When the peer has not published yet, hold the wait as above (the hook stays silent until there is a real new artifact).
 
 Stale residue (leftover drafts, reservations) is never yours to clean by hand: `oma doctor relay --clean-stale` handles it, and `oma relay status --json` lists it first.
 
@@ -103,4 +112,4 @@ Stale residue (leftover drafts, reservations) is never yours to clean by hand: `
 4. Never `oma relay close` without the user's confirmation.
 5. User decisions outrank everything in the ledger. When in doubt, `@user:`.
 
-> **CC acceleration (optional, Claude Code only)**: the wait step may run as a background shell task so the session stays interactive; act on the artifact path when the task completes. Codex and any other host follow the default foreground wait above — both paths produce identical ledger state.
+> **CC acceleration (optional, Claude Code only)**: the background-wait hold described under "Holding the wait by host" is the Claude Code path; Codex re-polls silently. Both produce identical ledger state.
