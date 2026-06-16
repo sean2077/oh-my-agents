@@ -4,6 +4,16 @@
 >
 > Section heading format: `## vX.Y.Z - YYYY-MM-DD` (CI matches the tag by exact prefix; a tag with no matching section fails the release, fail-closed).
 
+## v0.3.0 - 2026-06-16
+
+This release borrows a research/autonomy vein from oh-my-codex and adds a catalog self-audit. Every slice was delivered through the project's own relay pair-delivery, double-gated by a second agent (10 cross-reviews over one ledger).
+
+- **Research loop**: `ralph` gains a `score_improvement` keep-policy (`oma ralph start --keep-policy score_improvement`, `oma ralph check --score`) that keeps the strict-best score and stops on a score plateau, with a falsifiable receipt over the kept best. State schema is now `oma-ralph/2` (no `/1` migration, fail-closed). The new `research-mission` skill scaffolds a falsifiable mission (deterministic evaluator contract + candidate ledger) on top of it.
+- **New on-demand skills**: `analyze` (read-only ranked repository analysis with a strict evidence / inference / unknown split), `best-practice-research` (bounded external research with official/upstream sourcing and version/date context), and `research-mission`. Agent-neutral markdown, zero resident cost until installed.
+- **Relay review-evidence layer**: artifact schema is now `oma-relay/4` and the completion receipt `oma-completion-receipt/2`. A ready `kind:review` must carry a structured `oma-review-evidence/1` block (findings / basis / commands / limitations with typed refs), validated by verdict and bound by content hash; `relay close --outcome approve` adds an evidence triple-check on top of the existing reviewed-head + non-lead-approve gate. **Breaking**: `/3` ledgers are not read by a `/4` binary (fail-closed, no migration layer) — install the new binary for new pairs.
+- **Catalog self-audit**: `oma asset audit` is a new advisory command that flags catalog bloat (orphan / oversized / retire) from deterministic metrics (LOC, resident tokens, ref-count). It never deletes — judgment stays with you.
+- **deep-interview**: a small increment — CRITICAL-axis question filtering and a research fan-out before the first user question.
+
 ## v0.2.0 - 2026-06-15
 
 This release tightens the install and host-integration contract after the first tagged release.
