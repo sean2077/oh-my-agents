@@ -4,6 +4,15 @@
 >
 > Section heading format: `## vX.Y.Z - YYYY-MM-DD` (CI matches the tag by exact prefix; a tag with no matching section fails the release, fail-closed).
 
+## v0.4.0 - 2026-06-17
+
+This release hardens Codex relay self-continuation and keeps the pair-delivery instructions aligned with the real Codex Stop hook path. It also carries the latest documentation organization and Superpowers T3 guidance.
+
+- **Codex Stop-hook continuation**: `oma relay hook Stop` now treats Codex `last_assistant_message` as part of the tolerant Stop payload union, so context, rate-limit, and auth escape valves work for real Codex Stop payloads instead of only `reason` / `stop_reason` shapes.
+- **pair-delivery skill contract**: Codex now treats a trusted Stop hook as the main self-continuation path, with held/re-polled `oma relay wait` documented as the fallback when hook wiring or `/hooks` trust is unavailable. The bundled skill has a release gate to prevent regressing that wording.
+- **Manual wiring docs**: README and relay protocol docs now make the Codex `/hooks` trust gate explicit for the Stop hook, while preserving the boundary that `oma` documents host config but does not write or trust it automatically.
+- **Docs refresh**: project documentation was reorganized and the Superpowers T3 guidance was added.
+
 ## v0.3.1 - 2026-06-16
 
 A skills-only release: the bundled skill bodies are re-synced to the contracts the binary already ships, and a few concrete templates that earlier compression had dropped are restored. No binary or schema change. Delivered through the project's own relay pair-delivery, double-gated by a second agent.
