@@ -30,7 +30,7 @@ Turn check on the latest artifact in `status --json`:
 
 - No artifacts yet and you created the pair → write the first `kind: plan`.
 - Latest artifact's author is the PEER → it is addressed to you: read the file at `latest.path` from the `status --json` output, treat its `prompt_for_next` as your task, continue below.
-- Latest artifact is YOURS → nothing to do yet: run the wait step at the end of this loop.
+- Latest artifact is YOURS → nothing to do yet: use the continuation step at the end of this loop. Do not start a new relay round from this state unless a peer artifact arrives, the user explicitly tells you not to wait, or the session is terminal.
 - Session status is terminal (`closed`/`cancelled`/`failed`) → report to the user and stop.
 
 No pair exists yet? Create one (creator becomes lead) and tell the user the join command for the peer's window:
@@ -94,24 +94,26 @@ A vague handoff wastes the peer's whole round. Every prompt MUST contain:
 - **Reply kind**: which `kind` you want the response to be.
 - **Stop conditions**: when to escalate instead of iterating (revise cap, conflicting user decision, missing access).
 
-## Waiting for the peer
+## Continuing after handoff
 
-After publishing, hand the turn over and wait — **once, with no progress chatter**:
+After publishing, hand the turn over through the host-appropriate continuation path — **with no progress chatter**. For Codex with a trusted Stop hook, the hook is the main self-continuation mechanism. `oma relay wait` is the Claude/background hold path and the Codex fallback when hook wiring or trust is unavailable:
 
 ```
 oma relay wait --timeout 3600
 ```
 
-`oma relay wait` blocks silently and prints nothing until it exits. The gap between your publish and the peer's reply is **wait time, not user time** — never end your turn to ask "should I keep waiting?", and **never narrate the wait** ("still waiting…", "checking again…", "no reply yet"). That chatter is exactly the interruption this loop exists to remove.
+`oma relay wait` blocks silently and prints nothing until it exits. The gap between your publish and the peer's reply is **continuation time, not user time** — never end your turn to ask "should I keep waiting?", and **never narrate the wait** ("still waiting…", "checking again…", "no reply yet"). That chatter is exactly the interruption this loop exists to remove.
+
+When you do start a relay wait, do not send a final answer while it is still running. A wait is complete only when it exits with one of the codes below, the user explicitly interrupts or tells you not to wait, or the pair is already terminal.
 
 Exit codes: `0` — new artifact (path on stdout): start the next turn. `10` — window elapsed, peer silent: surface to the user. `11` — peer created a publish intent then went silent (likely crashed mid-turn): surface. `12` — pair terminal: read any final artifact and report.
 
 **Holding the wait by host** (exit-code handling is identical either way):
 
 - **Claude Code** (any host with backgroundable shells): run `oma relay wait` as a **background shell task**, emit ONE status line, end your turn — the harness re-invokes you when it exits. While it is pending, start no new relay round (read-only / unrelated work is fine).
-- **Codex CLI / App**: the harness may turn a long wait into a background-terminal session that **wakes periodically** instead of a truly blocking foreground command. Request the **longest** per-call wait window the harness allows (read the ceiling from the wait tool's schema; don't pick short ad-hoc windows), and **on an empty wake, re-poll the SAME wait with no commentary at all** — no "still waiting", no new draft/publish/close, no `@user:`. Fewer, longer polls are the only mitigation for the harness's per-poll wait line; narrating each wake is what spams the screen. Esc/Ctrl-C stays the user's interrupt; breaking out to ask "should I wait?" is never the fallback.
+- **Codex CLI / App**: the Stop hook is the main self-continuation path. Before relying on relay automation, ensure the Stop hook dispatcher is wired in `~/.codex/hooks.json` and trusted through `/hooks`; when the peer later publishes, the hook resumes the turn with a `[relay-action]` prompt. If the hook is not wired/trusted or a user explicitly asks for a foreground wait, fall back to `oma relay wait --timeout 3600`: request the longest per-call window the harness allows, and on an empty wake re-poll the SAME wait with no commentary at all — no "still waiting", no new draft/publish/close, no `@user:`. Esc/Ctrl-C stays the user's interrupt; breaking out to ask "should I wait?" is never the fallback.
 
-**With the Stop hook wired**, it auto-continues your turn the moment the peer publishes something addressed to you — act on its `[relay-action]` reason instead of re-running `oma relay status`. When the peer has not published yet, hold the wait as above (the hook stays silent until there is a real new artifact).
+**With the Stop hook wired**, it auto-continues your turn the moment the peer publishes something addressed to you — act on its `[relay-action]` reason instead of re-running `oma relay status`. The hook is event-driven and bounded; it is not a long-running waiter. Use held/re-polled `oma relay wait` only as the fallback path when host hook wiring/trust is unavailable or the user asks for it.
 
 Stale residue (leftover drafts, reservations) is never yours to clean by hand: `oma doctor relay --clean-stale` handles it, and `oma relay status --json` lists it first.
 

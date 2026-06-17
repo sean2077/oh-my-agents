@@ -109,9 +109,10 @@ windows stay clean). See [`docs/examples/statusline-command.sh`](docs/examples/s
 for a complete working example — the relay segment is the last block.
 
 **Auto-continue hooks** (drive the pair-delivery loop without manual nudging) —
-add to the top-level `hooks` key in `~/.claude/settings.json`. The dispatcher
-`oma relay hook <event>` is pure-read and always exits 0, so it can never break
-your session:
+add to the top-level `hooks` key in `~/.claude/settings.json`. For Codex, the
+Stop hook is the main self-continuation path; without a trusted Stop hook it
+falls back to foreground `oma relay wait`. The dispatcher `oma relay hook
+<event>` is pure-read and always exits 0, so it can never break your session:
 
 ```json
 {
@@ -130,9 +131,10 @@ your session:
 ```
 
 For **Codex**, put the same structure in `~/.codex/hooks.json`, change the
-`PreToolUse` matcher to `^(apply_patch|Edit|Write)$`, and run `/hooks` once to
-trust the new entries. Full field reference (matchers, timeouts, guard rationale)
-is in [`docs/reference/relay-v2-protocol.md`](docs/reference/relay-v2-protocol.md) §12.4.
+`PreToolUse` matcher to `^(apply_patch|Edit|Write)$`, then run `/hooks` and
+confirm the `oma relay hook Stop` entry is trusted. Full field reference
+(matchers, timeouts, guard rationale) is in
+[`docs/reference/relay-v2-protocol.md`](docs/reference/relay-v2-protocol.md) §12.4.
 
 ## Quickstart
 

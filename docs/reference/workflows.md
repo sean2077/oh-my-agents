@@ -70,6 +70,7 @@ Fields: `id, phase, goal, keep_policy(pass_only|score_improvement, default pass_
 - Roles come from `session.json.roles` (lead/planner/implementer/reviewer can each be assigned to any participant, and one person may hold several; lead is required and unique, defaulting to the initiator).
 - Process gates (identical to this project's own delivery flow): plan (kind: plan) → review (kind: review, verdict approve/approve-with-changes/revise) → implement (recorded in touched_paths) → code review (kind: review) → kind: decision to close out.
 - Skill responsibility: translate the gates above into the sequence of relay command calls and the `prompt_for_next` writing conventions; the revise-loop cap and the @user escalation rule (line-leading `@user:` + `--status timed_out`).
+- Continuation responsibility: after publishing, or whenever the latest artifact is your own, do not start another relay round until the peer publishes, the pair becomes terminal, or the user explicitly tells you to stop. Trusted Stop hooks are the main Codex self-continuation path; held `oma relay wait` is the fallback when hook wiring/trust is unavailable, and any Codex harness wake-ups during that fallback are not completion.
 - Both ends consistent: the flow is driven entirely by `oma relay` plus text, with no CC-specific dependency.
 
 ### 4.1 Lead (primary decision-maker) model

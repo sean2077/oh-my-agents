@@ -34,6 +34,15 @@ func stopPayloadReason(reason string) []byte {
 	return b
 }
 
+func stopPayloadLastAssistantMessage(message string) []byte {
+	payload := map[string]any{
+		"hook_event_name":        HookStop,
+		"last_assistant_message": message,
+	}
+	b, _ := json.Marshal(payload)
+	return b
+}
+
 func TestHookStopAutoContinue(t *testing.T) {
 	ck := newClock()
 	codex, _ := hookPair(t, ck)
@@ -98,6 +107,28 @@ func TestHookStopEscapeValves(t *testing.T) {
 	codex, _ := hookPair(t, ck)
 	if out := codex.Hook(HookStop, stopPayloadReason("end_turn")); out == nil || out.Decision != "block" {
 		t.Fatalf("ordinary stop must still continue, got %+v", out)
+	}
+}
+
+func TestHookStopEscapeValvesCodexLastAssistantMessage(t *testing.T) {
+	// Codex Stop payloads expose last_assistant_message instead of
+	// stop_reason/reason; escape valves must still stay silent.
+	for _, message := range []string{
+		"context window exceeded",
+		"429 rate limit",
+		"OAuth token expired",
+	} {
+		ck := newClock()
+		codex, _ := hookPair(t, ck)
+		if out := codex.Hook(HookStop, stopPayloadLastAssistantMessage(message)); out != nil {
+			t.Fatalf("last_assistant_message %q must escape (silent), got %+v", message, out)
+		}
+	}
+
+	ck := newClock()
+	codex, _ := hookPair(t, ck)
+	if out := codex.Hook(HookStop, stopPayloadLastAssistantMessage("finished the requested review")); out == nil || out.Decision != "block" {
+		t.Fatalf("ordinary last_assistant_message must still continue, got %+v", out)
 	}
 }
 

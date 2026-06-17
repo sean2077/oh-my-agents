@@ -133,6 +133,48 @@ func TestWaitTimeoutAndTerminal(t *testing.T) {
 	}
 }
 
+func TestWaitHoldsPublisherUntilPeerPublishes(t *testing.T) {
+	ck := newClock()
+	root, _ := initRoot(t, ck)
+	claude := testLedger(t, root, "claude", ck)
+	codex := testLedger(t, root, "codex", ck)
+	s := mustPair(t, claude, "topic")
+	if _, err := codex.Join(s.Pair, false); err != nil {
+		t.Fatal(err)
+	}
+	mustPublish(t, codex, s.Pair, "plan", "body", "review")
+
+	type waitOut struct {
+		res *WaitResult
+		err error
+	}
+	done := make(chan waitOut, 1)
+	go func() {
+		res, err := codex.Wait(s.Pair, time.Hour)
+		done <- waitOut{res: res, err: err}
+	}()
+
+	select {
+	case got := <-done:
+		t.Fatalf("publisher-side wait returned before peer published: %+v err=%v", got.res, got.err)
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	formal := mustPublish(t, claude, s.Pair, "note", "approved", "next")
+
+	select {
+	case got := <-done:
+		if got.err != nil || got.res.Code != WaitNewArtifact {
+			t.Fatalf("wait after peer publish = %+v err=%v, want new artifact", got.res, got.err)
+		}
+		if got.res.ArtifactPath != formal {
+			t.Fatalf("artifact path = %s, want %s", got.res.ArtifactPath, formal)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("publisher-side wait did not wake after peer published")
+	}
+}
+
 func TestWaitDeliversUnconsumedDecisionAfterCloseArchive(t *testing.T) {
 	// review 054 blocker 2: peer publishes a decision and immediately
 	// closes+archives — ready-priority must still deliver the decision.

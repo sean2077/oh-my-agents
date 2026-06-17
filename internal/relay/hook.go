@@ -29,14 +29,13 @@ type HookPayload struct {
 	StopHookActive bool            `json:"stop_hook_active"`
 	ToolName       string          `json:"tool_name"`
 	ToolInput      json.RawMessage `json:"tool_input"`
-	// A3 escape valves: a tolerant union of
-	// the field a host uses to report WHY it stopped. Host naming drifts and
-	// the exact per-host Stop-payload shape still needs verification against
-	// real Claude Code / Codex payloads — so this is a safe, additive
-	// scaffold: when the reason is absent both fields are "" and hookStop
-	// behaves exactly as before (continue only on a new peer artifact).
-	StopReason string `json:"stop_reason"`
-	Reason     string `json:"reason"`
+	// A3 escape valves: a tolerant union of fields hosts use to report why
+	// the turn stopped. Codex Stop payloads expose last_assistant_message.
+	// When all reason text is absent, hookStop behaves exactly as before
+	// (continue only on a new peer artifact).
+	StopReason           string `json:"stop_reason"`
+	Reason               string `json:"reason"`
+	LastAssistantMessage string `json:"last_assistant_message"`
 }
 
 // HookOutput is the decision emitted to the host. Only the shared,
@@ -148,7 +147,7 @@ func (l *Ledger) hookStop(p HookPayload) *HookOutput {
 // peer artifact stays readable), whereas a missed context/rate/auth stop
 // is the deadlock these valves exist to prevent.
 func stopEscape(p HookPayload) (valve string, escape bool) {
-	r := strings.ToLower(strings.TrimSpace(p.StopReason + " " + p.Reason))
+	r := strings.ToLower(strings.TrimSpace(p.StopReason + " " + p.Reason + " " + p.LastAssistantMessage))
 	switch {
 	case r == "":
 		return "", false
