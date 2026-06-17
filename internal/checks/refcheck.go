@@ -14,12 +14,12 @@ import (
 // path mapped to whether it is RUNNABLE (has Run/RunE). Groups like
 // "oma relay pair" are present with false. The distinction drives
 // validation: trailing tokens after a runnable command are arguments;
-// after a group they are invalid leaves (docs/adapter-conformance.md §4).
+// after a group they are invalid leaves (docs/reference/adapter-conformance.md §4).
 type CommandSet map[string]bool
 
 // Refcheck scans markdown files under root for `oma ...` references inside
 // code spans/blocks and validates each against the command set with
-// longest-prefix matching (docs/adapter-conformance.md §4). Zero
+// longest-prefix matching (docs/reference/adapter-conformance.md §4). Zero
 // exemptions: a valid prefix with an invalid leaf token fails.
 func Refcheck(root string, commands CommandSet) []Finding {
 	var findings []Finding
@@ -71,7 +71,7 @@ var inlineRe = regexp.MustCompile("`[^`\n]+`")
 // ExtractOmaRefs pulls candidate `oma <tokens>` command references from
 // markdown code blocks and inline code spans. Each ref is the token list
 // after (and including) "oma", cut at flags, redirection, pipes,
-// semicolons, and line ends (docs/adapter-conformance.md §4).
+// semicolons, and line ends (docs/reference/adapter-conformance.md §4).
 func ExtractOmaRefs(md string) [][]string {
 	var refs [][]string
 	var codeChunks []string
@@ -116,7 +116,7 @@ func splitCommands(line string) []string {
 }
 
 // validateRef resolves the longest registered prefix. Empty return = valid.
-// Rules (docs/adapter-conformance.md §4):
+// Rules (docs/reference/adapter-conformance.md §4):
 //   - prefix ends at a RUNNABLE command → remaining tokens are arguments, valid
 //     (`oma asset install deep-interview`)
 //   - prefix ends at a GROUP with tokens left → invalid leaf, fail

@@ -10,7 +10,7 @@ import (
 )
 
 // draftPlaceholder marks an unfilled draft body; publish refuses it
-// (docs/command-tree.md §6).
+// (docs/reference/command-tree.md §6).
 const draftPlaceholder = "TODO: write the artifact body before publishing."
 
 // reserveSeq allocates the next sequence number with an O_EXCL marker

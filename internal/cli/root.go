@@ -1,4 +1,4 @@
-// Package cli wires the oma command tree (docs/command-tree.md).
+// Package cli wires the oma command tree (docs/reference/command-tree.md).
 package cli
 
 import (
@@ -10,7 +10,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Exit codes per docs/command-tree.md §1.
+// Exit codes per docs/reference/command-tree.md §1.
 const (
 	ExitOK    = 0 // success
 	ExitWarn  = 1 // completed with warnings

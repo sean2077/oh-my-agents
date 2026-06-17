@@ -1,10 +1,10 @@
 // Package checks implements oma doctor's check registry
-// (docs/command-tree.md §4): each check inspects one aspect of the
+// (docs/reference/command-tree.md §4): each check inspects one aspect of the
 // installation and reports findings at ok/warn/fail levels.
 package checks
 
 // Levels order by severity; doctor exit codes derive from the worst level
-// (ok→0, warn→1, fail→4 per docs/command-tree.md §1).
+// (ok→0, warn→1, fail→4 per docs/reference/command-tree.md §1).
 const (
 	LevelOK   = "ok"
 	LevelWarn = "warn"

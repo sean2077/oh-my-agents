@@ -67,7 +67,7 @@ func newDoctorCmd() *cobra.Command {
 	return cmd
 }
 
-// newDoctorRelayCmd is the relay maintenance surface (docs/command-tree.md
+// newDoctorRelayCmd is the relay maintenance surface (docs/reference/command-tree.md
 // §5): stale-residue cleanup and archive restore stay out of the public
 // relay command group.
 func newDoctorRelayCmd() *cobra.Command {

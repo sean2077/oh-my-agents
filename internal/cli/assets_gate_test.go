@@ -12,7 +12,7 @@ import (
 )
 
 // TestRealAssetsPassReleaseGates is the Phase C release-blocking gate
-// (docs/implementation-plan.md §5.4): every shipped asset under assets/
+// (docs/reference/adapter-conformance.md §4): every shipped asset under assets/
 // must install cleanly, project healthily, pass refcheck with ZERO
 // exemptions against the real command surface, and keep the core4
 // resident budget within the threshold.

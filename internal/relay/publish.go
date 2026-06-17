@@ -136,7 +136,7 @@ func (l *Ledger) Publish(draftPath string, in PublishInput, dryRun bool) (string
 	}
 	rendered := Render(fm, body)
 	if findings := ScanSecrets(rendered); len(findings) > 0 {
-		return "", fmt.Errorf("%w: secret patterns detected (publish blocked, no bypass — security-contract.md §6):\n  %s",
+		return "", fmt.Errorf("%w: secret patterns detected (publish blocked, no bypass — docs/reference/security-contract.md §6):\n  %s",
 			ErrRelay, strings.Join(findings, "\n  "))
 	}
 

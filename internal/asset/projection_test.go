@@ -337,7 +337,7 @@ func TestZeroProjectionEntryDegradesHealth(t *testing.T) {
 }
 
 // conformanceFixture describes the expected projection layout for one agent
-// (testdata/conformance/<agent>.json, docs/adapter-conformance.md §6).
+// (testdata/conformance/<agent>.json, docs/reference/adapter-conformance.md §6).
 type conformanceFixture struct {
 	Agent string `json:"agent"`
 	Cases []struct {

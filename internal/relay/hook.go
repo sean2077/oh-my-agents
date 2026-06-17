@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// Hook events (docs/relay-v2-protocol.md §12.3). The dispatcher is a
+// Hook events (docs/reference/relay-v2-protocol.md §12.3). The dispatcher is a
 // HIDDEN machine-invoked command; humans never call it.
 const (
 	HookSessionStart = "SessionStart"
@@ -29,7 +29,7 @@ type HookPayload struct {
 	StopHookActive bool            `json:"stop_hook_active"`
 	ToolName       string          `json:"tool_name"`
 	ToolInput      json.RawMessage `json:"tool_input"`
-	// A3 escape valves (docs/borrow-from-omx-omc.md): a tolerant union of
+	// A3 escape valves: a tolerant union of
 	// the field a host uses to report WHY it stopped. Host naming drifts and
 	// the exact per-host Stop-payload shape still needs verification against
 	// real Claude Code / Codex payloads — so this is a safe, additive

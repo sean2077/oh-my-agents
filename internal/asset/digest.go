@@ -13,7 +13,7 @@ import (
 
 // DigestTree computes a deterministic, unambiguous content digest of a file
 // or directory tree. Managed-ownership checks compare it against the
-// registry digest to detect drift (docs/security-contract.md §2).
+// registry digest to detect drift (docs/reference/security-contract.md §2).
 //
 // Framing (B3 recheck blocker 2): each record is
 //

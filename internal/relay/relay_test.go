@@ -89,7 +89,7 @@ func TestFrontmatterRoundTrip(t *testing.T) {
 		InReplyTo:     &in,
 		Corrects:      &cor,
 		PromptForNext: "line one\n\n@user: need a decision\nlast line",
-		TouchedPaths:  []string{"internal/relay/relay.go", "docs/spec.md"},
+		TouchedPaths:  []string{"internal/relay/relay.go", "docs/architecture.md"},
 	}
 	body := "# Body\n\nwith **markdown** and --- inside\n"
 	raw := Render(fm, body)

@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// The mandatory publish-time scan set (protocol §10, security-contract.md
+// The mandatory publish-time scan set (protocol §10, docs/reference/security-contract.md
 // §6): common token/key shapes. v1 ships NO bypass switch; false
 // positives are resolved by editing the artifact or by registering a
 // narrow allow pattern in the security contract appendix (none

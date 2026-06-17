@@ -1,5 +1,5 @@
 // Package budget implements the resident-context measurement gate
-// (docs/adapter-conformance.md §5): a deterministic, pinned approximation
+// (docs/reference/adapter-conformance.md §5): a deterministic, pinned approximation
 // of the always-loaded prompt surface created by installed assets.
 package budget
 
@@ -22,7 +22,7 @@ var ErrBudget = errors.New("budget measurement failed")
 func Tokens(s string) int { return (len(s) + 3) / 4 }
 
 // Profiles maps profile names to the asset sets they measure. core4 is the
-// release gate set (docs/adapter-conformance.md §5); "all" measures every
+// release gate set (docs/reference/adapter-conformance.md §5); "all" measures every
 // installed asset (dogfood convenience).
 var Profiles = map[string][]string{
 	"core4": {"deep-interview", "autopilot", "ralph", "pair-delivery"},
@@ -49,7 +49,7 @@ type Report struct {
 }
 
 // Measure computes the resident surface for one agent and profile.
-// Counted per docs/adapter-conformance.md §5 (claude profile): skill
+// Counted per docs/reference/adapter-conformance.md §5 (claude profile): skill
 // frontmatter name+description; subagent name+description+whenToUse; hook
 // command strings actually injected into the agent's host config. Only
 // assets actually projected to the agent contribute.

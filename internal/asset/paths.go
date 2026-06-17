@@ -20,14 +20,14 @@ func (l Layout) CanonicalRoot() string { return filepath.Join(l.Home, ".agents")
 // ConfigDir holds oma-owned state (registry, backups) under XDG config.
 func (l Layout) ConfigDir() string { return filepath.Join(l.Home, ".config", "oma") }
 
-// RegistryPath is the install registry file (docs/schemas.md §2).
+// RegistryPath is the install registry file (docs/reference/schemas.md §2).
 func (l Layout) RegistryPath() string { return filepath.Join(l.ConfigDir(), "registry.json") }
 
-// BackupDir is the root for pre-overwrite backups (docs/security-contract.md §2).
+// BackupDir is the root for pre-overwrite backups (docs/reference/security-contract.md §2).
 func (l Layout) BackupDir(id string) string { return filepath.Join(l.ConfigDir(), "backups", id) }
 
 // CanonicalPath maps an asset to its canonical location
-// (docs/adapter-conformance.md §2): skills and hooks are directories,
+// (docs/reference/adapter-conformance.md §2): skills and hooks are directories,
 // subagents and prompts are single markdown files.
 func (l Layout) CanonicalPath(m *Manifest) (string, error) {
 	rel, err := l.CanonicalRel(m)
@@ -38,7 +38,7 @@ func (l Layout) CanonicalPath(m *Manifest) (string, error) {
 }
 
 // CanonicalRel is the root-relative canonical path; backups preserve it
-// (docs/security-contract.md §2).
+// (docs/reference/security-contract.md §2).
 func (l Layout) CanonicalRel(m *Manifest) (string, error) {
 	switch m.Type {
 	case TypeSkill:
@@ -56,7 +56,7 @@ func (l Layout) CanonicalRel(m *Manifest) (string, error) {
 
 // SafeCanonicalTarget recomputes the canonical path from the entry's
 // manifest, verifies the registry's recorded path agrees, and enforces the
-// trusted-root constraints of docs/security-contract.md §3. Destructive
+// trusted-root constraints of docs/reference/security-contract.md §3. Destructive
 // operations must use the returned path, never the registry string
 // (B3 review blocker 3; embedded-manifest revalidation per recheck 020).
 func (l Layout) SafeCanonicalTarget(e *Entry) (string, error) {

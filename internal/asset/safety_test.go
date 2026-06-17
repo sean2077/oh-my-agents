@@ -205,7 +205,7 @@ func TestBackupCollisionFailsClosed(t *testing.T) {
 }
 
 func TestRegistrySaveKeepsSingleGenerationBak(t *testing.T) {
-	// schemas.md §1 contract is per-WRITE: every Save backs up the
+	// docs/reference/schemas.md §1 contract is per-WRITE: every Save backs up the
 	// immediately prior file. Install saves twice (managed checkpoint,
 	// then projections — review 030 blocker 2), so .bak holds the
 	// checkpoint generation: a valid registry one write back.

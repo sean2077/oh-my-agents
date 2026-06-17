@@ -1,5 +1,5 @@
 // Package update implements oma self-update with the
-// docs/security-contract.md §5 trust chain: the update source is pinned
+// docs/reference/security-contract.md §5 trust chain: the update source is pinned
 // to this repository's GitHub Releases at compile time, asset names must
 // match the release naming contract, every download is verified against
 // the release's checksums.txt, replacement is atomic with an .old backup

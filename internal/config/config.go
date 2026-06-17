@@ -1,5 +1,5 @@
 // Package config implements the user-intent configuration layer
-// (docs/config.md). It owns the precedence chain
+// (docs/reference/config.md). It owns the precedence chain
 // flag > env > project config > user config > built-in default,
 // with explicit per-key source tracking. Schema persisted data
 // (registry/state/ledger/manifest) never flows through here.
@@ -37,7 +37,7 @@ const (
 	SourceFlag    Source = "flag"
 )
 
-// Depth aliases map onto threshold values (docs/config.md §4a).
+// Depth aliases map onto threshold values (docs/reference/config.md §4a).
 var depthThresholds = map[string]float64{
 	"quick":    0.30,
 	"standard": 0.20,
@@ -227,7 +227,7 @@ func applyFileLayer(cfg *Config, v *viper.Viper, src Source) error {
 		cfg.Sources["asset.default_agents"] = src
 	}
 	if v.IsSet("relay.author") {
-		// Identity is bootstrap-level only (docs/config.md §4): a config
+		// Identity is bootstrap-level only (docs/reference/config.md §4): a config
 		// file must never select the relay participant.
 		return fmt.Errorf("relay.author is not configurable via config files (identity is platform/env only)")
 	}
@@ -284,7 +284,7 @@ func strictStringSlice(raw any, key string) ([]string, error) {
 	return out, nil
 }
 
-// applyEnvLayer reads the explicit OMA_* variables (docs/config.md §4).
+// applyEnvLayer reads the explicit OMA_* variables (docs/reference/config.md §4).
 func applyEnvLayer(cfg *Config) error {
 	if raw, ok := os.LookupEnv("OMA_RELAY_LEDGER_ROOT"); ok {
 		cfg.Relay.LedgerRoot = raw
@@ -363,7 +363,7 @@ type interviewLayer struct {
 	thresholdKey, depthKey string
 }
 
-// validate enforces ranges after the merge (docs/config.md §5).
+// validate enforces ranges after the merge (docs/reference/config.md §5).
 func validate(cfg *Config) error {
 	if cfg.Interview.Threshold < 0 || cfg.Interview.Threshold > 1 {
 		return fmt.Errorf("%w: interview.threshold %.3f outside [0,1] (%s)", ErrConfig, cfg.Interview.Threshold, cfg.Interview.ThresholdSource)

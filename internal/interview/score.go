@@ -7,7 +7,7 @@ import (
 	"sort"
 )
 
-// Dimension weight tables (workflows.md §1.3): ambiguity =
+// Dimension weight tables (docs/reference/workflows.md §1.3): ambiguity =
 // 1 - Σ(weight × dimension_total), dimension_total = min across active
 // components.
 var (
@@ -23,7 +23,7 @@ func (s *State) weights() map[string]float64 {
 }
 
 // ScoresInput is the agent→CLI envelope (oma-interview-scores/1,
-// docs/schemas.md §5). Round 0 carries the locked topology instead of
+// docs/reference/schemas.md §5). Round 0 carries the locked topology instead of
 // component scores (the Round 0 topology gate; minor-additive field).
 type ScoresInput struct {
 	Schema            string                        `json:"schema"`
@@ -292,7 +292,7 @@ func (s *State) activeComponents() []Component {
 
 // pickWeakest scans active components × weighted dimensions for the
 // minimum score; among tied minima it rotates away from the last
-// targeted component when an alternative exists (workflows.md §1.3).
+// targeted component when an alternative exists (docs/reference/workflows.md §1.3).
 // Iteration is deterministic: sorted component ids, sorted dimensions.
 func (s *State) pickWeakest(scores map[string]map[string]float64, active []Component, weights map[string]float64) (Target, bool) {
 	ids := make([]string, len(active))

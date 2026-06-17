@@ -1,5 +1,5 @@
 // Package state implements oma's generic project-level key/value store
-// (docs/command-tree.md §3, docs/schemas.md §3). Keys are "namespace/field";
+// (docs/reference/command-tree.md §3, docs/reference/schemas.md §3). Keys are "namespace/field";
 // each namespace is one JSON file under <project>/.oma/state/. Values are
 // always strings — structured data is the caller's concern.
 package state
@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-// Schema is the persisted state-file schema (docs/schemas.md §3).
+// Schema is the persisted state-file schema (docs/reference/schemas.md §3).
 const Schema = "oma-state/1"
 
 // ErrState marks fail-closed state errors (bad key, unknown schema, IO).
@@ -136,7 +136,7 @@ func (s *Store) Set(key, value, override string, dryRun bool) (path string, err 
 	}
 	// Validation runs before the dry-run return: --dry-run performs the
 	// full computation/validation path and only skips writes
-	// (docs/security-contract.md §1; B5 review 036).
+	// (docs/reference/security-contract.md §1; B5 review 036).
 	f, err := load(path, ns)
 	if err != nil {
 		return "", err
@@ -157,7 +157,7 @@ func writeAtomic(path string, f *File) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("%w: %v", ErrState, err)
 	}
-	// single-generation .bak of the prior file (docs/schemas.md §1)
+	// single-generation .bak of the prior file (docs/reference/schemas.md §1)
 	if prev, err := os.ReadFile(path); err == nil {
 		if err := os.WriteFile(path+".bak", prev, 0o600); err != nil {
 			return fmt.Errorf("%w: write %s.bak: %v", ErrState, path, err)

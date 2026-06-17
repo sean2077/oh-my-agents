@@ -1,5 +1,5 @@
 // Package relay implements the oma relay v2 pair ledger
-// (docs/relay-v2-protocol.md): append-only artifacts with sidecar
+// (docs/reference/relay-v2-protocol.md): append-only artifacts with sidecar
 // integrity markers, O_EXCL sequence reservation, draft-as-durable-
 // publish-intent transactions, heartbeat liveness and pair bindings.
 //
@@ -18,7 +18,7 @@ import (
 	"time"
 )
 
-// Schema constants (docs/schemas.md §4).
+// Schema constants (docs/reference/schemas.md §4).
 const (
 	Schema         = "oma-relay/2" // session + sentinel (ledger format)
 	ArtifactSchema = "oma-relay/4" // artifact frontmatter (R5: + review evidence_hash / decision quality_gate_evidence_hash)

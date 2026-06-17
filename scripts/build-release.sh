@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Cross-compile release binaries with the asset naming + checksums.txt
-# contract self-update consumes (docs/security-contract.md §5):
+# contract self-update consumes (docs/reference/security-contract.md §5):
 #   oma_<version>_<os>_<arch>[.exe]  (version = v-prefixed git tag)
 set -euo pipefail
 

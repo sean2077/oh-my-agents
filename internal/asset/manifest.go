@@ -1,6 +1,6 @@
 // Package asset implements the content-asset domain: manifest parsing,
 // canonical placement, per-agent projection, backup and verification
-// (docs/adapter-conformance.md).
+// (docs/reference/adapter-conformance.md).
 package asset
 
 import (
@@ -14,10 +14,10 @@ import (
 )
 
 // ManifestSchema is the persisted schema this package writes and the only
-// major it reads (docs/schemas.md §1: unknown majors fail closed).
+// major it reads (docs/reference/schemas.md §1: unknown majors fail closed).
 const ManifestSchema = "oma-asset/1"
 
-// Asset types (docs/adapter-conformance.md §1).
+// Asset types (docs/reference/adapter-conformance.md §1).
 const (
 	TypeSkill    = "skill"
 	TypeSubagent = "subagent"
@@ -25,7 +25,7 @@ const (
 	TypePrompt   = "prompt"
 )
 
-// Projection targets (docs/adapter-conformance.md §1).
+// Projection targets (docs/reference/adapter-conformance.md §1).
 const (
 	TargetClaude = "claude"
 	TargetCodex  = "codex"
@@ -51,7 +51,7 @@ var (
 // nameRe keeps asset names path-traversal safe by construction.
 var nameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
 
-// Manifest is the oma-asset/1 document (docs/adapter-conformance.md §1).
+// Manifest is the oma-asset/1 document (docs/reference/adapter-conformance.md §1).
 // Unknown JSON fields are tolerated on read (minor-additive policy).
 type Manifest struct {
 	Schema                  string   `json:"schema"`
@@ -118,7 +118,7 @@ func (m *Manifest) Validate() error {
 		seen[tgt] = true
 	}
 	// CC-only assets must document the codex degradation path
-	// (docs/adapter-conformance.md §1).
+	// (docs/reference/adapter-conformance.md §1).
 	if seen[TargetClaude] && !seen[TargetCodex] && strings.TrimSpace(m.Fallback) == "" {
 		return fmt.Errorf("%w: claude-only asset %q requires a codex fallback note", ErrInvalid, m.Name)
 	}

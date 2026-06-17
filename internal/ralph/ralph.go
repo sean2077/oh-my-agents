@@ -1,5 +1,5 @@
 // Package ralph implements the solidified surface of the persistent
-// improvement loop (docs/workflows.md §2): counting, stop-judgment and
+// improvement loop (docs/reference/workflows.md §2): counting, stop-judgment and
 // history live HERE; doing the work and RUNNING the verifier stay with
 // the agent — oma never executes verifier commands (security contract),
 // the agent reports the exit code (and, under score_improvement, the
@@ -22,13 +22,13 @@ import (
 	"time"
 )
 
-// Schema is the persisted document schema (docs/schemas.md §6). The /2 bump
+// Schema is the persisted document schema (docs/reference/schemas.md §6). The /2 bump
 // (R1) adds the keep-policy state contract (KeepPolicy/PlateauWindow/
 // BestRound/BestScore + the PhasePlateaued terminal). Load rejects any other
 // major fail-closed; there is no /1→/2 migration layer (terminal design).
 const Schema = "oma-ralph/2"
 
-// Ralph phases (workflows.md §2.1).
+// Ralph phases (docs/reference/workflows.md §2.1).
 const (
 	PhaseRunning   = "running"
 	PhasePassed    = "passed"

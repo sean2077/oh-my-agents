@@ -17,7 +17,7 @@ func ralphEngine() (*ralph.Engine, error) {
 }
 
 func newRalphCmd() *cobra.Command {
-	cmd := &cobra.Command{Use: "ralph", Short: "Solidified persistent loop: counting, stop judgment, history (workflows.md §2)"}
+	cmd := &cobra.Command{Use: "ralph", Short: "Solidified persistent loop: counting, stop judgment, history (docs/reference/workflows.md §2)"}
 	cmd.AddCommand(newRalphStartCmd(), newRalphNextCmd(), newRalphCheckCmd(), newRalphAbortCmd(), newRalphStatusCmd())
 	return cmd
 }

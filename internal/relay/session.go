@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// Session is the pair metadata document (docs/schemas.md §4).
+// Session is the pair metadata document (docs/reference/schemas.md §4).
 type Session struct {
 	Schema       string            `json:"schema"`
 	Pair         string            `json:"pair"`
@@ -66,7 +66,7 @@ func (s *Session) Validate() error {
 	}
 	lead, ok := s.Roles["lead"]
 	if !ok || lead == "" {
-		return fmt.Errorf("%w: roles.lead is required (primary decision-maker, workflows.md §4.1)", ErrRelay)
+		return fmt.Errorf("%w: roles.lead is required (primary decision-maker, docs/reference/workflows.md §4.1)", ErrRelay)
 	}
 	for role, holder := range s.Roles {
 		if !knownRoles[role] {
@@ -219,7 +219,7 @@ func (l *Ledger) NewPair(topic, peer, project string, dryRun bool) (*Session, er
 	return s, nil
 }
 
-// SetLead persists a user-confirmed lead swap (workflows.md §4.1: the
+// SetLead persists a user-confirmed lead swap (docs/reference/workflows.md §4.1: the
 // swap is recorded as kind: decision AND session.json.roles.lead is
 // updated so later turns resolve the new authority).
 func (l *Ledger) SetLead(slug, name string, dryRun bool) (*Session, error) {

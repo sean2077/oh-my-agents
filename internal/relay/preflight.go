@@ -23,7 +23,7 @@ type PreflightCheck struct {
 	Message string `json:"message"`
 }
 
-// PreflightReport is the full diagnostic (docs/relay-v2-protocol.md
+// PreflightReport is the full diagnostic (docs/reference/relay-v2-protocol.md
 // experience layer). Exit mapping is oma-native (command-tree §1): all
 // ok → 0, any warn → 1, any fail → 3 (env/state). Usage errors stay 2
 // via cobra and never reach here.

@@ -28,7 +28,7 @@ func InstallChecks(home, projectRoot string, commands CommandSet) []Check {
 }
 
 // relayV2Residue reports stale drafts, leftover reservations and unready
-// formal files across active v2 pairs (docs/command-tree.md §5: doctor
+// formal files across active v2 pairs (docs/reference/command-tree.md §5: doctor
 // surfaces them; `oma doctor relay --clean-stale` removes them). Identity
 // is irrelevant for reading residue, so a fixed probe identity is used;
 // a missing/uninitialized ledger is silent (nothing to check).
@@ -151,7 +151,7 @@ func orphanBackups(eng *asset.Engine) []Finding {
 
 // legacyRelayV1 reports an agent-ledger v1 .shared/ tree in the project:
 // archival/manual-reference only, oma never reads or writes it
-// (docs/relay-v2-protocol.md §1).
+// (docs/reference/relay-v2-protocol.md §1).
 func legacyRelayV1(projectRoot string) []Finding {
 	if projectRoot == "" {
 		return nil

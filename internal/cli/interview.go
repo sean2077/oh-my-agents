@@ -18,7 +18,7 @@ func interviewEngine() (*interview.Engine, error) {
 }
 
 func newInterviewCmd() *cobra.Command {
-	cmd := &cobra.Command{Use: "interview", Short: "Solidified Socratic clarification: scoring math, threshold gate, state (workflows.md §1)"}
+	cmd := &cobra.Command{Use: "interview", Short: "Solidified Socratic clarification: scoring math, threshold gate, state (docs/reference/workflows.md §1)"}
 	cmd.AddCommand(
 		newInterviewStartCmd(),
 		newInterviewScoreCmd(),

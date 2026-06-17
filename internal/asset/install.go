@@ -13,16 +13,16 @@ import (
 
 // ErrUnmanagedTarget marks a destination that exists but is not owned by
 // oma — no registry record, or content drifted from the recorded digest
-// (docs/security-contract.md §2). Refused without --force.
+// (docs/reference/security-contract.md §2). Refused without --force.
 var ErrUnmanagedTarget = errors.New("destination is not oma-managed (missing record or content drift); use --force to back up and replace")
 
 // ErrRollbackConflict marks a rollback target whose current content is not
 // the oma-managed state: restoring would silently destroy newer non-oma
-// content (docs/security-contract.md §2).
+// content (docs/reference/security-contract.md §2).
 var ErrRollbackConflict = errors.New("rollback conflict: current content is not the managed state; resolve manually or reinstall first")
 
 // Op is one planned filesystem operation; --dry-run prints these and
-// writes nothing (docs/security-contract.md §1).
+// writes nothing (docs/reference/security-contract.md §1).
 type Op struct {
 	Kind string `json:"kind"` // create | replace | backup | delete | restore | link | unlink
 	Path string `json:"path"`
@@ -33,7 +33,7 @@ type Options struct {
 	DryRun bool
 	Force  bool
 	Source string   // registry source label: dir | dev-link | release
-	Agents []string // requested projection agents; final = manifest.targets ∩ Agents (docs/config.md §4b)
+	Agents []string // requested projection agents; final = manifest.targets ∩ Agents (docs/reference/config.md §4b)
 }
 
 // Report describes what an operation did (or would do, under --dry-run).
@@ -443,7 +443,7 @@ func syncDir(dir string) {
 
 // copyTree copies a file or directory tree with 0700 dirs and 0600 files,
 // refusing symlinks inside payloads (path-constraint defense,
-// docs/security-contract.md §3).
+// docs/reference/security-contract.md §3).
 func copyTree(src, dest string) error {
 	info, err := os.Lstat(src)
 	if err != nil {

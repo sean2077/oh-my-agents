@@ -11,7 +11,7 @@ import (
 const StatuslineSchema = "oma-relay-statusline/1"
 
 // StatuslineState is the compact "which pair / whose turn" snapshot
-// (docs/relay-v2-protocol.md §12.2). It is binding-scoped and pure-read:
+// (docs/reference/relay-v2-protocol.md §12.2). It is binding-scoped and pure-read:
 // an unbound window resolves to Bound=false and shows nothing about any
 // lone active pair (review 086 must-fix 4). It never exposes private
 // draft contents.

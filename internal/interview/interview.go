@@ -1,5 +1,5 @@
 // Package interview implements the solidified surface of the Socratic
-// clarification workflow (docs/workflows.md §1): deterministic scoring
+// clarification workflow (docs/reference/workflows.md §1): deterministic scoring
 // math, threshold gating and state persistence live HERE; question
 // generation, dimension assessment and ontology extraction stay with the
 // agent, which feeds results in via `oma interview score --input`.
@@ -18,13 +18,13 @@ import (
 	"time"
 )
 
-// Schema constants (docs/schemas.md §5).
+// Schema constants (docs/reference/schemas.md §5).
 const (
 	Schema       = "oma-interview/1"
 	ScoresSchema = "oma-interview-scores/1"
 )
 
-// Interview phases (workflows.md §1.1).
+// Interview phases (docs/reference/workflows.md §1.1).
 const (
 	PhaseTopologyPending = "topology_pending"
 	PhaseInterviewing    = "interviewing"
@@ -89,7 +89,7 @@ type OntologySnapshot struct {
 	MatchingReasoning string   `json:"matching_reasoning,omitempty"`
 }
 
-// State is the oma-interview/1 document (workflows.md §1.2).
+// State is the oma-interview/1 document (docs/reference/workflows.md §1.2).
 type State struct {
 	Schema             string             `json:"schema"`
 	ID                 string             `json:"id"`

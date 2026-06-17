@@ -10,7 +10,7 @@ import (
 // newRelayHookDispatchCmd is the hidden, machine-invoked auto-continue
 // dispatcher (`oma relay hook <event>`). oma no longer ships an installer
 // that writes this into a host config — users wire it into their own
-// settings.json by hand (see docs/relay-v2-protocol.md §12). The dispatcher
+// settings.json by hand (see docs/reference/relay-v2-protocol.md §12). The dispatcher
 // itself is unchanged: pure-read, safe-fail, always exit 0.
 func newRelayHookDispatchCmd(rootFlag *string) *cobra.Command {
 	return &cobra.Command{

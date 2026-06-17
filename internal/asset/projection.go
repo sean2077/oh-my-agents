@@ -17,7 +17,7 @@ import (
 var ErrProjectionConflict = errors.New("projection target exists and is not the expected oma symlink")
 
 // Skip records a requested projection an agent cannot take, reported
-// rather than silently dropped (docs/config.md §4b).
+// rather than silently dropped (docs/reference/config.md §4b).
 type Skip struct {
 	Agent  string `json:"agent"`
 	Reason string `json:"reason"`

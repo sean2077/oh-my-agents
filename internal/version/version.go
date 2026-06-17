@@ -9,7 +9,7 @@ var (
 )
 
 // Schemas registers every persisted-data schema this binary ships
-// (docs/schemas.md, format oma-<domain>/<major>). Readers fail closed on
+// (docs/reference/schemas.md, format oma-<domain>/<major>). Readers fail closed on
 // unknown majors. Schema-only: algorithm versions live in Algorithms.
 var Schemas = map[string]string{
 	"registry":         "oma-registry/1",
@@ -26,7 +26,7 @@ var Schemas = map[string]string{
 }
 
 // Algorithms registers pinned algorithm versions that affect reproducible
-// outputs (docs/adapter-conformance.md §5).
+// outputs (docs/reference/adapter-conformance.md §5).
 var Algorithms = map[string]string{
 	"budget": "approx-b4/1",
 }

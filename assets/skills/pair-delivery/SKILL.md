@@ -41,7 +41,7 @@ oma relay pair new <topic-slug>
 
 The peer binds with `oma relay pair join <slug>`.
 
-## Delivery gates (workflows.md §4)
+## Delivery gates (docs/reference/workflows.md §4)
 
 Every delivery moves through these gates, each gate being one or more artifact exchanges:
 
@@ -82,7 +82,7 @@ A `kind: review` body MUST embed exactly one fenced ` ```oma-review-evidence/1 `
 - **approve** — non-empty `basis_refs` (what you checked, as `path:line`), `commands_run` (validation you actually ran, or a stated non-execution reason), and `limitations` (what you did NOT check). `findings` may be empty.
 - **revise / approve-with-changes** — at least one `finding` (with `severity` / `confidence` from the closed enums), plus the same evidence fields.
 
-Placeholders (`todo`, `tbd`, `stub`, "fake pass") are refused. The full schema and enums live in `docs/relay-v2-protocol.md` and `docs/schemas.md` — read them before your first review so the publish doesn't bounce.
+Placeholders (`todo`, `tbd`, `stub`, "fake pass") are refused. The full schema and enums live in `docs/reference/relay-v2-protocol.md` and `docs/reference/schemas.md` — read them before your first review so the publish doesn't bounce.
 
 ### prompt_for_next is a hard template
 

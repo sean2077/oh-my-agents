@@ -13,7 +13,7 @@ The trigger for this project was a concrete pain point in oh-my-claudecode (OMC)
 - **You decide what is installed.** Skills are explicit assets you install and remove. Nothing is resident unless you put it there. The four core skills together cost **~275 tokens** of resident surface (name + description), versus OMC's 15-20k, about 2%, and every asset is independently installable.
 - **Mechanical logic belongs in a binary, not a prompt.** Sequence numbers, ambiguity math, threshold gates, stall detection, atomic file writes, and integrity checks are deterministic. They live in `oma`, where they are testable and fail-closed, not re-derived by the model each turn.
 - **Skills stay agent-neutral.** A skill's default path is plain `oma` commands plus markdown, so Claude Code and Codex follow the *same* contract. Host-only accelerations (Claude Code's structured option picker, subagents, plan mode) are clearly-marked optional branches, never the default.
-- **One asset model, two agents.** Assets live in canonical `~/.agents/` and are projected by symlink into both `~/.claude/` and `~/.codex/`. Install once, available to both. (Hook assets are placed canonically only — oma never writes your host config; you wire hooks into `settings.json`/`hooks.json` by hand, see [`docs/relay-v2-protocol.md`](docs/relay-v2-protocol.md) §12.4.)
+- **One asset model, two agents.** Assets live in canonical `~/.agents/` and are projected by symlink into both `~/.claude/` and `~/.codex/`. Install once, available to both. (Hook assets are placed canonically only — oma never writes your host config; you wire hooks into `settings.json`/`hooks.json` by hand, see [`docs/reference/relay-v2-protocol.md`](docs/reference/relay-v2-protocol.md) §12.4.)
 
 This is CLI + skills, deliberately **not** a Claude Code plugin: a plugin is a Claude-Code-only concept, and the whole point is to stay neutral and lightweight.
 
@@ -132,7 +132,7 @@ your session:
 For **Codex**, put the same structure in `~/.codex/hooks.json`, change the
 `PreToolUse` matcher to `^(apply_patch|Edit|Write)$`, and run `/hooks` once to
 trust the new entries. Full field reference (matchers, timeouts, guard rationale)
-is in [`docs/relay-v2-protocol.md`](docs/relay-v2-protocol.md) §12.4.
+is in [`docs/reference/relay-v2-protocol.md`](docs/reference/relay-v2-protocol.md) §12.4.
 
 ## Quickstart
 
@@ -146,7 +146,7 @@ oma doctor budget --agent claude --profile core4
 
 ## Command surface
 
-`oma` is organized into a few command groups (full reference: [`docs/command-tree.md`](docs/command-tree.md)):
+`oma` is organized into a few command groups (full reference: [`docs/reference/command-tree.md`](docs/reference/command-tree.md)):
 
 - **`oma asset`**: install / list / remove / rollback assets; canonical placement plus per-agent projection. `catalog` derives a status-lifecycle view from manifests; `audit` flags catalog bloat (orphan / oversized / retire), advisory-only.
 - **`oma doctor`**: installation diagnostics and the resident-token budget gate.
@@ -173,7 +173,7 @@ Conventions: `--json` on every query command; `--dry-run` is a global flag that 
 
 - **Assets** are described by a `manifest.json` (`oma-asset/1`) declaring type and target agents. Install places the body in `~/.agents/` and projects it to each target; a registry under `~/.config/oma/` tracks ownership so removal and rollback never touch foreign files.
 - **relay v2** is a fresh protocol (it does not read or write the legacy agent-ledger `.shared/` tree) that keeps the proven principles: append-only ledger, sidecar integrity markers, fail-closed identity, platform-signal authorship. The ledger lives at `<repo>/.oma/relay/`.
-- **Security is fail-closed throughout**: unmanaged-target refusal with backup on `--force`, trusted-root symlink-escape checks, world-writable refusal, duplicate-JSON-key rejection on host configs, mandatory secret scanning before publish, and a checksum-verified self-update trust chain. Details in [`docs/security-contract.md`](docs/security-contract.md).
+- **Security is fail-closed throughout**: unmanaged-target refusal with backup on `--force`, trusted-root symlink-escape checks, world-writable refusal, duplicate-JSON-key rejection on host configs, mandatory secret scanning before publish, and a checksum-verified self-update trust chain. Details in [`docs/reference/security-contract.md`](docs/reference/security-contract.md).
 
 The design documents under [`docs/`](docs/) (protocol, command tree, workflows, adapter conformance, schemas, security, config) are the authoritative specification; the implementation follows them rather than the reverse.
 

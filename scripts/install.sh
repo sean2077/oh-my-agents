@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Install oma. By default this downloads the prebuilt binary for the latest
 # GitHub release and verifies its SHA-256 against the release checksums.txt
-# (docs/security-contract.md §5 — the same asset/checksum contract self-update
+# (docs/reference/security-contract.md §5 — the same asset/checksum contract self-update
 # consumes). It falls back to a source build (git + go) when no prebuilt binary
 # matches the platform, when no release can be resolved, or when
 # OMA_INSTALL_FROM_SOURCE=1. A checksum mismatch is a hard, fail-closed error —

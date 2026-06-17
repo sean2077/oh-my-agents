@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// RegistrySchema is the persisted registry schema (docs/schemas.md §2).
+// RegistrySchema is the persisted registry schema (docs/reference/schemas.md §2).
 const RegistrySchema = "oma-registry/1"
 
 // ErrNotManaged marks operations on assets the registry does not own.
@@ -71,7 +71,7 @@ func LoadRegistry(path string) (*Registry, error) {
 }
 
 // Save writes the registry atomically (tmp+rename, 0600, dirs 0700) with a
-// single-generation .bak of the previous version (docs/schemas.md §1).
+// single-generation .bak of the previous version (docs/reference/schemas.md §1).
 func (r *Registry) Save(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("create registry dir: %w", err)
