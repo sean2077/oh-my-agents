@@ -4,6 +4,7 @@ Start here:
 
 - **[design-philosophy.md](design-philosophy.md)** — the *why*: context scarcity (accuracy first, cost second), the mechanical-vs-judgment split, and the constraints that follow.
 - **[architecture.md](architecture.md)** — the *how*: the asset / projection model, the relay ledger, and the repository layout.
+- **[porting-to-new-harness.md](porting-to-new-harness.md)** — how to map oma skills to another harness without changing skill bodies or user-owned files.
 
 Authoritative reference — the spec the implementation follows:
 

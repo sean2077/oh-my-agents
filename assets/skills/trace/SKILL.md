@@ -49,6 +49,14 @@ Explicitly down-rank a hypothesis that rests on lower tiers when stronger contra
 
 Optional cross-check lenses when relevant: **systems** (queues/retries/backpressure/boundaries/feedback loops), **premortem** (assume the leader is wrong — what failure mode embarrasses this trace later?), **science** (controls, confounders, measurement bias, falsifiable predictions).
 
+## Optional tactics
+
+Use these when the normal hypothesis pass needs sharper evidence:
+
+- **Trace backward to source.** Start at the observed failure, identify the immediate operation that produced it, then keep asking "what called this with that value?" until you reach the original trigger. Do not stop at the symptom layer just because it is where the error appeared.
+- **Instrument boundaries once.** In multi-component failures, log what enters and exits each boundary (workflow -> script, API -> service, service -> store, config -> runtime), run once, then analyze the evidence. Add instrumentation to locate the failing layer before proposing a fix.
+- **Question the architecture after repeated misses.** If three attempted fixes or probes in the surrounding delivery loop fail for the same class of problem, stop treating it as a local bug. Re-open the premise: shared state, coupling, ownership, or the chosen architecture may be wrong.
+
 ## Down-rank explicitly
 
 Always say WHY a hypothesis moved down: contradicted by stronger evidence / missing the observation it predicted / needs extra ad-hoc assumptions / explains fewer facts / lost the rebuttal / merged into a stronger parent. The reader should learn *why* one explanation outranks another, not just see a final table.

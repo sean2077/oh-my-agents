@@ -17,6 +17,18 @@ Before writing anything, answer honestly:
 
 If any answer is no, stop — record it as a note or memory instead, not a skill.
 
+## Optional efficacy gate
+
+Use this only for discipline skills where agents have a realistic incentive to rationalize around the rule. It is not required for reference skills or simple workflow captures.
+
+1. **RED: no-guidance control.** Run a fresh-context pressure scenario without the candidate skill. If the control does not fail, stop; there is no demonstrated behavior to correct.
+2. **Capture rationalizations.** Record the exact excuses, shortcuts, or shape failures the agent used. Do not generalize from memory.
+3. **GREEN: add the smallest guidance that blocks those failures.** Address the observed rationalizations, not hypothetical ones.
+4. **REFACTOR: pressure-test variants.** Re-run with the candidate skill, look for new loopholes, and tighten wording only where evidence shows drift.
+5. **Track variance.** If repeated runs produce many different interpretations, the form is not binding yet. Prefer a clearer recipe or output contract over more prohibitions.
+
+For expensive tests, run the tally as a `research-mission` driven by `ralph` rather than adding CLI surface.
+
 ## Extract the method first
 
 Before writing, distill what you just did into the reusable shape: the trigger / inputs, the ordered steps, the judgment at each, the stop conditions, and how you verified success. If you cannot name those, the workflow is not abstracted enough to skillify yet.
