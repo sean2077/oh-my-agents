@@ -4,6 +4,15 @@
 >
 > Section heading format: `## vX.Y.Z - YYYY-MM-DD` (CI matches the tag by exact prefix; a tag with no matching section fails the release, fail-closed).
 
+## v0.5.0 - 2026-06-18
+
+This release makes native Windows / Codex Desktop a first-class install target for the CLI + skills workflow. It preserves the canonical `~/.agents/` asset model while using Windows-native projection mechanics where they are available.
+
+- **Windows Codex Desktop install path**: documentation now covers PowerShell-native self-build/install, Git Bash `make install`, and Windows hook command strings, while keeping hook wiring manual and user-owned.
+- **Windows skill projection**: directory skills now project by Windows directory junction when available, matching the link-like behavior users get from `npx skills`; managed copy remains the fallback and the file-asset behavior. The install registry records the actual projection kind (`symlink`, `junction`, or `copy`) and verification/removal understands each one.
+- **Projection hardening**: managed-copy projection refreshes now use a staged swap instead of remove-then-copy, rollback dry-runs disclose copy refresh paths, and Windows trusted-root checks account for junction/reparse-point targets instead of relying only on `EvalSymlinks`.
+- **Cross-platform test cleanup**: POSIX-only safety fixtures are separated from Windows-compatible tests, and Windows projection coverage now includes junction escape refusal plus managed-copy integrity.
+
 ## v0.4.0 - 2026-06-17
 
 This release hardens Codex relay self-continuation and keeps the pair-delivery instructions aligned with the real Codex Stop hook path. It also carries the latest documentation organization and Superpowers T3 guidance.
