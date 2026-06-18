@@ -1,14 +1,17 @@
 package cli
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/sean2077/oh-my-agents/internal/asset"
 	"github.com/sean2077/oh-my-agents/internal/budget"
 	"github.com/sean2077/oh-my-agents/internal/checks"
+	"go.yaml.in/yaml/v3"
 )
 
 // TestRealAssetsPassReleaseGates is the Phase C release-blocking gate
@@ -34,6 +37,7 @@ func TestRealAssetsPassReleaseGates(t *testing.T) {
 			continue
 		}
 		src := filepath.Join(repoAssets, ent.Name())
+		assertPortableSkillFrontmatter(t, filepath.Join(src, "SKILL.md"))
 		m, err := asset.LoadManifest(filepath.Join(src, "manifest.json"))
 		if err != nil {
 			t.Fatalf("manifest %s: %v", ent.Name(), err)
@@ -89,4 +93,33 @@ func TestRealAssetsPassReleaseGates(t *testing.T) {
 		t.Fatalf("core4 members missing from assets/: %v", rep.Missing)
 	}
 	t.Logf("core4 resident budget: %d tokens, all members present", rep.Total)
+}
+
+func assertPortableSkillFrontmatter(t *testing.T, path string) {
+	t.Helper()
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read skill frontmatter %s: %v", path, err)
+	}
+	raw = bytes.ReplaceAll(raw, []byte("\r\n"), []byte("\n"))
+	if !bytes.HasPrefix(raw, []byte("---\n")) {
+		t.Fatalf("skill frontmatter %s: file must start with ---", path)
+	}
+	body := raw[len("---\n"):]
+	end := bytes.Index(body, []byte("\n---\n"))
+	if end < 0 {
+		t.Fatalf("skill frontmatter %s: block never closed with ---", path)
+	}
+
+	var fm struct {
+		Name        string `yaml:"name"`
+		Description string `yaml:"description"`
+	}
+	if err := yaml.Unmarshal(body[:end], &fm); err != nil {
+		t.Fatalf("skill frontmatter %s is not portable YAML: %v", path, err)
+	}
+	if strings.TrimSpace(fm.Name) == "" || strings.TrimSpace(fm.Description) == "" {
+		t.Fatalf("skill frontmatter %s: name and description are required", path)
+	}
 }

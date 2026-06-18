@@ -1,6 +1,6 @@
 ---
 name: autopilot
-description: End-to-end autonomous delivery — clarify, plan, implement, verify, deliver — with resumable phase state in oma state. Use when the user hands over a whole task and wants it driven to done: autopilot this, take it end to end, run with it.
+description: 'End-to-end autonomous delivery — clarify, plan, implement, verify, deliver — with resumable phase state in oma state. Use when the user hands over a whole task and wants it driven to done: autopilot this, take it end to end, run with it.'
 ---
 
 # autopilot
