@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/sean2077/oh-my-agents/internal/agentdir"
 )
 
 // newTestEngine anchors everything in a temp home with a fixed clock.
@@ -118,6 +120,60 @@ func TestUnmanagedCollisionRefusedThenForcedWithBackupAndRollback(t *testing.T) 
 	got, _ = os.ReadFile(foreign)
 	if string(got) != "foreign content" {
 		t.Fatalf("after rollback SKILL.md = %q, want foreign content", got)
+	}
+	entries, _ := e.List()
+	if ok, problems := e.VerifyProjections(&entries[0]); !ok {
+		t.Fatalf("projection after rollback must verify: %v", problems)
+	}
+}
+
+func TestRollbackDryRunReportsCopyProjectionRefresh(t *testing.T) {
+	e := newTestEngine(t)
+	src := writeSkillSource(t, t.TempDir(), "x", "new body")
+
+	canonical := filepath.Join(e.Layout.Home, ".agents", "skills", "x")
+	if err := os.MkdirAll(canonical, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(canonical, "SKILL.md"), []byte("foreign content"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Install(src, Options{Force: true}); err != nil {
+		t.Fatalf("force install: %v", err)
+	}
+
+	reg, err := LoadRegistry(e.Layout.RegistryPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := reg.Find("x")
+	if entry == nil || len(entry.Projections) == 0 {
+		t.Fatalf("missing projection in registry: %+v", reg)
+	}
+	proj := entry.Projections[0]
+	if err := removeExistingProjectionTargetBestEffort(proj.Path); err != nil {
+		t.Fatal(err)
+	}
+	if err := copyTree(entry.CanonicalPath, proj.Path); err != nil {
+		t.Fatal(err)
+	}
+	entry.Projections = []Projection{{Agent: proj.Agent, Path: proj.Path, Kind: agentdir.KindCopy}}
+	if err := reg.Save(e.Layout.RegistryPath()); err != nil {
+		t.Fatal(err)
+	}
+
+	rep, err := e.Rollback("x", "", Options{DryRun: true})
+	if err != nil {
+		t.Fatalf("dry-run rollback: %v", err)
+	}
+	foundCopy := false
+	for _, op := range rep.Ops {
+		if op.Kind == "copy" && op.Path == proj.Path {
+			foundCopy = true
+		}
+	}
+	if !foundCopy {
+		t.Fatalf("dry-run rollback ops missing copy refresh for %s: %+v", proj.Path, rep.Ops)
 	}
 }
 

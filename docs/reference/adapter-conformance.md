@@ -20,14 +20,14 @@
 
 | Asset type | Canonical location (the file itself) | claude projection | codex projection |
 |---|---|---|---|
-| skill | `~/.agents/skills/<name>/` | symlink `~/.claude/skills/<name>` | symlink per the codex skills convention; not projected where unsupported, plus a doctor warning |
-| subagent | `~/.agents/agents/<name>.md` | symlink `~/.claude/agents/<name>.md` | **not projected** (Codex has no subagent) plus a `manifest.fallback` note |
+| skill | `~/.agents/skills/<name>/` | platform projection `~/.claude/skills/<name>` | platform projection `~/.codex/skills/<name>`; not projected where unsupported, plus a doctor warning |
+| subagent | `~/.agents/agents/<name>.md` | platform projection `~/.claude/agents/<name>.md` | **not projected** (Codex has no subagent) plus a `manifest.fallback` note |
 | hook | `~/.agents/hooks/<name>/` | **not projected** (canonical placement only) plus a skip note | **not projected** (canonical placement only) plus a skip note |
 | prompt | `~/.agents/prompts/<name>.md` | (on demand) `~/.claude/commands/` | `~/.codex/prompts/<name>.md` |
 
-- Projection is always by symlink. **oma never rewrites any host config file**: the earlier approach of injecting a hook fragment into `~/.claude/settings.json` / `~/.codex/hooks.json` has been removed — behavior that is uncertain or that mutates host state is documented as guidance rather than performed by a command (see the same-source decision in relay-v2-protocol.md §12.4).
+- Platform projection is a symlink on Unix-like hosts. On native Windows, directory assets such as skills use a directory junction when available and fall back to a managed copy; file assets use a managed copy. The registry records the actual `kind:"symlink"`, `kind:"junction"`, or `kind:"copy"`; copy projections are verified by the canonical content digest. **oma never rewrites any host config file**: the earlier approach of injecting a hook fragment into `~/.claude/settings.json` / `~/.codex/hooks.json` has been removed — behavior that is uncertain or that mutates host state is documented as guidance rather than performed by a command (see the same-source decision in relay-v2-protocol.md §12.4).
 - **A hook asset is canonical-only**: `manifest.json` + `fragment.json` still land alongside the asset under `~/.agents/hooks/<name>/`, but oma neither parses nor injects them; `agentdir.For(hook)` returns skip for both targets. The user wires the entry into their own `settings.json`/`hooks.json` **by hand**, following the contents of `fragment.json` (the wiring spec and guards are in relay-v2-protocol.md §12.4).
-- Uninstall = remove the symlink projection + remove the canonical entry + de-register from the registry (a hook has no projection, so only the canonical entry is removed and de-registered).
+- Uninstall = remove the managed projection + remove the canonical entry + de-register from the registry (a hook has no projection, so only the canonical entry is removed and de-registered). A copy projection is removed only when its digest still matches the recorded managed digest; foreign or edited content is left intact with a warning.
 - The concrete codex-side paths are maintained in a constant table (`internal/agentdir`; on a machine without codex they are verified by file assertion, see §6).
 
 ## 3. Dual-target consistency contract
@@ -54,7 +54,7 @@
 
 ## 6. conformance fixtures (offline dual-target verification)
 
-- Location: case files at `testdata/conformance/{claude,codex}.json`. Each case carries `manifest` (an inline oma-asset/1 document), `payload_file` (+ optional `payload_content`), and `want_rel_home` (the expected symlink projection location; empty = skip expected — the case for both hook and shared assets). oma projects only symlinks, with no injection assertion.
-- Test flow: fake HOME (t.TempDir) → engine Install (narrowed to a single agent) → assert per `want_kind`: the symlink target points at the canonical location, or the injected command can be retrieved from the host config by `_oma_asset`.
+- Location: case files at `testdata/conformance/{claude,codex}.json`. Each case carries `manifest` (an inline oma-asset/1 document), `payload_file` (+ optional `payload_content`), and `want_rel_home` (the expected projection location; empty = skip expected — the case for both hook and shared assets). Empty `want_kind` means the platform default (`symlink` on Unix-like hosts, `junction` for native-Windows skills, `copy` for native-Windows file assets).
+- Test flow: fake HOME (t.TempDir) → engine Install (narrowed to a single agent) → assert per `want_kind`: symlink and junction targets point at the canonical location, copy targets digest-match the canonical content.
 - Default-path check: for each skill, assert that the default-path text contains no reference unsupported by the target side (for example, an `AskUserQuestion` or subagent invocation appearing in a codex fixture fails; it is allowed inside an explicit CC-acceleration marker block).
 - The real-world constraint of having no codex on the machine: codex-side acceptance is judged by fixture-file assertion; a real-machine smoke test is a non-blocking Phase D follow-up.

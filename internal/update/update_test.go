@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -113,8 +114,11 @@ func TestHappyPathUpdateAndOldBackup(t *testing.T) {
 	if string(old) != "OLD BINARY" {
 		t.Fatalf(".old backup = %q", old)
 	}
-	if info, err := os.Stat(bin); err != nil || info.Mode().Perm()&0o111 == 0 {
-		t.Fatal("replaced binary must be executable")
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(bin)
+		if err != nil || info.Mode().Perm()&0o111 == 0 {
+			t.Fatal("replaced binary must be executable")
+		}
 	}
 }
 

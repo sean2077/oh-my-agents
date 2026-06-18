@@ -19,7 +19,7 @@ var ErrNotManaged = errors.New("asset is not managed by oma")
 type Projection struct {
 	Agent string `json:"agent"`
 	Path  string `json:"path"`
-	Kind  string `json:"kind"` // symlink | inject
+	Kind  string `json:"kind"` // symlink | junction | copy
 }
 
 // Backup records one pre-overwrite backup snapshot.

@@ -5,9 +5,42 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/sean2077/oh-my-agents/internal/agentdir"
 )
+
+func assertProjectionMatches(t *testing.T, path, canonical, kind string) {
+	t.Helper()
+	switch kind {
+	case agentdir.KindSymlink:
+		dest, err := os.Readlink(path)
+		if err != nil || filepath.Clean(dest) != filepath.Clean(canonical) {
+			t.Fatalf("projection %s -> %q err=%v, want %s", path, dest, err, canonical)
+		}
+	case agentdir.KindJunction:
+		dest, err := os.Readlink(path)
+		if err != nil || filepath.Clean(dest) != filepath.Clean(canonical) {
+			t.Fatalf("projection %s -> %q err=%v, want junction to %s", path, dest, err, canonical)
+		}
+	case agentdir.KindCopy:
+		got, err := DigestTree(path)
+		if err != nil {
+			t.Fatalf("copy projection %s: %v", path, err)
+		}
+		want, err := DigestTree(canonical)
+		if err != nil {
+			t.Fatalf("canonical digest %s: %v", canonical, err)
+		}
+		if got != want {
+			t.Fatalf("copy projection %s digest = %s, want %s", path, got, want)
+		}
+	default:
+		t.Fatalf("unknown projection kind %q for %s", kind, path)
+	}
+}
 
 func TestInstallProjectsToBothAgents(t *testing.T) {
 	e := newTestEngine(t)
@@ -17,18 +50,12 @@ func TestInstallProjectsToBothAgents(t *testing.T) {
 		t.Fatalf("unexpected skips: %+v", rep.Skips)
 	}
 	canonical := filepath.Join(e.Layout.CanonicalRoot(), "skills", "x")
-	for _, link := range []string{
-		filepath.Join(e.Layout.Home, ".claude", "skills", "x"),
-		filepath.Join(e.Layout.Home, ".codex", "skills", "x"),
-	} {
-		dest, err := os.Readlink(link)
-		if err != nil || dest != canonical {
-			t.Fatalf("projection %s -> %q err=%v, want %s", link, dest, err, canonical)
-		}
-	}
 	entries, _ := e.List()
 	if len(entries[0].Projections) != 2 {
 		t.Fatalf("registry projections = %+v", entries[0].Projections)
+	}
+	for _, pr := range entries[0].Projections {
+		assertProjectionMatches(t, pr.Path, canonical, pr.Kind)
 	}
 }
 
@@ -59,10 +86,11 @@ func TestClaudeOnlySubagentSkipsCodexWithReason(t *testing.T) {
 	if len(rep.Skips) != 1 || rep.Skips[0].Agent != "codex" {
 		t.Fatalf("want one codex skip, got %+v", rep.Skips)
 	}
-	link := filepath.Join(e.Layout.Home, ".claude", "agents", "explorer.md")
-	if _, err := os.Readlink(link); err != nil {
-		t.Fatalf("claude subagent projection missing: %v", err)
+	entries, _ := e.List()
+	if len(entries[0].Projections) != 1 {
+		t.Fatalf("claude subagent projection missing: %+v", entries[0].Projections)
 	}
+	assertProjectionMatches(t, entries[0].Projections[0].Path, filepath.Join(e.Layout.Home, ".agents", "agents", "explorer.md"), entries[0].Projections[0].Kind)
 }
 
 func TestProjectionConflictAbortsWithZeroWrites(t *testing.T) {
@@ -94,9 +122,8 @@ func TestReinstallRefreshesProjectionIdempotently(t *testing.T) {
 	mustInstall(t, e, src, Options{})
 	mustInstall(t, e, src, Options{}) // managed reinstall, same links
 	link := filepath.Join(e.Layout.Home, ".claude", "skills", "x")
-	if dest, err := os.Readlink(link); err != nil || dest != filepath.Join(e.Layout.CanonicalRoot(), "skills", "x") {
-		t.Fatalf("link after reinstall: %q err=%v", dest, err)
-	}
+	entries, _ := e.List()
+	assertProjectionMatches(t, link, filepath.Join(e.Layout.CanonicalRoot(), "skills", "x"), entries[0].Projections[0].Kind)
 }
 
 func TestRemoveDeletesOnlyOwnLinks(t *testing.T) {
@@ -106,7 +133,7 @@ func TestRemoveDeletesOnlyOwnLinks(t *testing.T) {
 
 	// replace the codex projection with a foreign regular file
 	codexLink := filepath.Join(e.Layout.Home, ".codex", "skills", "x")
-	if err := os.Remove(codexLink); err != nil {
+	if err := os.RemoveAll(codexLink); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(codexLink, []byte("user's own file"), 0o600); err != nil {
@@ -136,7 +163,7 @@ func TestVerifyProjectionsDetectsBreakage(t *testing.T) {
 	if ok, problems := e.VerifyProjections(&entries[0]); !ok {
 		t.Fatalf("fresh install must verify: %v", problems)
 	}
-	if err := os.Remove(filepath.Join(e.Layout.Home, ".claude", "skills", "x")); err != nil {
+	if err := os.RemoveAll(filepath.Join(e.Layout.Home, ".claude", "skills", "x")); err != nil {
 		t.Fatal(err)
 	}
 	if ok, problems := e.VerifyProjections(&entries[0]); ok || len(problems) == 0 {
@@ -162,6 +189,9 @@ func TestProjectionRootSymlinkEscapeRefused(t *testing.T) {
 }
 
 func TestProjectionRootWorldWritableRefused(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX world-writable mode bits do not model Windows ACLs")
+	}
 	e := newTestEngine(t)
 	claudeRoot := filepath.Join(e.Layout.Home, ".claude")
 	if err := os.MkdirAll(claudeRoot, 0o777); err != nil {
@@ -191,6 +221,29 @@ func TestNestedProjectionSymlinkEscapeRefused(t *testing.T) {
 	_, err := e.Install(src, Options{Agents: []string{"claude"}})
 	if err == nil || !strings.Contains(err.Error(), "intermediate symlink escape") {
 		t.Fatalf("nested symlink escape: err = %v, want refusal", err)
+	}
+	if entries, _ := os.ReadDir(outside); len(entries) != 0 {
+		t.Fatal("nothing may be written through the nested escaping component")
+	}
+}
+
+func TestNestedProjectionJunctionEscapeRefused(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("junction fixture is Windows-specific")
+	}
+	e := newTestEngine(t)
+	outside := t.TempDir()
+	claudeRoot := filepath.Join(e.Layout.Home, ".claude")
+	if err := os.MkdirAll(claudeRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := createJunction(outside, filepath.Join(claudeRoot, "skills")); err != nil {
+		t.Skipf("junctions unavailable: %v", err)
+	}
+	src := writeSkillSource(t, t.TempDir(), "x", "body")
+	_, err := e.Install(src, Options{Agents: []string{"claude"}})
+	if err == nil || !strings.Contains(err.Error(), "intermediate symlink escape") {
+		t.Fatalf("nested junction escape: err = %v, want outside-root refusal", err)
 	}
 	if entries, _ := os.ReadDir(outside); len(entries) != 0 {
 		t.Fatal("nothing may be written through the nested escaping component")
@@ -229,6 +282,9 @@ func TestRemoveRefusesNestedSymlinkEscape(t *testing.T) {
 }
 
 func TestPartialProjectionConvergesToManaged(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod-based writability fixture is POSIX-specific")
+	}
 	e := newTestEngine(t)
 	codexRoot := filepath.Join(e.Layout.Home, ".codex")
 	if err := os.MkdirAll(codexRoot, 0o700); err != nil {
@@ -345,7 +401,7 @@ type conformanceFixture struct {
 		PayloadFile    string          `json:"payload_file"`
 		PayloadContent string          `json:"payload_content"` // "" = placeholder bytes
 		WantRelHome    string          `json:"want_rel_home"`   // "" = no projection expected
-		WantKind       string          `json:"want_kind"`       // "" = symlink
+		WantKind       string          `json:"want_kind"`       // "" = platform default
 	} `json:"cases"`
 }
 
@@ -387,15 +443,16 @@ func TestConformanceFixtures(t *testing.T) {
 				}
 				continue
 			}
-			link := filepath.Join(e.Layout.Home, filepath.FromSlash(want))
-			dest, err := os.Readlink(link)
-			if err != nil {
-				t.Errorf("%s/%s: expected projection at %s: %v", agent, m.Name, want, err)
-				continue
+			proj := filepath.Join(e.Layout.Home, filepath.FromSlash(want))
+			wantKind := c.WantKind
+			if wantKind == "" {
+				tgt, ok, reason := agentdir.For(e.Layout.Home, agent, m.Type, m.Name)
+				if !ok {
+					t.Fatalf("%s/%s: no target: %s", agent, m.Name, reason)
+				}
+				wantKind = tgt.Kind
 			}
-			if filepath.Clean(dest) != filepath.Clean(filepath.Join(e.Layout.CanonicalRoot(), filepath.FromSlash(mustRel(t, e, m)))) {
-				t.Errorf("%s/%s: link target %s unexpected", agent, m.Name, dest)
-			}
+			assertProjectionMatches(t, proj, filepath.Join(e.Layout.CanonicalRoot(), filepath.FromSlash(mustRel(t, e, m))), wantKind)
 		}
 	}
 }

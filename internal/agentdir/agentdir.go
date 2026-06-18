@@ -4,14 +4,21 @@
 // plan and verify projections without import cycles.
 package agentdir
 
-import "path/filepath"
+import (
+	"path/filepath"
+	"runtime"
+)
 
-// Projection kinds. oma only projects by symlink; host-config mutation
-// (hook fragment injection) was removed — hook assets are placed
-// canonically and the user wires them into their host config by hand
-// (docs/reference/adapter-conformance.md §2).
+// Projection kinds. Unix-like hosts project by symlink. Native Windows uses
+// directory junctions for directory assets and managed copies for file assets,
+// because regular symlink creation commonly requires Developer Mode or elevated
+// privileges. Host-config mutation (hook fragment injection) was removed —
+// hook assets are placed canonically and the user wires them into their host
+// config by hand (docs/reference/adapter-conformance.md §2).
 const (
-	KindSymlink = "symlink"
+	KindSymlink  = "symlink"
+	KindJunction = "junction"
+	KindCopy     = "copy"
 )
 
 // Target describes where one asset projects for one agent.
@@ -34,20 +41,20 @@ func For(home, agent, assetType, assetName string) (Target, bool, string) {
 	case "claude":
 		switch assetType {
 		case "skill":
-			return t(agent, home, KindSymlink, ".claude", "skills", assetName), true, ""
+			return t(agent, home, projectionKind(assetType), ".claude", "skills", assetName), true, ""
 		case "subagent":
-			return t(agent, home, KindSymlink, ".claude", "agents", assetName+".md"), true, ""
+			return t(agent, home, projectionKind(assetType), ".claude", "agents", assetName+".md"), true, ""
 		case "prompt":
-			return t(agent, home, KindSymlink, ".claude", "commands", assetName+".md"), true, ""
+			return t(agent, home, projectionKind(assetType), ".claude", "commands", assetName+".md"), true, ""
 		case "hook":
 			return Target{}, false, "hook assets are placed canonically only; wire them into ~/.claude/settings.json by hand (docs/reference/adapter-conformance.md §2)"
 		}
 	case "codex":
 		switch assetType {
 		case "skill":
-			return t(agent, home, KindSymlink, ".codex", "skills", assetName), true, ""
+			return t(agent, home, projectionKind(assetType), ".codex", "skills", assetName), true, ""
 		case "prompt":
-			return t(agent, home, KindSymlink, ".codex", "prompts", assetName+".md"), true, ""
+			return t(agent, home, projectionKind(assetType), ".codex", "prompts", assetName+".md"), true, ""
 		case "subagent":
 			return Target{}, false, "codex has no subagent mechanism (manifest fallback applies)"
 		case "hook":
@@ -55,6 +62,16 @@ func For(home, agent, assetType, assetName string) (Target, bool, string) {
 		}
 	}
 	return Target{}, false, "unknown agent or asset type"
+}
+
+func projectionKind(assetType string) string {
+	if runtime.GOOS == "windows" && assetType == "skill" {
+		return KindJunction
+	}
+	if runtime.GOOS == "windows" {
+		return KindCopy
+	}
+	return KindSymlink
 }
 
 // AgentRoot is the trusted root for one agent's projections; projection

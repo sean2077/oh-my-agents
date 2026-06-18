@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -115,7 +116,10 @@ func (l Layout) checkRootEscape() error {
 	return nil
 }
 
-// checkParentWritable refuses world-writable parent directories.
+// checkParentWritable refuses world-writable parent directories on POSIX
+// platforms. On Windows, os.FileMode permission bits are an approximation over
+// ACLs and commonly report user-owned directories as 0777, so ACL hardening is
+// left to the Windows sandbox and the existing trusted-root checks.
 func checkParentWritable(dir string) error {
 	info, err := os.Stat(dir)
 	if err != nil {
@@ -124,10 +128,14 @@ func checkParentWritable(dir string) error {
 		}
 		return err
 	}
-	if info.Mode().Perm()&0o002 != 0 {
+	if rejectsWorldWritable(info) {
 		return fmt.Errorf("%w: parent directory %s is world-writable", ErrInvalid, dir)
 	}
 	return nil
+}
+
+func rejectsWorldWritable(info os.FileInfo) bool {
+	return runtime.GOOS != "windows" && info.Mode().Perm()&0o002 != 0
 }
 
 // resolveExisting eval-symlinks the nearest existing ancestor of path and
@@ -137,7 +145,7 @@ func resolveExisting(path string) (string, error) {
 	path = filepath.Clean(path)
 	var tail []string
 	for {
-		resolved, err := filepath.EvalSymlinks(path)
+		resolved, err := resolveExistingPath(path)
 		if err == nil {
 			for i := len(tail) - 1; i >= 0; i-- {
 				resolved = filepath.Join(resolved, tail[i])
@@ -154,4 +162,22 @@ func resolveExisting(path string) (string, error) {
 		tail = append(tail, filepath.Base(path))
 		path = parent
 	}
+}
+
+func resolveExistingPath(path string) (string, error) {
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", err
+	}
+	dest, linkErr := os.Readlink(path)
+	if linkErr != nil {
+		return resolved, nil
+	}
+	if !filepath.IsAbs(dest) {
+		dest = filepath.Join(filepath.Dir(path), dest)
+	}
+	if linkResolved, err := filepath.EvalSymlinks(dest); err == nil {
+		return linkResolved, nil
+	}
+	return filepath.Clean(dest), nil
 }

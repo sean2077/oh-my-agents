@@ -24,7 +24,7 @@ var ErrRollbackConflict = errors.New("rollback conflict: current content is not 
 // Op is one planned filesystem operation; --dry-run prints these and
 // writes nothing (docs/reference/security-contract.md §1).
 type Op struct {
-	Kind string `json:"kind"` // create | replace | backup | delete | restore | link | unlink
+	Kind string `json:"kind"` // create | replace | backup | delete | restore | link | unlink | copy
 	Path string `json:"path"`
 }
 
@@ -83,9 +83,13 @@ func (e *Engine) Install(srcDir string, opts Options) (*Report, error) {
 		return nil, err
 	}
 	rel, _ := e.Layout.CanonicalRel(m)
+	managedDigest := ""
+	if prev := reg.Find(m.Name); prev != nil {
+		managedDigest = prev.Digest
+	}
 
 	rep := &Report{Name: m.Name, DryRun: opts.DryRun}
-	plans, skips, err := e.planProjections(m, dest, opts.Agents)
+	plans, skips, err := e.planProjections(m, dest, managedDigest, opts.Agents)
 	if err != nil {
 		return nil, err
 	}
@@ -165,11 +169,15 @@ func (e *Engine) Install(srcDir string, opts Options) (*Report, error) {
 	}
 	var projErr error
 	for _, p := range plans {
-		if err := applyProjection(p); err != nil {
+		actualKind, warn, err := e.applyProjection(p)
+		if warn != "" {
+			rep.Warnings = append(rep.Warnings, warn)
+		}
+		if err != nil {
 			projErr = err
 			break
 		}
-		entry.Projections = append(entry.Projections, Projection{Agent: p.target.Agent, Path: p.target.Path, Kind: p.target.Kind})
+		entry.Projections = append(entry.Projections, Projection{Agent: p.target.Agent, Path: p.target.Path, Kind: actualKind})
 	}
 	reg.Upsert(entry)
 	if err := reg.Save(e.Layout.RegistryPath()); err != nil {
@@ -322,8 +330,17 @@ func (e *Engine) Rollback(name, backupID string, opts Options) (*Report, error) 
 		}
 	}
 
+	if err := e.precheckCopyProjectionRefresh(entry); err != nil {
+		return nil, err
+	}
 	rep := &Report{Name: name, DryRun: opts.DryRun}
-	rep.Ops = append(rep.Ops, Op{"restore", target}, Op{"replace", e.Layout.RegistryPath()})
+	rep.Ops = append(rep.Ops, Op{"restore", target})
+	for _, pr := range entry.Projections {
+		if pr.Kind == agentdir.KindCopy {
+			rep.Ops = append(rep.Ops, Op{"copy", pr.Path})
+		}
+	}
+	rep.Ops = append(rep.Ops, Op{"replace", e.Layout.RegistryPath()})
 	if opts.DryRun {
 		return rep, nil
 	}
@@ -336,10 +353,58 @@ func (e *Engine) Rollback(name, backupID string, opts Options) (*Report, error) 
 	}
 	entry.Digest = digest
 	entry.RestoredFrom = b.ID // provenance: content is restored, not a fresh install
+	if err := e.refreshCopyProjections(entry, target); err != nil {
+		return nil, err
+	}
 	if err := reg.Save(e.Layout.RegistryPath()); err != nil {
 		return nil, err
 	}
 	return rep, nil
+}
+
+func (e *Engine) precheckCopyProjectionRefresh(entry *Entry) error {
+	for _, pr := range entry.Projections {
+		if pr.Kind != agentdir.KindCopy {
+			continue
+		}
+		expected, ok, _ := agentdir.For(e.Layout.Home, pr.Agent, entry.Type, entry.Name)
+		if !ok || filepath.Clean(pr.Path) != expected.Path {
+			return fmt.Errorf("%w: recorded projection %s does not match expected path", ErrRollbackConflict, pr.Path)
+		}
+		if err := e.checkProjectionRoot(pr.Agent, expected.Path); err != nil {
+			return fmt.Errorf("%w: projection root check failed for %s: %v", ErrRollbackConflict, expected.Path, err)
+		}
+		got, err := DigestTree(expected.Path)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil || got != entry.Digest {
+			return fmt.Errorf("%w: projection %s content drifted from managed state", ErrRollbackConflict, expected.Path)
+		}
+	}
+	return nil
+}
+
+func (e *Engine) refreshCopyProjections(entry *Entry, canonical string) error {
+	for _, pr := range entry.Projections {
+		if pr.Kind != agentdir.KindCopy {
+			continue
+		}
+		expected, ok, _ := agentdir.For(e.Layout.Home, pr.Agent, entry.Type, entry.Name)
+		if !ok || filepath.Clean(pr.Path) != expected.Path {
+			return fmt.Errorf("%w: recorded projection %s does not match expected path", ErrRollbackConflict, pr.Path)
+		}
+		destExists := true
+		if _, err := os.Lstat(expected.Path); errors.Is(err, os.ErrNotExist) {
+			destExists = false
+		} else if err != nil {
+			return err
+		}
+		if err := replaceCopyTreeAtomic(canonical, expected.Path, destExists, e.backupID()); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // List returns the registry entries.
@@ -352,10 +417,24 @@ func (e *Engine) List() ([]Entry, error) {
 }
 
 // projectionOpKind / removalOpKind label the planned operation for
-// --dry-run and reports. oma only projects by symlink.
-func projectionOpKind(string) string { return "link" }
+// --dry-run and reports.
+func projectionOpKind(kind string) string {
+	switch kind {
+	case agentdir.KindCopy:
+		return "copy"
+	default:
+		return "link"
+	}
+}
 
-func removalOpKind(string) string { return "unlink" }
+func removalOpKind(kind string) string {
+	switch kind {
+	case agentdir.KindCopy:
+		return "delete"
+	default:
+		return "unlink"
+	}
+}
 
 // payloadPath resolves what gets copied: directory assets ship the whole
 // source dir; file assets ship exactly "<name>.md".

@@ -150,7 +150,7 @@ func TestSkillRound0ExampleIsAccepted(t *testing.T) {
 		t.Skipf("skill asset not present: %v", err)
 	}
 	var block string
-	rest := string(raw)
+	rest := strings.ReplaceAll(string(raw), "\r\n", "\n")
 	for {
 		i := strings.Index(rest, "```json\n")
 		if i < 0 {

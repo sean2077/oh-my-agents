@@ -14,18 +14,18 @@
 - `oma asset rollback <name> [--to <id>]`: restore in reverse from the manifest; the restore itself also obeys this section (it will not silently overwrite non-oma content newer than the backup — on conflict it refuses and prompts).
 - Test: overwrite refused, `--force` produces a restorable backup, rollback restores identically, rollback conflict refused.
 
-## 3. Symlink and path constraints
+## 3. Projection and path constraints
 
-- Any projection/resolution path is first normalized with `EvalSymlinks`; the result must lie within a **trusted root**: the canonical location `~/.agents/`, each agent's known directories, `.oma/`, and the repo checkout (dev link). Out of bounds → refuse.
+- Any projection/resolution path is first normalized with `EvalSymlinks` plus Windows reparse-point target checks where needed; the result must lie within a **trusted root**: the canonical location `~/.agents/`, each agent's known directories, `.oma/`, and the repo checkout (dev link). Out of bounds → refuse.
 - Reject path-traversal input (asset names, `--ledger-root`, etc. that escape the bounds once `..` is normalized).
-- Target parent directory is world-writable (writable by other users) → refuse projection.
-- Test: three classes of refusal — traversal fixture, out-of-bounds symlink, world-writable directory.
+- On POSIX, a target parent directory that is world-writable (writable by other users) → refuse projection. On native Windows, Go's mode bits are only an ACL approximation, so this specific POSIX bit check is skipped and trusted-root checks remain the enforcement point.
+- Test: three classes of refusal on POSIX — traversal fixture, out-of-bounds symlink, world-writable directory. Windows test coverage asserts trusted-root behavior, junction escape refusal, and managed-copy projection integrity.
 
 ## 4. Permission bits
 
 - New directories are 0700, files 0600 (applies to `.oma/`, `~/.config/oma/`, and the entire relay ledger); doctor validates and can report drift.
-- **oma never writes any host config file.** It places hook assets canonically only (canonical-only) and always projects by symlink; host config stays the user's to manage. The unreliable, host-mutating step — hook wiring — is documented for the user to do by hand (the wiring spec lives in relay-v2-protocol.md §12.4) rather than performed by oma.
-- Symlink-projection removal preserves the "leave foreign obstacles in place + warn" semantics (no risk of oma residue — deleting the canonical file is a true removal); `--dry-run` runs the same validation for remove/rollback as the real path does.
+- **oma never writes any host config file.** It places hook assets canonically only (canonical-only) and projects ordinary assets by symlink on Unix-like hosts, or by junction/copy on native Windows; host config stays the user's to manage. The unreliable, host-mutating step — hook wiring — is documented for the user to do by hand (the wiring spec lives in relay-v2-protocol.md §12.4) rather than performed by oma.
+- Projection removal preserves the "leave foreign obstacles in place + warn" semantics. Symlink and junction projections must still point at the canonical path; copy projections must digest-match the recorded managed content. `--dry-run` runs the same validation for remove/rollback as the real path does.
 
 ## 5. self-update trust chain
 

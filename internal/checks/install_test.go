@@ -3,6 +3,7 @@ package checks
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -60,6 +61,9 @@ func TestDoctorDetectsProjectionRootDriftAfterInstall(t *testing.T) {
 }
 
 func TestDoctorDetectsAgentRootPermissionDrift(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX world-writable mode bits do not model Windows ACLs")
+	}
 	home := installDemo(t)
 	if err := os.Chmod(filepath.Join(home, ".claude"), 0o777); err != nil {
 		t.Fatal(err)

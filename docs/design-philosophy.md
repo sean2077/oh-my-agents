@@ -44,7 +44,7 @@ The default path is plain `oma` commands + markdown, running under the **same co
 
 ### 3.3 Zero host-config mutation; document, don't command
 
-oma places assets canonically under `~/.agents/` and projects them by symlink; it **never rewrites your host config** — `settings.json` / `hooks.json` stay yours, and hook wiring (the one unreliable, host-mutating step) is **documented for you to do by hand**, not performed by oma. When installing an asset would overwrite a file oma doesn't manage, it stays **fail-closed**: it refuses by default, and only an explicit `--force` replaces that file — after taking a restorable backup. The one thing oma updates in place is **itself** — `self-update` mutates only the `oma` binary, from a pinned, checksum-verified release, atomically, with automatic rollback.
+oma places assets canonically under `~/.agents/` and projects them by symlink on Unix-like hosts, or by junction/copy on native Windows; it **never rewrites your host config** — `settings.json` / `hooks.json` stay yours, and hook wiring (the one unreliable, host-mutating step) is **documented for you to do by hand**, not performed by oma. When installing an asset would overwrite a file oma doesn't manage, it stays **fail-closed**: it refuses by default, and only an explicit `--force` replaces that file — after taking a restorable backup. The one thing oma updates in place is **itself** — `self-update` mutates only the `oma` binary, from a pinned, checksum-verified release, atomically, with automatic rollback.
 
 ### 3.4 Terminal-state design + fail-closed
 

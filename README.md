@@ -13,7 +13,7 @@ The trigger for this project was a concrete pain point in oh-my-claudecode (OMC)
 - **You decide what is installed.** Skills are explicit assets you install and remove. Nothing is resident unless you put it there. The four core skills together cost **~275 tokens** of resident surface (name + description), versus OMC's 15-20k, about 2%, and every asset is independently installable.
 - **Mechanical logic belongs in a binary, not a prompt.** Sequence numbers, ambiguity math, threshold gates, stall detection, atomic file writes, and integrity checks are deterministic. They live in `oma`, where they are testable and fail-closed, not re-derived by the model each turn.
 - **Skills stay agent-neutral.** A skill's default path is plain `oma` commands plus markdown, so Claude Code and Codex follow the *same* contract. Host-only accelerations (Claude Code's structured option picker, subagents, plan mode) are clearly-marked optional branches, never the default.
-- **One asset model, two agents.** Assets live in canonical `~/.agents/` and are projected by symlink into both `~/.claude/` and `~/.codex/`. Install once, available to both. (Hook assets are placed canonically only — oma never writes your host config; you wire hooks into `settings.json`/`hooks.json` by hand, see [`docs/reference/relay-v2-protocol.md`](docs/reference/relay-v2-protocol.md) §12.4.)
+- **One asset model, two agents.** Assets live in canonical `~/.agents/` and are projected into both `~/.claude/` and `~/.codex/` (symlink on Unix-like hosts; directory junction for skills on native Windows, with managed copy fallback). Install once, available to both. (Hook assets are placed canonically only — oma never writes your host config; you wire hooks into `settings.json`/`hooks.json` by hand, see [`docs/reference/relay-v2-protocol.md`](docs/reference/relay-v2-protocol.md) §12.4.)
 
 This is CLI + skills, deliberately **not** a Claude Code plugin: a plugin is a Claude-Code-only concept, and the whole point is to stay neutral and lightweight.
 
@@ -68,6 +68,14 @@ oma version
 `make install` uses Go's normal install location (`GOBIN`, or `GOPATH/bin` when
 `GOBIN` is unset), so make sure that directory is on `PATH`. Use `make build`
 instead when you want a stamped local `./oma` binary in the checkout.
+On native Windows / Codex Desktop, PowerShell users can skip `make` and run:
+
+```powershell
+go install -trimpath ./cmd/oma
+oma version
+```
+
+Ensure Go's install directory (usually `%USERPROFILE%\go\bin`) is on `PATH`.
 
 Once releases are published, `oma self-update` updates the binary in place from the pinned GitHub Releases (checksum-verified, atomic, with automatic rollback).
 
@@ -135,6 +143,21 @@ For **Codex**, put the same structure in `~/.codex/hooks.json`, change the
 confirm the `oma relay hook Stop` entry is trusted. Full field reference
 (matchers, timeouts, guard rationale) is in
 [`docs/reference/relay-v2-protocol.md`](docs/reference/relay-v2-protocol.md) §12.4.
+For native Windows Codex Desktop, use a PowerShell command string such as:
+
+```json
+{
+  "hooks": {
+    "Stop": [{
+      "hooks": [{ "type": "command", "timeout": 5,
+        "command": "& 'C:\\Users\\YOU\\go\\bin\\oma.exe' relay hook Stop" }]
+    }]
+  }
+}
+```
+
+Use the same PowerShell form for `SessionStart` and `PreToolUse`, changing only
+the final event name.
 
 ## Quickstart
 
@@ -168,14 +191,14 @@ Conventions: `--json` on every query command; `--dry-run` is a global flag that 
   agents/<name>.md              subagent
   hooks/<name>/                 hook (manifest + fragment; canonical-only, wire by hand)
   prompts/<name>.md             prompt
-        |  projection (symlink; hooks are canonical-only — never written to host config)
+        |  projection (symlink on Unix; junction/copy on native Windows; hooks are canonical-only)
         v
 ~/.claude/   ~/.codex/          per-agent directories
 ```
 
 - **Assets** are described by a `manifest.json` (`oma-asset/1`) declaring type and target agents. Install places the body in `~/.agents/` and projects it to each target; a registry under `~/.config/oma/` tracks ownership so removal and rollback never touch foreign files.
 - **relay v2** is a fresh protocol (it does not read or write the legacy agent-ledger `.shared/` tree) that keeps the proven principles: append-only ledger, sidecar integrity markers, fail-closed identity, platform-signal authorship. The ledger lives at `<repo>/.oma/relay/`.
-- **Security is fail-closed throughout**: unmanaged-target refusal with backup on `--force`, trusted-root symlink-escape checks, world-writable refusal, duplicate-JSON-key rejection on host configs, mandatory secret scanning before publish, and a checksum-verified self-update trust chain. Details in [`docs/reference/security-contract.md`](docs/reference/security-contract.md).
+- **Security is fail-closed throughout**: unmanaged-target refusal with backup on `--force`, trusted-root escape checks, POSIX world-writable refusal, duplicate-JSON-key rejection on host configs, mandatory secret scanning before publish, and a checksum-verified self-update trust chain. Details in [`docs/reference/security-contract.md`](docs/reference/security-contract.md).
 
 The design documents under [`docs/`](docs/) (protocol, command tree, workflows, adapter conformance, schemas, security, config) are the authoritative specification; the implementation follows them rather than the reverse.
 

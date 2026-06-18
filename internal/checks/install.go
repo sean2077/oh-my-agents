@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/sean2077/oh-my-agents/internal/agentdir"
@@ -96,8 +97,13 @@ func registryConsistency(eng *asset.Engine) []Finding {
 }
 
 // permissions reports mode drift on oma-owned roots and agent trusted
-// roots (world-writable anywhere here is fail-grade).
+// roots. POSIX world-writable paths are fail-grade; on Windows, Go's mode bits
+// are only an ACL approximation and commonly report user-owned directories as
+// 0777, so this check is skipped.
 func permissions(eng *asset.Engine) []Finding {
+	if runtime.GOOS == "windows" {
+		return nil
+	}
 	var fs []Finding
 	dirs := []string{eng.Layout.CanonicalRoot(), eng.Layout.ConfigDir()}
 	for _, agent := range []string{"claude", "codex"} {

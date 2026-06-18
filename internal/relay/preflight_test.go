@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -51,9 +52,18 @@ func TestPreflightHealthyInitializedLedger(t *testing.T) {
 	if got := levelOf(r, "ledger.sentinel"); got != PFOk {
 		t.Fatalf("sentinel = %s", got)
 	}
-	// Every FS probe should pass on a real temp filesystem.
+	// Every core FS probe should pass on a real temp filesystem. Native
+	// Windows commonly lacks symlink privilege and does not preserve POSIX
+	// mode bits, so those checks are allowed to warn there.
 	for _, name := range []string{"fs.tmp_rename", "fs.symlink", "fs.sha256", "fs.fsync", "fs.posix_mode"} {
-		if got := levelOf(r, name); got != PFOk {
+		got := levelOf(r, name)
+		if runtime.GOOS == "windows" && (name == "fs.symlink" || name == "fs.posix_mode") {
+			if got != PFOk && got != PFWarn {
+				t.Errorf("%s = %s, want ok or warn on Windows", name, got)
+			}
+			continue
+		}
+		if got != PFOk {
 			t.Errorf("%s = %s, want ok", name, got)
 		}
 	}

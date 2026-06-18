@@ -27,6 +27,7 @@
 }
 ```
 - The registry records only oma-managed entries; external sources (npx skills and the like) are neither registered nor modified, and doctor merely reports them.
+- Projection `kind` is `symlink`, `junction`, or `copy`. Unix-like hosts use `symlink`; native Windows uses `junction` for directory assets when available and `copy` for managed-copy fallbacks and file assets.
 
 ## 3. Generic project state `.oma/state/<namespace>.json` (`oma-state/1`)
 

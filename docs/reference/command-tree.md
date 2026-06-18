@@ -21,7 +21,7 @@ oma asset audit [--from <root>] [--json]        # advisory bloat audit: LOC/resi
 oma asset link --dev [--repo <path>]            # dogfood: symlink the local checkout
 ```
 
-- `install`: asset files → canonical location `~/.agents/{skills,agents,hooks}/<name>/` → **symlink** projected into each agent directory per the manifest's `targets`. By default all targets are projected; `--agent` narrows them. Hook assets are canonical-only (placed only in the canonical location, never injected into host config; the user wires them by hand — see relay-v2-protocol.md §12.4).
+- `install`: asset files → canonical location `~/.agents/{skills,agents,hooks}/<name>/` → platform projection into each agent directory per the manifest's `targets` (`symlink` on Unix-like hosts; `junction` for native-Windows directory assets when available, managed `copy` fallback/file assets otherwise). By default all targets are projected; `--agent` narrows them. Hook assets are canonical-only (placed only in the canonical location, never injected into host config; the user wires them by hand — see relay-v2-protocol.md §12.4).
 - Overwrite semantics: target already exists and is not oma-managed → refuse; `--force` backs up first, then overwrites (see security-contract.md §2).
 - `rollback`: restores from `~/.config/oma/backups/`; when `--to` is omitted, the most recent backup is used.
 - `link --dev`: rewrites the canonical entry to a symlink pointing at the repo checkout; the registry is marked `dev: true`.
@@ -45,7 +45,7 @@ oma doctor [--json]
 oma doctor budget --agent claude --profile core4 --max-resident-tokens 2000 [--json]
 ```
 
-- `doctor` runs every item in the check registry: install consistency (registry vs. actual projection), permission bits, refcheck (static command references), security items (world-writable targets, symlink escapes), a report on legacy v1 relay ledgers, and relay v2 leftovers (residual drafts / leftovers with no `.ready`). Exit code 0 all-green / 1 has warnings / 4 has a fail-level item.
+- `doctor` runs every item in the check registry: install consistency (registry vs. actual projection), permission bits, refcheck (static command references), security items (POSIX world-writable targets, projection escapes), a report on legacy v1 relay ledgers, and relay v2 leftovers (residual drafts / leftovers with no `.ready`). Exit code 0 all-green / 1 has warnings / 4 has a fail-level item.
 - `doctor budget`: a deterministic count against the injection-surface model in adapter-conformance.md §5; over the limit exits 4.
 - relay maintenance subitems (belonging to doctor, kept out of the public relay surface): `oma doctor relay [--restore <slug>] [--clean-stale]`.
 

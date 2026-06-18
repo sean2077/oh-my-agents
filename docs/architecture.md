@@ -8,7 +8,7 @@ oma is a single Go binary (`oma`) plus a set of agent-neutral markdown skills. T
 
 ## The asset model: one canonical store, projected to two hosts
 
-Assets — skills, subagents, hooks, prompts — live once in a canonical store and are projected by symlink into each host's directory:
+Assets — skills, subagents, hooks, prompts — live once in a canonical store and are projected into each host's directory (symlink on Unix-like hosts; junction/copy on native Windows):
 
 ```
 ~/.agents/                  canonical asset store (shared with the npx-skills ecosystem)
@@ -16,7 +16,7 @@ Assets — skills, subagents, hooks, prompts — live once in a canonical store 
   agents/<name>.md          subagent
   hooks/<name>/             hook (manifest + fragment; canonical-only)
   prompts/<name>.md         prompt
-        |  projection (symlink)
+        |  projection (symlink on Unix, junction/copy on native Windows)
         v
 ~/.claude/   ~/.codex/      per-agent directories
 ```
@@ -36,7 +36,7 @@ oh-my-agents/
 │   ├── cli/                 cobra command layer — thin shells; logic lives below
 │   ├── asset/               manifest / install / projection / backup / registry
 │   ├── assetaudit/          catalog bloat audit (orphan / oversized / retire), advisory
-│   ├── agentdir/            per-agent directory resolution (claude / codex paths, symlinks)
+│   ├── agentdir/            per-agent directory resolution (claude / codex paths, projection kind)
 │   ├── state/               project-level .oma/state/*.json (atomic 0600 writes)
 │   ├── relay/               relay v2: ledger, sentinel, sidecars, heartbeat, publish, receipt, evidence, hook dispatcher, wait, statusline
 │   ├── interview/           deep-interview scoring, threshold gate, round state machine

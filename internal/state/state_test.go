@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -24,13 +25,15 @@ func TestSetThenGet(t *testing.T) {
 	if err != nil || !ok || v != "planning" {
 		t.Fatalf("get = %q ok=%v err=%v", v, ok, err)
 	}
-	// file lands at the namespace path with 0600
+	// file lands at the namespace path with 0600 on POSIX. Windows exposes ACLs
+	// through approximate mode bits, so the exact permission assertion is not
+	// meaningful there.
 	path := filepath.Join(s.ProjectRoot, ".oma", "state", "autopilot.json")
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatalf("stat: %v", err)
 	}
-	if info.Mode().Perm() != 0o600 {
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Fatalf("mode = %v, want 0600", info.Mode().Perm())
 	}
 }
