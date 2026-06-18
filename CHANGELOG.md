@@ -4,6 +4,15 @@
 >
 > Section heading format: `## vX.Y.Z - YYYY-MM-DD` (CI matches the tag by exact prefix; a tag with no matching section fails the release, fail-closed).
 
+## v0.5.1 - 2026-06-19
+
+This is a skills/docs-only patch release. It tightens the authoring and delivery contracts that sit around the binary, with no CLI behavior or schema change.
+
+- **pair-delivery review discipline**: the bundled skill now makes reviewer independence explicit, separates spec-compliance judgment from the published quality verdict, blocks pre-judged review prompts, and requires file/line-backed findings where repository content is at issue.
+- **Review reception and completion gates**: leads must clarify unclear findings, independently verify each review item, record dispositions, and avoid completion claims until fresh verifier evidence and a local VCS diff check have happened in the current turn.
+- **Skill authoring guide**: `docs/skill-authoring.md` captures the SP-1 guidance from the Superpowers borrowing plan: match the instruction form to the failure, write `description` as WHEN rather than WHAT, use persuasion deliberately, and close loopholes with rationalization / STOP templates.
+- **skillify trigger hygiene**: `skillify` now enforces `description = WHEN, not WHAT` during authoring and models that rule in its own resident description, reducing its resident trigger text while pointing authors to the new guide.
+
 ## v0.5.0 - 2026-06-18
 
 This release makes native Windows / Codex Desktop a first-class install target for the CLI + skills workflow. It preserves the canonical `~/.agents/` asset model while using Windows-native projection mechanics where they are available.
