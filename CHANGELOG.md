@@ -4,6 +4,13 @@
 >
 > Section heading format: `## vX.Y.Z - YYYY-MM-DD` (CI matches the tag by exact prefix; a tag with no matching section fails the release, fail-closed).
 
+## v0.5.2 - 2026-06-19
+
+This is a targeted skills-installer compatibility patch. It restores `autopilot` discovery through `npx skills` without changing CLI behavior or the workflow contract.
+
+- **autopilot installer discovery**: the bundled `autopilot` skill description is now quoted as portable YAML frontmatter, so `npx skills add sean2077/oh-my-agents --skill autopilot` can discover and install it instead of silently skipping the skill.
+- **Release gate coverage**: the real-assets release gate now parses every shipped `SKILL.md` frontmatter with the same YAML assumptions expected by external skill installers, preventing malformed metadata from shipping again.
+
 ## v0.5.1 - 2026-06-19
 
 This is a skills/docs-only patch release. It tightens the authoring and delivery contracts that sit around the binary, with no CLI behavior or schema change.
