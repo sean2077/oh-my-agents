@@ -1,11 +1,13 @@
 ---
 name: skillify
-description: Capture a workflow you just performed into a reusable oma skill (SKILL.md + manifest), gated by a 3-question quality test (reusable? general? worth the resident cost?). Use after a repeatable method emerges — keeps the catalog small and high-value.
+description: Use when a just-performed workflow may be reusable enough to become an oma skill.
 ---
 
 # skillify
 
 Turn a workflow you just performed into a reusable oma skill — a `SKILL.md` + `manifest.json` under `assets/skills/<name>/` — but only when it clears the quality gate. The goal is a small, high-value catalog, not hoarding every one-off.
+
+Use [`docs/skill-authoring.md`](../../../docs/skill-authoring.md) when writing or reviewing the skill text. In particular, enforce `description = WHEN, not WHAT`: a skill description is resident trigger text, not a summary of the workflow.
 
 ## Quality gate (all three must hold)
 
@@ -47,9 +49,11 @@ Before writing, distill what you just did into the reusable shape: the trigger /
    ```
    ---
    name: <name>
-   description: <one line, ≤ ~80 tokens: what it does + when to trigger>
+   description: <one line, ≤ ~80 tokens: WHEN to use this skill, not WHAT it does>
    ---
    ```
+
+   Reject descriptions that summarize the workflow. The description must name the trigger situation, input, or boundary that should load the skill. Put the actual method in the body.
 
    Body = the workflow ONLY: the steps, the judgment at each, the hard rules, the stop conditions. Keep it agent-neutral (plain `oma` commands + markdown); mark any Claude-Code-only acceleration as a clearly-optional block. Installation/troubleshooting goes to docs, never the skill body.
 3. **manifest.json**:
@@ -60,13 +64,14 @@ Before writing, distill what you just did into the reusable shape: the trigger /
 
 ## Verify before declaring done
 
-- The description is genuinely ≤ ~80 tokens (it is resident on every session). Run `oma doctor budget` after installing.
+- The description says WHEN to use the skill, not WHAT the workflow does, and is genuinely ≤ ~80 tokens (it is resident on every session). Run `oma doctor budget` after installing.
 - Every `oma` command the skill names actually exists (so refcheck passes).
 - The body carries workflow, not prose padding.
 
 ## Hard rules
 
 1. The quality gate is not optional — a skill that fails it pollutes everyone's resident context.
-2. Workflow only in the body; platform/install/troubleshooting → docs.
-3. Agent-neutral default path; any CC-only path clearly marked optional.
-4. Never duplicate an existing skill's intent.
+2. `description = WHEN, not WHAT` — reject workflow summaries in resident trigger text.
+3. Workflow only in the body; platform/install/troubleshooting → docs.
+4. Agent-neutral default path; any CC-only path clearly marked optional.
+5. Never duplicate an existing skill's intent.
