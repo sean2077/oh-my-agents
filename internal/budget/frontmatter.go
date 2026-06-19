@@ -48,6 +48,9 @@ func ReadFrontmatterFile(path string) (map[string]string, error) {
 				return nil, fmt.Errorf("frontmatter line is not key: value: %q", line)
 			}
 			lastKey = strings.TrimSpace(key)
+			if _, exists := fm[lastKey]; exists {
+				return nil, fmt.Errorf("duplicate frontmatter key %q", lastKey)
+			}
 			v := strings.TrimSpace(value)
 			lastIsBlock = v == "|" || v == ">" || v == ">-" || v == "|-"
 			if lastIsBlock {

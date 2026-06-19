@@ -32,9 +32,10 @@
 ## 3. Generic project state `.oma/state/<namespace>.json` (`oma-state/1`)
 
 ```json
-{"schema": "oma-state/1", "namespace": "autopilot", "data": {"<key>": "<string value>"}, "updated": "ISO-8601"}
+{"schema": "oma-state/1", "namespace": "autopilot-release-20260619", "data": {"<key>": "<string value>"}, "updated": "ISO-8601"}
 ```
 - The carrier for `oma state get/set`; values are always strings, leaving any structure to the caller.
+- Workflows that can run concurrently should use a scoped namespace (for example `autopilot-<scope>`, `ralph-<id>`, `interview-<id>`) instead of a shared project-global namespace.
 
 ## 4. relay v2 `session.json` (`oma-relay/2`, see relay-v2-protocol.md)
 

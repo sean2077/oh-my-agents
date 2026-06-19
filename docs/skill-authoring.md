@@ -99,6 +99,7 @@ Close loopholes with a required artifact, command result, state transition, or e
 
 ## Authoring checklist
 
+- `SKILL.md` starts with frontmatter containing exactly one `name` key and exactly one `description` key; duplicate top-level keys are invalid.
 - The description says WHEN to use the skill, not WHAT the skill does.
 - The body carries workflow judgment only: steps, decision points, hard rules, stop conditions, and verification.
 - The form matches the failure: recipe for shape, prohibition or STOP gate for discipline.

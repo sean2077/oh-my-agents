@@ -56,6 +56,18 @@ func TestReadFrontmatterRejectsMissingBlock(t *testing.T) {
 	}
 }
 
+func TestReadFrontmatterRejectsDuplicateKey(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "SKILL.md")
+	md := "---\nname: first\nname: second\ndescription: x\n---\nbody"
+	if err := os.WriteFile(path, []byte(md), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadFrontmatterFile(path); err == nil || !strings.Contains(err.Error(), "duplicate frontmatter key") {
+		t.Fatalf("duplicate key: err = %v, want duplicate-key failure", err)
+	}
+}
+
 func installSkillWithFrontmatter(t *testing.T, home, name, description string) *asset.Engine {
 	t.Helper()
 	eng := asset.NewEngine(home)

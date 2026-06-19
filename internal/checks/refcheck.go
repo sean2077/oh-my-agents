@@ -67,6 +67,7 @@ func collectMarkdown(root string) ([]string, error) {
 
 var fenceRe = regexp.MustCompile("(?s)```.*?```")
 var inlineRe = regexp.MustCompile("`[^`\n]+`")
+var commandSeparatorRe = regexp.MustCompile(`[;|&<>()]`)
 
 // ExtractOmaRefs pulls candidate `oma <tokens>` command references from
 // markdown code blocks and inline code spans. Each ref is the token list
@@ -112,7 +113,7 @@ func ExtractOmaRefs(md string) [][]string {
 
 // splitCommands cuts a line at shell separators: ; | & && || > < $( )
 func splitCommands(line string) []string {
-	return regexp.MustCompile(`[;|&<>()]`).Split(line, -1)
+	return commandSeparatorRe.Split(line, -1)
 }
 
 // validateRef resolves the longest registered prefix. Empty return = valid.

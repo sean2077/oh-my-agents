@@ -29,6 +29,15 @@ go vet ./...
 
 CI runs the test matrix, `gofmt` / `vet` / `build`, and `golangci-lint` on every push and PR. The release workflow cross-compiles six platforms with a checksums manifest and a tag-version gate.
 
+## Releasing
+
+Releases are changelog-first and tag-triggered:
+
+1. Update [`CHANGELOG.md`](CHANGELOG.md) with a section headed `## vX.Y.Z - YYYY-MM-DD`; the GitHub Release body is extracted from that section.
+2. Run the local gate: `gofmt -l .`, `go vet ./...`, `go test ./...`, and `make release VERSION=vX.Y.Z`.
+3. Commit the changelog and related release changes, then create an annotated `vX.Y.Z` tag.
+4. Push the branch and tag. The release workflow verifies the changelog section, rebuilds assets, checks the version stamp and checksums, then creates or updates the GitHub Release.
+
 ### The quality gates
 
 Beyond `go test`, CI enforces:

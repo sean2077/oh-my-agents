@@ -112,6 +112,14 @@ func assertPortableSkillFrontmatter(t *testing.T, path string) {
 		t.Fatalf("skill frontmatter %s: block never closed with ---", path)
 	}
 
+	strictFM, err := budget.ReadFrontmatterFile(path)
+	if err != nil {
+		t.Fatalf("skill frontmatter %s is outside oma's supported YAML subset: %v", path, err)
+	}
+	if strings.TrimSpace(strictFM["name"]) == "" || strings.TrimSpace(strictFM["description"]) == "" {
+		t.Fatalf("skill frontmatter %s: name and description are required", path)
+	}
+
 	var fm struct {
 		Name        string `yaml:"name"`
 		Description string `yaml:"description"`

@@ -34,7 +34,7 @@ oma state get <key> [--file <path>] [--json]
 oma state set <key> <value> [--file <path>]
 ```
 
-- The default file is `.oma/state/<namespace>.json`, with keys of the form `<namespace>/<field>` (e.g. `autopilot/phase`); `--file` overrides the whole file path.
+- The default file is `.oma/state/<namespace>.json`, with keys of the form `<namespace>/<field>` (e.g. `autopilot-release-20260619/phase`); `--file` overrides the whole file path.
 - Writes: atomic via tmp+rename, mode 0600; concurrency safety is guaranteed by the atomicity of rename (last writer wins; state files take no lock — the workflow convention is a single writer).
 - A value is always stored as a string; structured data is serialized by the caller (keeping state semantics minimal).
 

@@ -61,7 +61,8 @@ Fields: `id, phase, goal, keep_policy(pass_only|score_improvement, default pass_
 ## 3. autopilot — a pure-markdown workflow (no dedicated command surface)
 
 - There is no `oma autopilot *` command and none may be added (a change requires reopening the spec and re-reviewing this document).
-- Persistent state uses the generic `oma state` under the `autopilot/` namespace (e.g. `autopilot/phase`, `autopilot/plan-path`).
+- Persistent state uses the generic `oma state` under a scoped namespace. New runs use `autopilot-<scope>/phase`, `autopilot-<scope>/goal`, and `autopilot-<scope>/plan-path`, where `<scope>` is derived from the host session, worktree, or task goal. The unscoped `autopilot/` namespace is legacy single-run state only.
+- Resume discovery must not guess across concurrent runs: if more than one non-`done` `autopilot*.json` state file exists, the agent asks which namespace to resume.
 - Skill-text skeleton: clarify (may invoke interview) → plan → implement → verify (may invoke ralph) → deliver; each step records state so an interrupted session can resume.
 - CC acceleration branch (explicitly marked): Plan mode / subagent parallel exploration is available; the Codex default path runs the pure-text flow plus `oma state`.
 
