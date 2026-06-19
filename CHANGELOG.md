@@ -4,6 +4,17 @@
 >
 > Section heading format: `## vX.Y.Z - YYYY-MM-DD` (CI matches the tag by exact prefix; a tag with no matching section fails the release, fail-closed).
 
+## v0.6.0 - 2026-06-19
+
+This release makes autonomous workflows safer to run side by side in one checkout, and tightens the shipped skill metadata gate that protects resident trigger text.
+
+- **Scoped autopilot state**: the bundled `autopilot` skill now uses a scoped `autopilot-<scope>/...` state namespace for new runs, with the old `autopilot/...` namespace reserved for legacy single-run recovery. This lets the same repository host multiple independent autopilot workflows without project-global state collisions.
+- **Workflow state guidance**: the workflow and schema references now spell out the scoped-state rule for concurrent workflows, including resume behavior when more than one autopilot namespace is active.
+- **Skill frontmatter hardening**: the frontmatter parser now rejects duplicate top-level keys instead of allowing a later value to shadow `name` or `description`, and the real-assets release gate applies the strict parser to every shipped skill.
+- **Version schema registry fix**: `oma version --json` now reports the current `oma-ralph/2` and `oma-relay/4` artifact schemas instead of stale pre-upgrade values.
+- **Maintenance docs**: the contributing guide now includes the changelog-first release checklist, and the skill authoring / adapter conformance docs record the supported frontmatter subset.
+- **Refcheck cleanup**: the markdown command-reference checker reuses its command separator regexp instead of recompiling it for every scanned line.
+
 ## v0.5.2 - 2026-06-19
 
 This is a targeted skills-installer compatibility patch. It restores `autopilot` discovery through `npx skills` without changing CLI behavior or the workflow contract.
