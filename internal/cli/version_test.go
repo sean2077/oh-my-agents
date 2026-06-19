@@ -33,6 +33,12 @@ func TestVersionJSONContract(t *testing.T) {
 	if out.Schemas["relay"] != "oma-relay/2" {
 		t.Fatalf("relay schema = %q, want oma-relay/2", out.Schemas["relay"])
 	}
+	if out.Schemas["relay_artifact"] != "oma-relay/4" {
+		t.Fatalf("relay artifact schema = %q, want oma-relay/4", out.Schemas["relay_artifact"])
+	}
+	if out.Schemas["ralph"] != "oma-ralph/2" {
+		t.Fatalf("ralph schema = %q, want oma-ralph/2", out.Schemas["ralph"])
+	}
 	if out.Schemas["config"] != "oma-config/1" {
 		t.Fatalf("config schema = %q, want oma-config/1", out.Schemas["config"])
 	}
