@@ -36,6 +36,7 @@
 ```
 - The carrier for `oma state get/set`; values are always strings, leaving any structure to the caller.
 - Workflows that can run concurrently should use a scoped namespace (for example `autopilot-<scope>`, `ralph-<id>`, `interview-<id>`) instead of a shared project-global namespace.
+- `oma state list [namespace-prefix] --json` discovers validated namespaces in the current worktree only; matching corrupt state fails closed instead of being skipped.
 
 ## 4. relay v2 `session.json` (`oma-relay/2`, see relay-v2-protocol.md)
 

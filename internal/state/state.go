@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -33,6 +34,14 @@ type File struct {
 	Namespace string            `json:"namespace"`
 	Data      map[string]string `json:"data"`
 	Updated   string            `json:"updated"`
+}
+
+// Entry is one validated state namespace returned by List.
+type Entry struct {
+	Namespace string            `json:"namespace"`
+	Data      map[string]string `json:"data"`
+	Updated   string            `json:"updated"`
+	Path      string            `json:"path"`
 }
 
 // Store resolves and mutates state files for one project.
@@ -121,6 +130,42 @@ func (s *Store) Get(key, override string) (value string, ok bool, err error) {
 	}
 	v, ok := f.Data[field]
 	return v, ok, nil
+}
+
+// List returns validated state namespaces under the project state directory,
+// optionally filtered by namespace prefix. It fails closed on any matching
+// corrupt state file so discovery cannot silently route a workflow at the
+// wrong run.
+func (s *Store) List(prefix string) ([]Entry, error) {
+	if prefix != "" && !nsRe.MatchString(prefix) {
+		return nil, fmt.Errorf("%w: namespace prefix %q (want lowercase letters, digits, dashes)", ErrState, prefix)
+	}
+	if s.ProjectRoot == "" {
+		return nil, fmt.Errorf("%w: no project root (run inside a git project)", ErrState)
+	}
+	dir := filepath.Join(s.ProjectRoot, ".oma", "state")
+	matches, err := filepath.Glob(filepath.Join(dir, "*.json"))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Entry, 0, len(matches))
+	for _, path := range matches {
+		ns := strings.TrimSuffix(filepath.Base(path), ".json")
+		if prefix != "" && !strings.HasPrefix(ns, prefix) {
+			continue
+		}
+		f, err := load(path, ns)
+		if err != nil {
+			return nil, err
+		}
+		data := make(map[string]string, len(f.Data))
+		for k, v := range f.Data {
+			data[k] = v
+		}
+		out = append(out, Entry{Namespace: f.Namespace, Data: data, Updated: f.Updated, Path: path})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Namespace < out[j].Namespace })
+	return out, nil
 }
 
 // Set writes key=value atomically (tmp+rename, 0600, dirs 0700). When

@@ -53,10 +53,10 @@ type sentinel struct {
 	Created time.Time `json:"created"`
 }
 
-// DefaultRoot resolves `<git main worktree toplevel>/.oma/relay` starting
-// from dir (protocol §1). A linked worktree's .git FILE is followed to
-// the main repository so both sides of a same-host pair agree on one
-// ledger root.
+// DefaultRoot resolves `<current git worktree toplevel>/.oma/relay` starting
+// from dir (protocol §1). A linked worktree's .git FILE marks the current
+// checkout root; it is not followed back to the main repository, so separate
+// worktrees can host independent workflow ledgers by default.
 func DefaultRoot(dir string) (string, error) {
 	top, err := gitToplevel(dir)
 	if err != nil {
@@ -74,19 +74,10 @@ func gitToplevel(dir string) (string, error) {
 		gitPath := filepath.Join(dir, ".git")
 		info, statErr := os.Stat(gitPath)
 		if statErr == nil {
-			if info.IsDir() {
+			if info.IsDir() || info.Mode().IsRegular() {
 				return dir, nil
 			}
-			// Linked worktree: .git is a file "gitdir: <main>/.git/worktrees/<name>"
-			raw, readErr := os.ReadFile(gitPath)
-			if readErr != nil {
-				return "", readErr
-			}
-			gitdir := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(string(raw)), "gitdir:"))
-			if i := strings.Index(gitdir, string(filepath.Separator)+".git"+string(filepath.Separator)+"worktrees"+string(filepath.Separator)); i >= 0 {
-				return gitdir[:i], nil
-			}
-			return dir, nil // unusual layout: fall back to this checkout
+			return "", fmt.Errorf("%w: .git at %s is neither directory nor file", ErrRelay, gitPath)
 		}
 		if !os.IsNotExist(statErr) {
 			return "", statErr

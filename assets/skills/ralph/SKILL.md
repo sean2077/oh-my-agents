@@ -16,7 +16,7 @@ You iterate on a goal until a verifier proves it done, with the stop judgment so
 oma ralph start --goal "<what done means>" --max-rounds 10 --stall-window 3 --id <slug>
 ```
 
-`--goal` is required and should be verifiable ("go test ./... passes", not "make it better"). `--id` is optional — a timestamp is used by default and a single running loop auto-resolves; pass it only to disambiguate parallel loops. Inspect state after an interruption with `oma ralph status --json` (read-only — it carries no stop verdict); resume the loop by continuing the `next → work → check` cycle below.
+`--goal` is required and should be verifiable ("go test ./... passes", not "make it better"). `--id` is optional — a timestamp is used by default and a single running loop auto-resolves; pass a task/session slug when multiple loops may run side by side in the same worktree. Inspect state after an interruption with `oma ralph status --json` when there is only one running loop, or `oma ralph status --id <slug> --json` when several are active; resume the loop by continuing the `next → work → check` cycle below.
 
 ## Each round
 

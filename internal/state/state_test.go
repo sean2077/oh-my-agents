@@ -63,6 +63,42 @@ func TestMultipleFieldsSameNamespace(t *testing.T) {
 	}
 }
 
+func TestListFiltersByNamespacePrefix(t *testing.T) {
+	s := newStore(t)
+	for _, key := range []string{"autopilot-alpha/phase", "autopilot-beta/phase", "interview-x/phase"} {
+		if _, err := s.Set(key, "running", "", false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	entries, err := s.List("autopilot")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 || entries[0].Namespace != "autopilot-alpha" || entries[1].Namespace != "autopilot-beta" {
+		t.Fatalf("entries = %+v, want sorted autopilot namespaces", entries)
+	}
+	if entries[0].Data["phase"] != "running" || entries[0].Path == "" {
+		t.Fatalf("entry data/path not populated: %+v", entries[0])
+	}
+}
+
+func TestListFailsClosedOnMatchingCorruptState(t *testing.T) {
+	s := newStore(t)
+	if _, err := s.Set("autopilot-good/phase", "running", "", false); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(s.ProjectRoot, ".oma", "state", "autopilot-bad.json")
+	if err := os.WriteFile(path, []byte(`{"schema":"oma-state/9","namespace":"autopilot-bad","data":{}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.List("autopilot"); !errors.Is(err, ErrState) {
+		t.Fatalf("list corrupt matching namespace: err = %v, want ErrState", err)
+	}
+	if entries, err := s.List("interview"); err != nil || len(entries) != 0 {
+		t.Fatalf("nonmatching corrupt state should be ignored by prefix: entries=%+v err=%v", entries, err)
+	}
+}
+
 func TestBadKeysRejected(t *testing.T) {
 	s := newStore(t)
 	for _, key := range []string{"nokeyslash", "../escape/x", "ns/../../x", "UP/x", "ns/with space", "/x", "ns/"} {

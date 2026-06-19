@@ -32,9 +32,11 @@ oma asset link --dev [--repo <path>]            # dogfood: symlink the local che
 ```
 oma state get <key> [--file <path>] [--json]
 oma state set <key> <value> [--file <path>]
+oma state list [namespace-prefix] [--json]
 ```
 
 - The default file is `.oma/state/<namespace>.json`, with keys of the form `<namespace>/<field>` (e.g. `autopilot-release-20260619/phase`); `--file` overrides the whole file path.
+- `list` scans the current worktree's `.oma/state/*.json`, optionally filtering by namespace prefix, and validates every matching file with the same fail-closed schema/namespace checks as `get`.
 - Writes: atomic via tmp+rename, mode 0600; concurrency safety is guaranteed by the atomicity of rename (last writer wins; state files take no lock — the workflow convention is a single writer).
 - A value is always stored as a string; structured data is serialized by the caller (keeping state semantics minimal).
 
@@ -67,7 +69,7 @@ oma ralph abort [--id <id>]
 oma ralph status [--id <id>] [--json]
 ```
 
-- State lands in `.oma/state/interview-<id>.json` / `.oma/state/ralph-<id>.json`; when `--id` is omitted, the **single** non-terminal instance of that type is taken, and ambiguity (>1 active) is refused with the candidates listed.
+- State lands in the current worktree's `.oma/state/interview-<id>.json` / `.oma/state/ralph-<id>.json`; when `--id` is omitted, the **single** non-terminal instance of that type in that worktree is taken, and ambiguity (>1 active) is refused with the candidates listed.
 - The verdict output of `gate`/`next` must contain: the verdict, the numbers it rests on, and the suggested next step (both machine-readable and human-readable forms).
 - **No `oma autopilot *` surface** (autopilot is pure markdown, using general `oma state`; changing this requires reopening the spec).
 - **ralph start ambiguity gate (advisory)**: if `--goal` is too vague (≤15 words and lacking a file/issue/symbol/test-runner anchor), a suggestion is printed to stderr (clarify with deep-interview first, or plan with ralplan) — it does **not** block startup.
@@ -98,7 +100,7 @@ oma relay close --outcome <approve|reject|abandon> --reason <text> [--pair <slug
 - `pair set-lead` updates `session.json.roles.lead` — the confirmation that workflows §4.1 requires after a role swap.
 - `pair new` is the entry point for creating a pair (`ensure`/`join` carry only binding semantics); the creator becomes `roles.lead` by default (protocol §4), and `--peer` defaults to the claude↔codex counterpart. `draft` carries `--corrects <seq>` for the protocol §5 `corrects` field, mandatory when kind=correction.
 - `claim` and `heartbeat` are internal protocol operations and have no public surface: claim is internalized as the sequence-number reservation step of `draft`; the heartbeat is refreshed automatically into this party's heartbeat file whenever any relay subcommand runs; stale diagnosis goes through `oma relay status --json` (the `last_heartbeat`/`stale` fields).
-- **pair resolution order** (protocol §4a): explicit `--pair` ＞ the author-session binding file (`.oma/relay/_bindings/`, written by `pair join|ensure`) ＞ auto-binding when there is exactly one active pair ＞ exit 3 listing candidates, zero writes.
+- **pair resolution order** (protocol §4a): explicit `--pair` ＞ the author-session binding file in the current ledger root (`.oma/relay/_bindings/`, written by `pair join|ensure`) ＞ auto-binding when there is exactly one active pair ＞ exit 3 listing candidates, zero writes.
 - **draft lifecycle**: a draft is created only just before publish (silence during the work period = a wait timeout, not stale; exit 11 = a crash after the peer signals draft intent).
 - `publish` can fold draft fill-in and publication into one step (body/prompt read from files, then through the §7 publish transaction after validation); a draft still containing a `TODO:` placeholder → refused.
 - **A1/A2 quality gate**: a ready `kind:review` **must carry** `--verdict` (approve|approve-with-changes|revise) plus a target seq (`--review-target`, defaulting to `--in-reply-to`, which must be ≥1; otherwise publish refuses); **R5** additionally **requires** a fenced `oma-review-evidence/1` block inside the review body (validated against the verdict + non-placeholder + structured refs), and publish computes an `evidence_hash` into the frontmatter; `kind:decision` automatically stamps a completion receipt (carrying `quality_gate_evidence_hash`) from the "non-lead approve review against the latest work (reviewed_head)". `close --outcome approve` runs through the fail-closed quality gate (protocol §9, including the three-way evidence check): gate not passed → **exit 4**; a corrupt receipt/state/evidence → **exit 3**.

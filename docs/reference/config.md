@@ -21,7 +21,7 @@ Discriminating principle:
 
 - Format: **TOML** (consistent with the user's existing `~/.codex/config.toml` — readable and comment-friendly).
 - User config: `~/.config/oma/config.toml` (XDG; changes accordingly when `OMA_HOME` overrides the home anchor).
-- Project config: `<git main worktree>/.oma/config.toml` (project-level override). **Private/local by default**: `.oma/` is gitignored, so project config is not committed by default; a team that wants to share it must explicitly `git add -f` (sharing is the user's explicit decision, not the default).
+- Project config: `<current git worktree>/.oma/config.toml` (worktree-local project override). **Private/local by default**: `.oma/` is gitignored, so project config is not committed by default; a team that wants to share it must explicitly `git add -f` (sharing is the user's explicit decision, not the default).
 - Both files are **optional**: absent → fall through to lower-precedence sources. Present but with a TOML syntax error / type mismatch / unknown schema major → **fail-closed** (exit 3), never silently ignored.
 
 ## 3. Precedence chain

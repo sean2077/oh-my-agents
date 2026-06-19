@@ -20,7 +20,7 @@ oma interview start --depth deep --type greenfield --id <slug> --idea "<one-line
 
 `--depth` maps quick/standard/deep to thresholds 0.30/0.20/0.10; `--threshold` overrides it; config supplies a default when both are omitted. Use `--type brownfield` when the idea modifies an existing codebase (this adds the required `context` dimension). The first output line reports the resolved threshold and its source — repeat it to the user verbatim before anything else.
 
-Resuming after an interruption: `oma interview status --json`, then continue from the reported phase (`oma interview start --resume --id <slug>` shows an existing interview without modifying it).
+The `--id` is the parallel-instance boundary inside the current worktree; choose a task/session slug when multiple interviews may run side by side. Resuming after an interruption: `oma interview status --json` when there is only one active interview, or `oma interview status --id <slug> --json` when several are active; then continue from the reported phase (`oma interview start --resume --id <slug>` shows an existing interview without modifying it).
 
 ## Round 0: lock the topology
 

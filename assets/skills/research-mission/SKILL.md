@@ -47,7 +47,7 @@ evaluator:
 oma ralph start --keep-policy score_improvement --goal "<mission goal>" --plateau-window 3 --max-rounds <N> --id <slug>
 ```
 
-This IS the "research profile" — a ralph preset expressed through `--keep-policy score_improvement`, not a separate command. `--max-rounds` bounds the search (the `exhausted` terminal below); set it deliberately, since the default of 10 is often too few for a real optimization run.
+This IS the "research profile" — a ralph preset expressed through `--keep-policy score_improvement`, not a separate command. `--id` is the parallel mission boundary inside the current worktree; use a task/session slug when more than one research loop may run. `--max-rounds` bounds the search (the `exhausted` terminal below); set it deliberately, since the default of 10 is often too few for a real optimization run.
 
 Each round:
 

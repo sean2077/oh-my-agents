@@ -4,7 +4,7 @@ Schema marker: `oma-relay/2`. This protocol inherits the **principles** of agent
 
 ## 1. Ledger Root and Legacy Coexistence
 
-- **Default root**: `<top level of the main git worktree>/.oma/relay/`; `--ledger-root <path>` overrides it (advanced use).
+- **Default root**: `<top level of the current git worktree>/.oma/relay/`; `--ledger-root <path>` overrides it when two sessions intentionally want to share a ledger across worktrees.
 - **Never writes** into the agent-ledger v1 `.shared/` tree. v1 is identified by the presence of a `_relay/` directory under the root, or a v1-shaped `session.json` (`schema_version` an integer 1–3).
 - When a legacy `.shared/` tree is present: `oma relay status` and `oma doctor` report it as "v1 ledger: archived / for human reference, oma neither reads nor writes it," and continue using the v2 root. Coexistence requires neither deletion nor migration.
 - `--ledger-root` pointing explicitly at a v1 tree → **rejected**, with the reason stated.
@@ -12,7 +12,7 @@ Schema marker: `oma-relay/2`. This protocol inherits the **principles** of agent
 
 ## 2. Topology and Clock Assumptions
 
-- The v1 release supports only the **same checkout / same host**: both processes share one filesystem and one system clock.
+- The v1 release supports only the **same ledger root / same host**: both processes share one filesystem and one system clock. Separate git worktrees get separate `.oma/relay/` roots by default; use `--ledger-root` only for explicit sharing.
 - Filesystem properties depended upon (verified by `oma doctor` probes): tmp+rename atomicity, O_EXCL exclusive creation; mtime need only distinguish ordering at the `OMA_RELAY_STALE_AFTER` granularity (minutes) — sub-second coarse mtime is a doctor **warning**, not a failure.
 - No protocol fields are reserved for cross-machine transport (YAGNI); future topology changes are carried by `schema_version` evolution.
 

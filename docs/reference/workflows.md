@@ -1,5 +1,17 @@
 # Workflow terminal-state spec (interview / ralph / autopilot / pair-delivery)
 
+## 0. Parallel worktree/session isolation
+
+Workflow state is anchored to the current git worktree by default. A session
+running in worktree A writes to worktree A's `.oma/`; a session running in
+worktree B writes to worktree B's `.oma/`. Cross-worktree sharing is explicit
+only: use a shared `--ledger-root` for relay if that is truly intended.
+
+Within one worktree, workflows must still avoid project-global collisions:
+interview and ralph use explicit ids, relay uses author-session bindings, and
+pure-markdown workflows such as autopilot use scoped `oma state` namespaces
+discoverable through `oma state list`.
+
 ## 1. `oma interview` — the fixed surface of Socratic requirements clarification
 
 Fixing principle: **the math and the state live in the CLI; the questions and the judgment stay with the agent.** The CLI handles score computation, threshold gating, and round/state persistence; question generation, per-dimension scoring, and ontology extraction are performed by the agent per the skill text and then fed to the CLI.
@@ -62,7 +74,7 @@ Fields: `id, phase, goal, keep_policy(pass_only|score_improvement, default pass_
 
 - There is no `oma autopilot *` command and none may be added (a change requires reopening the spec and re-reviewing this document).
 - Persistent state uses the generic `oma state` under a scoped namespace. New runs use `autopilot-<scope>/phase`, `autopilot-<scope>/goal`, and `autopilot-<scope>/plan-path`, where `<scope>` is derived from the host session, worktree, or task goal. The unscoped `autopilot/` namespace is legacy single-run state only.
-- Resume discovery must not guess across concurrent runs: if more than one non-`done` `autopilot*.json` state file exists, the agent asks which namespace to resume.
+- Resume discovery uses `oma state list autopilot --json` and must not guess across concurrent runs: if more than one non-`done` autopilot namespace exists in the current worktree, the agent asks which namespace to resume.
 - Skill-text skeleton: clarify (may invoke interview) → plan → implement → verify (may invoke ralph) → deliver; each step records state so an interrupted session can resume.
 - CC acceleration branch (explicitly marked): Plan mode / subagent parallel exploration is available; the Codex default path runs the pure-text flow plus `oma state`.
 

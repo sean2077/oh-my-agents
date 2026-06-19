@@ -20,6 +20,12 @@ This skill is agent-neutral: the default path below is plain `oma relay` plus ma
 
 ## Every turn: orient, then act
 
+By default the relay ledger lives under the current git worktree's
+`.oma/relay/`, and the binding is per author-session. That lets separate
+sessions in separate worktrees run unrelated pairs or workflows without
+colliding. If a pair intentionally spans different worktrees, both sides must
+use the same explicit `--ledger-root`; do not rely on the default in that case.
+
 ```
 oma relay init
 oma relay pair ensure

@@ -31,9 +31,16 @@ oma state get "$AP_NS/phase"
 - **Any other value** → resume from that phase. `$AP_NS/goal` must exist (read it); `$AP_NS/plan-path` may be absent until either `clarify` records a spec or `plan` produces the file, and must exist from `implement` onward. It always points at the file holding the actionable plan (the spec's plan section is fine, as long as the plan is written there).
 - **A key the current phase depends on is missing** (e.g. phase `implement` but no `plan-path`) → that is recoverable corrupt workflow state: tell the user what is inconsistent and how to repair it (re-set the key or restart the phase); never restart from scratch silently.
 
-If no explicit namespace is known on resume, inspect `.oma/state/autopilot*.json`.
-Resume automatically only when exactly one non-`done` autopilot namespace exists;
-if several are active, ask which namespace to resume rather than guessing.
+If no explicit namespace is known on resume, discover candidates with:
+
+```
+oma state list autopilot --json
+```
+
+Resume automatically only when exactly one listed autopilot namespace has
+`data.phase` other than `done`; if several are active, ask which namespace to
+resume rather than guessing. The list is current-worktree scoped; a different
+git worktree has its own `.oma/state/` by default.
 
 Set the phase key at each transition, never retroactively.
 

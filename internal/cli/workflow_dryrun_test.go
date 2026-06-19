@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -140,5 +142,73 @@ func TestWorkflowCLIOmittedIDFailsClosedOnCorruptState(t *testing.T) {
 	}
 	if code, _ := runOma(t, "interview", "status", "--id", "good"); code != ExitOK {
 		t.Fatal("explicit good id must still work")
+	}
+}
+
+func TestWorkflowStateUsesCurrentWorktreeRoot(t *testing.T) {
+	main := t.TempDir()
+	for _, name := range []string{"one", "two"} {
+		if err := os.MkdirAll(filepath.Join(main, ".git", "worktrees", name), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	worktree := func(name string) string {
+		t.Helper()
+		wt := t.TempDir()
+		gitdir := filepath.Join(main, ".git", "worktrees", name)
+		if err := os.WriteFile(filepath.Join(wt, ".git"), []byte("gitdir: "+gitdir+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return wt
+	}
+	wt1 := worktree("one")
+	wt2 := worktree("two")
+
+	for _, tc := range []struct {
+		root  string
+		phase string
+	}{
+		{wt1, "implement"},
+		{wt2, "verify"},
+	} {
+		t.Chdir(tc.root)
+		if code, out := runOma(t, "state", "set", "autopilot-session/phase", tc.phase); code != ExitOK {
+			t.Fatalf("%s state set exit %d: %s", tc.root, code, out)
+		}
+		if code, out := runOma(t, "interview", "start", "--id", "same", "--idea", "parallel worktree"); code != ExitOK {
+			t.Fatalf("%s interview start exit %d: %s", tc.root, code, out)
+		}
+		if code, out := runOma(t, "ralph", "start", "--id", "same", "--goal", "parallel worktree verifier"); code != ExitOK {
+			t.Fatalf("%s ralph start exit %d: %s", tc.root, code, out)
+		}
+	}
+
+	type stateEntry struct {
+		Namespace string            `json:"namespace"`
+		Data      map[string]string `json:"data"`
+	}
+	readAutopilot := func(root string) []stateEntry {
+		t.Helper()
+		t.Chdir(root)
+		code, out := runOma(t, "state", "list", "autopilot", "--json")
+		if code != ExitOK {
+			t.Fatalf("%s state list exit %d: %s", root, code, out)
+		}
+		var got struct {
+			States []stateEntry `json:"states"`
+		}
+		if err := json.Unmarshal([]byte(out), &got); err != nil {
+			t.Fatalf("state list json: %v\n%s", err, out)
+		}
+		return got.States
+	}
+	if got := readAutopilot(wt1); len(got) != 1 || got[0].Data["phase"] != "implement" {
+		t.Fatalf("wt1 states = %+v, want implement only", got)
+	}
+	if got := readAutopilot(wt2); len(got) != 1 || got[0].Data["phase"] != "verify" {
+		t.Fatalf("wt2 states = %+v, want verify only", got)
+	}
+	if _, err := os.Stat(filepath.Join(main, ".oma")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("primary repo .oma should not be used by linked worktree sessions: %v", err)
 	}
 }
