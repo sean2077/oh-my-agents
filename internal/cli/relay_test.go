@@ -78,6 +78,53 @@ func TestRelayCLIIdentityFailure(t *testing.T) {
 	}
 }
 
+func TestRelayCLIIgnoresWorkflowSessionFlag(t *testing.T) {
+	t.Setenv("OMA_RELAY_AUTHOR", "claude")
+	t.Setenv("CLAUDE_CODE_SESSION_ID", "")
+	t.Setenv("CODEX_THREAD_ID", "")
+	t.Setenv("OMA_SESSION_ID", "")
+	ledger := filepath.Join(t.TempDir(), "relay")
+
+	if code, out := runRelay(t, "--session", "current", "relay", "init", "--ledger-root", ledger); code != ExitOK {
+		t.Fatalf("relay init must ignore workflow --session, exit %d: %s", code, out)
+	}
+}
+
+func TestRelayCLIBindsCodexAndClaudeSessionsToOnePair(t *testing.T) {
+	t.Setenv("OMA_RELAY_AUTHOR", "")
+	t.Setenv("OMA_SESSION_ID", "")
+	ledger := filepath.Join(t.TempDir(), "relay")
+
+	t.Setenv("CODEX_THREAD_ID", "codex-thread")
+	t.Setenv("CLAUDE_CODE_SESSION_ID", "")
+	if code, out := runRelay(t, "--session", "current", "relay", "init", "--ledger-root", ledger); code != ExitOK {
+		t.Fatalf("codex init exit %d: %s", code, out)
+	}
+	code, out := runRelay(t, "--session", "current", "relay", "pair", "new", "pair-scope", "--ledger-root", ledger)
+	if code != ExitOK {
+		t.Fatalf("codex pair new exit %d: %s", code, out)
+	}
+	pair := strings.Split(strings.TrimSpace(out), "\n")[0]
+
+	t.Setenv("CODEX_THREAD_ID", "")
+	t.Setenv("CLAUDE_CODE_SESSION_ID", "claude-thread")
+	if code, out := runRelay(t, "--session", "current", "relay", "pair", "join", pair, "--ledger-root", ledger); code != ExitOK {
+		t.Fatalf("claude pair join exit %d: %s", code, out)
+	}
+	if code, out := runRelay(t, "--session", "current", "relay", "pair", "show", "--ledger-root", ledger); code != ExitOK ||
+		!strings.Contains(out, "pair: "+pair) || !strings.Contains(out, "peer: codex") {
+		t.Fatalf("claude show exit %d: %s", code, out)
+	}
+
+	entries, err := os.ReadDir(filepath.Join(ledger, "_bindings"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("bindings = %d, want codex + claude author-session bindings", len(entries))
+	}
+}
+
 func TestRelayCLIDryRunPublishZeroWrites(t *testing.T) {
 	t.Setenv("OMA_RELAY_AUTHOR", "claude")
 	t.Setenv("CLAUDE_CODE_SESSION_ID", "")

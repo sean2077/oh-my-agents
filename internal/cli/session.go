@@ -2,57 +2,35 @@ package cli
 
 import (
 	"os"
-	"strings"
 
-	workflowsession "github.com/sean2077/oh-my-agents/internal/session"
 	"github.com/sean2077/oh-my-agents/internal/state"
+	"github.com/sean2077/oh-my-agents/internal/workflowstate"
 )
 
-func sessionSuffix() (string, error) {
-	suffix, err := workflowsession.Resolve(WorkflowSession(), os.Getenv)
-	if err != nil {
-		return "", Errf(ExitState, "%v", err)
-	}
-	return suffix, nil
+func workflowScope() workflowstate.Scope {
+	return workflowstate.Scope{Session: WorkflowSession(), Getenv: os.Getenv}
 }
 
 func scopeWorkflowID(id string) (string, error) {
-	suffix, err := sessionSuffix()
-	if err != nil {
-		return "", err
-	}
-	return workflowsession.ScopeName(id, suffix)
-}
-
-func scopeStateKey(key string) (string, error) {
-	ns, field, ok := strings.Cut(key, "/")
-	if !ok {
-		return key, nil
-	}
-	suffix, err := sessionSuffix()
-	if err != nil {
-		return "", err
-	}
-	ns, err = workflowsession.ScopeName(ns, suffix)
+	scoped, err := workflowScope().ID(id)
 	if err != nil {
 		return "", Errf(ExitState, "%v", err)
 	}
-	return ns + "/" + field, nil
+	return scoped, nil
+}
+
+func scopeStateKey(key string) (string, error) {
+	scoped, err := workflowScope().StateKey(key)
+	if err != nil {
+		return "", Errf(ExitState, "%v", err)
+	}
+	return scoped, nil
 }
 
 func filterSessionEntries(entries []state.Entry) ([]state.Entry, error) {
-	suffix, err := sessionSuffix()
+	filtered, err := workflowScope().FilterEntries(entries)
 	if err != nil {
-		return nil, err
+		return nil, Errf(ExitState, "%v", err)
 	}
-	if suffix == "" {
-		return entries, nil
-	}
-	out := entries[:0]
-	for _, ent := range entries {
-		if ent.Namespace == suffix || strings.HasSuffix(ent.Namespace, "-"+suffix) {
-			out = append(out, ent)
-		}
-	}
-	return out, nil
+	return filtered, nil
 }

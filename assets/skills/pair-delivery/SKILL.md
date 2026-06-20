@@ -24,7 +24,9 @@ By default the relay ledger lives under the shared project `.oma/relay/`, even
 when the active code is in a linked worktree under `.worktrees/`. The binding is
 per author-session, so separate sessions can run unrelated pairs or workflows
 without colliding. Use an explicit `--ledger-root` only for a deliberate
-non-project ledger.
+non-project ledger. Do not use workflow `--session` for relay isolation: pair
+delivery is intentionally cross-session, with Codex and Claude Code each bound
+through their own platform author-session.
 
 ```
 oma relay init

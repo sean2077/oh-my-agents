@@ -16,7 +16,8 @@ worktree a separate state universe:
   `oma --session current ralph start --id same` scope the ids before reading or
   writing, so two host sessions can reuse the same human id without colliding.
 - `oma relay` uses the shared project `.oma/relay/` root and separates pairs by
-  author-session binding files.
+  author-session binding files. It intentionally ignores workflow `--session`
+  scoping because a pair is cooperation between two platform sessions.
 
 Without `--session`, commands preserve the legacy project-global behavior:
 explicit ids/namespaces are project-wide, and omitted ids auto-resolve only when
@@ -91,6 +92,7 @@ Fields: `id, phase, goal, keep_policy(pass_only|score_improvement, default pass_
 ## 4. pair-delivery — the paired delivery flow (built on relay v2)
 
 - Roles come from `session.json.roles` (lead/planner/implementer/reviewer can each be assigned to any participant, and one person may hold several; lead is required and unique, defaulting to the initiator).
+- Pair identity is independent of workflow `--session`: Codex and Claude Code each use their platform session identity (`CODEX_THREAD_ID` / `CLAUDE_CODE_SESSION_ID`) and bind to the same pair through `.oma/relay/_bindings/<author-session>.json`.
 - Process gates (identical to this project's own delivery flow): plan (kind: plan) → review (kind: review, verdict approve/approve-with-changes/revise) → implement (recorded in touched_paths) → code review (kind: review) → kind: decision to close out.
 - Skill responsibility: translate the gates above into the sequence of relay command calls and the `prompt_for_next` writing conventions; the revise-loop cap and the @user escalation rule (line-leading `@user:` + `--status timed_out`).
 - Continuation responsibility: after publishing, or whenever the latest artifact is your own, do not start another relay round until the peer publishes, the pair becomes terminal, or the user explicitly tells you to stop. Trusted Stop hooks are the main Codex self-continuation path; held `oma relay wait` is the fallback when hook wiring/trust is unavailable, and any Codex harness wake-ups during that fallback are not completion.
