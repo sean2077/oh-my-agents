@@ -65,7 +65,7 @@ func (l *Ledger) Wait(slug string, timeout time.Duration) (*WaitResult, error) {
 		if err != nil {
 			// The pair directory disappears when the peer closes+archives
 			// mid-wait: an undelivered artifact in the archive still wins.
-			if strings.Contains(err.Error(), "not found") {
+			if errors.Is(err, ErrPairNotFound) {
 				return l.archivedResult(filepath.Join(l.Root, "_archive", s.Pair), peer)
 			}
 			return nil, err
@@ -105,7 +105,7 @@ func (l *Ledger) waitTarget(slug string) (*Session, string, bool, error) {
 		if !errors.Is(archErr, os.ErrNotExist) {
 			return nil, "", false, archErr
 		}
-		return nil, "", false, fmt.Errorf("%w: pair %q not found (active or archived) under %s", ErrRelay, slug, l.Root)
+		return nil, "", false, relayError(ErrPairNotFound, "pair %q not found (active or archived) under %s", slug, l.Root)
 	}
 	s, err := l.ResolvePair("", true)
 	if err != nil {
@@ -123,7 +123,7 @@ func (l *Ledger) loadArchivedSession(slug string) (*Session, string, error) {
 	dir := filepath.Join(l.Root, "_archive", slug)
 	raw, err := os.ReadFile(filepath.Join(dir, "session.json"))
 	if err != nil {
-		return nil, "", fmt.Errorf("%w: no archived pair %q (%w)", ErrRelay, slug, os.ErrNotExist)
+		return nil, "", fmt.Errorf("%w: %w: no archived pair %q (%w)", ErrRelay, ErrPairNotFound, slug, os.ErrNotExist)
 	}
 	var s Session
 	if err := json.Unmarshal(raw, &s); err != nil {

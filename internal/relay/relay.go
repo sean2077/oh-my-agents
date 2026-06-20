@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sean2077/oh-my-agents/internal/atomicfile"
 	"github.com/sean2077/oh-my-agents/internal/projectroot"
 )
 
@@ -30,6 +31,19 @@ const (
 
 // ErrRelay marks fail-closed relay refusals (exit 3 at the CLI).
 var ErrRelay = errors.New("relay refused (fail-closed)")
+
+var (
+	// ErrPairNotFound marks a missing active/archived pair.
+	ErrPairNotFound = errors.New("pair not found")
+	// ErrPairArchived marks an operation that refuses because a pair is archived.
+	ErrPairArchived = errors.New("pair archived")
+	// ErrPairClosing marks an operation that refuses because close is in progress.
+	ErrPairClosing = errors.New("pair closing")
+	// ErrConflict marks a concurrent mutation conflict.
+	ErrConflict = errors.New("relay conflict")
+)
+
+const pairLockTimeout = 30 * time.Second
 
 // Ledger is a v2 ledger rooted at Root. Now and StepHook are injected
 // for deterministic tests; StepHook fires between publish transaction
@@ -162,25 +176,46 @@ func nonEmptyDir(dir string) bool {
 	return err == nil && len(entries) > 0
 }
 
-// writeFileAtomic writes via tmp+rename with the given mode and fsyncs
-// the parent directory.
+// writeFileAtomic writes via a unique same-directory temp, rename, and
+// parent directory sync.
 func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	return atomicfile.Write(path, data, mode)
+}
+
+func relayError(kind error, format string, args ...any) error {
+	msg := fmt.Sprintf(format, args...)
+	if kind == nil {
+		return fmt.Errorf("%w: %s", ErrRelay, msg)
+	}
+	return fmt.Errorf("%w: %w: %s", ErrRelay, kind, msg)
+}
+
+func (l *Ledger) pairLock(slug string) (*atomicfile.Lock, error) {
+	lockRoot := filepath.Join(l.Root, ".locks")
+	if err := os.MkdirAll(lockRoot, 0o700); err != nil {
+		return nil, err
+	}
+	lock, err := atomicfile.AcquireLock(filepath.Join(lockRoot, slug+".lock"), pairLockTimeout)
+	if err != nil {
+		switch {
+		case errors.Is(err, atomicfile.ErrLockHeld):
+			return nil, relayError(ErrConflict, "pair %s is being mutated by another process", slug)
+		case errors.Is(err, os.ErrNotExist):
+			return nil, relayError(ErrPairNotFound, "pair %q not found under %s", slug, l.Root)
+		default:
+			return nil, err
+		}
+	}
+	return lock, nil
+}
+
+func (l *Ledger) withPairLock(slug string, fn func() error) error {
+	lock, err := l.pairLock(slug)
+	if err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, mode); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
-		return err
-	}
-	if d, err := os.Open(filepath.Dir(path)); err == nil {
-		_ = d.Sync()
-		_ = d.Close()
-	}
-	return nil
+	defer func() { _ = lock.Release() }()
+	return fn()
 }
 
 // step fires the test failpoint hook between transaction steps.

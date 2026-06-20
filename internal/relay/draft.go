@@ -91,36 +91,50 @@ func (l *Ledger) CreateDraft(slug, kind string, inReplyTo, corrects *int, dryRun
 	if err != nil {
 		return "", err
 	}
-	if s.Terminal() {
-		return "", fmt.Errorf("%w: pair %s is %s", ErrRelay, s.Pair, s.Status)
-	}
-	peer, err := s.Peer(l.Identity.Author)
-	if err != nil {
-		return "", err
-	}
 	if dryRun {
+		if err := s.mutationError(); err != nil {
+			return "", err
+		}
+		if _, err := s.Peer(l.Identity.Author); err != nil {
+			return "", err
+		}
 		next, err := l.nextSeq(s.Pair)
 		if err != nil {
 			return "", err
 		}
 		return filepath.Join(l.PairDir(s.Pair), ".draft", ArtifactName(next, l.Identity.Author, kind)), nil
 	}
-	seq, err := l.reserveSeq(s.Pair)
-	if err != nil {
-		return "", err
-	}
-	fm := &Frontmatter{
-		Schema: ArtifactSchema, Seq: seq, Author: l.Identity.Author, Peer: peer,
-		Kind: kind, Status: "ready", Created: l.Now().UTC(),
-		InReplyTo: inReplyTo, Corrects: corrects, TouchedPaths: []string{},
-	}
-	if err := fm.Validate(); err != nil {
-		return "", err
-	}
-	draftPath := filepath.Join(l.PairDir(s.Pair), ".draft", ArtifactName(seq, l.Identity.Author, kind))
-	if err := writeFileAtomic(draftPath, Render(fm, draftPlaceholder+"\n"), 0o600); err != nil {
-		return "", err
-	}
-	l.touchHeartbeat(s.Pair)
-	return draftPath, nil
+	var draftPath string
+	err = l.withPairLock(s.Pair, func() error {
+		s, err = l.LoadSession(s.Pair)
+		if err != nil {
+			return err
+		}
+		if err := s.mutationError(); err != nil {
+			return err
+		}
+		peer, err := s.Peer(l.Identity.Author)
+		if err != nil {
+			return err
+		}
+		seq, err := l.reserveSeq(s.Pair)
+		if err != nil {
+			return err
+		}
+		fm := &Frontmatter{
+			Schema: ArtifactSchema, Seq: seq, Author: l.Identity.Author, Peer: peer,
+			Kind: kind, Status: "ready", Created: l.Now().UTC(),
+			InReplyTo: inReplyTo, Corrects: corrects, TouchedPaths: []string{},
+		}
+		if err := fm.Validate(); err != nil {
+			return err
+		}
+		draftPath = filepath.Join(l.PairDir(s.Pair), ".draft", ArtifactName(seq, l.Identity.Author, kind))
+		if err := writeFileAtomic(draftPath, Render(fm, draftPlaceholder+"\n"), 0o600); err != nil {
+			return err
+		}
+		l.touchHeartbeat(s.Pair)
+		return nil
+	})
+	return draftPath, err
 }

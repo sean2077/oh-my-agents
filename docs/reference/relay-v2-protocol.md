@@ -21,8 +21,9 @@ Schema marker: `oma-relay/2`. This protocol inherits the **principles** of agent
 ```
 .oma/relay/
 ├── .oma-relay-v2                  # sentinel
+├── .locks/<pair-slug>.lock         # pair mutation lock (atomic mkdir)
 ├── _bindings/<author-session>.json # pair binding (schema oma-relay-binding/1, see §4a)
-├── <pair-slug>/                   # YYYYMMDD-<topic-slug>
+├── <pair-slug>/                   # YYYYMMDD-<topic-slug>[-rand]
 │   ├── session.json               # pair metadata (schema in schemas.md §4)
 │   ├── NNN-<author>-<kind>.md     # published artifact (append-only)
 │   ├── NNN-<author>-<kind>.md.sha256
@@ -45,8 +46,10 @@ Permissions: directories 0700, files 0600 (checked by `oma doctor`).
 
 ## 4a. Pair Binding and Resolution
 
+- `oma relay pair new <topic>` first tries `YYYYMMDD-<topic>`; if that directory already exists, it atomically creates a `YYYYMMDD-<topic>-<rand>` variant. The topic remains a label, not the uniqueness primitive.
 - `oma relay pair join <slug>` (and the automatic-binding path of `pair ensure`) writes the binding file `.oma/relay/_bindings/<author-session>.json` (schema `oma-relay-binding/1`): `author`, the platform session-id hash, `pair`, `created`, `updated`.
 - **All pair-scoped commands** (draft/publish/wait/status/close/pair show) resolve their target pair in this order: an explicit `--pair <slug>` > the current author-session's binding file > exactly one active pair, which is adopted automatically and the binding written > otherwise **exit 3, zero writes**, listing the candidate pairs.
+- Active means `session.status == "active"`; `closing` is visible to status/show but is not auto-adopted and refuses new writes.
 - An unknown binding schema, a binding pointing at a nonexistent or already-terminal pair, or multiple active pairs that cannot be disambiguated → exit 3, zero writes.
 - `pair show` displays the resolution result and the peer's join command; `pair list --json` lists all pairs, both active and terminal.
 
@@ -68,9 +71,9 @@ Permissions: directories 0700, files 0600 (checked by `oma doctor`).
 
 ## 7. Publish Transaction and Interruption Recovery
 
-A **draft is a durable publish intent**: until the `.ready` is written, the draft and its `.seq` reservation always exist; publish never consumes the draft body itself as an intermediate product.
+A **draft is a durable publish intent**: until the `.ready` is written, the draft and its `.seq` reservation always exist; publish never consumes the draft body itself as an intermediate product. Draft creation, publish, set-lead, and close all run under the pair mutation lock `.oma/relay/.locks/<pair>.lock`.
 
-publish steps (strict order): **render** the formal content from the draft → write `NNN-<author>-<kind>.md.tmp` → fsync → rename to the formal name → write `.sha256.tmp` → rename `.sha256` → write `.ready.tmp` → rename `.ready` → **finally** delete the draft and the `.seq` reservation.
+publish steps (strict order): **render** the formal content from the draft → write a unique same-directory temp for `NNN-<author>-<kind>.md` → fsync → rename to the formal name → write+rename unique temps for `.sha256` and `.ready` → **finally** delete the draft and the `.seq` reservation.
 
 - No `.ready` = unpublished, ignored by every reader — this is the sole publication criterion.
 - Interrupted re-run: `oma relay publish <draft>` re-renders from the still-existing draft and completes the missing steps/sidecars (including a kill after the rename — the draft is still there); if an existing formal file and the draft's re-rendered content disagree → fail-closed, prompting `oma doctor relay --clean-stale` to quarantine the incomplete formal file.
@@ -88,7 +91,7 @@ publish steps (strict order): **render** the formal content from the draft → w
 
 ## 9. Terminal State and Archival
 
-- `oma relay close --outcome <approve|reject|abandon> --reason <text>`: write the session.json terminal state → write the `CLOSED` sentinel → move the whole thing into `_archive/`.
+- `oma relay close --outcome <approve|reject|abandon> --reason <text>`: acquire the pair mutation lock → write `session.status="closing"` → re-check the approve gate inside the lock when needed → write the terminal session state → write the `CLOSED` sentinel → move the whole thing into `_archive/`. If the gate fails before terminal state is committed, `closing` rolls back to `active`.
 - **approve quality gate (A2, fail-closed)**: `--outcome approve` is rejected unless the latest lead `kind:decision` carries a valid receipt and: ① the receipt's `reviewed_head` (the approved work) is still consistent by hash; ② a **non-lead** `kind:review` (verdict=approve) exists **against that reviewed_head** (review_target_seq==reviewed_head) and is consistent by hash; ③ there is **no newer unreviewed work** after reviewed_head; ④ (**R5**, additionally) the recomputed canonicalized hash of that approve review body's `oma-review-evidence/1` block must == its frontmatter `evidence_hash` == the receipt's `quality_gate_ref.evidence_hash`. `approve-with-changes`, a lead self-review, or a stale target all fail to satisfy the gate. **Exit codes (R4)**: gate not passed (no decision/review, verdict mismatch, stale target, newer unreviewed work) → **exit 4**; corrupt receipt/artifact, hash or evidence mismatch → **exit 3**. `reject`/`abandon` require no receipt.
 - Archived contents are read-only; restore and cleanup are `oma doctor` subchecks (for the command surface see command-tree.md).
 
@@ -114,6 +117,7 @@ publish steps (strict order): **render** the formal content from the draft → w
 | 10 | --ledger-root points at v1 | rejected |
 | 11 | v2 root unknown schema | rejected |
 | 12 | pair binding resolution | multiple active pairs with no disambiguation → exit 3, zero writes, candidates listed; `--pair` override takes effect; a single active pair auto-binds to disk |
+| 13 | pair mutation transaction | close/publish/draft/set-lead contend on the pair mutation lock; `closing` refuses new writes; close gate failure rolls back to `active` |
 
 ## 12. Experience Layer (B12–B14)
 

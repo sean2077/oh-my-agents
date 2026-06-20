@@ -1,6 +1,8 @@
 package relay
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +12,14 @@ import (
 	"sort"
 	"strings"
 	"time"
+)
+
+const (
+	StatusActive    = "active"
+	StatusClosing   = "closing"
+	StatusClosed    = "closed"
+	StatusCancelled = "cancelled"
+	StatusFailed    = "failed"
 )
 
 // Session is the pair metadata document (docs/reference/schemas.md §4).
@@ -37,7 +47,20 @@ var knownRoles = map[string]bool{"lead": true, "planner": true, "implementer": t
 
 // Terminal reports whether the session reached an end state.
 func (s *Session) Terminal() bool {
-	return s.Status == "closed" || s.Status == "cancelled" || s.Status == "failed"
+	return s.Status == StatusClosed || s.Status == StatusCancelled || s.Status == StatusFailed
+}
+
+func (s *Session) mutationError() error {
+	switch {
+	case s.Status == StatusClosing:
+		return relayError(ErrPairClosing, "pair %s is closing", s.Pair)
+	case s.Terminal():
+		return fmt.Errorf("%w: pair %s is %s", ErrRelay, s.Pair, s.Status)
+	case s.Status != StatusActive:
+		return fmt.Errorf("%w: pair %s has unsupported status %q", ErrRelay, s.Pair, s.Status)
+	default:
+		return nil
+	}
 }
 
 // Validate enforces the schema contract including the roles.lead
@@ -77,7 +100,7 @@ func (s *Session) Validate() error {
 		}
 	}
 	switch s.Status {
-	case "active", "closed", "cancelled", "failed":
+	case StatusActive, StatusClosing, StatusClosed, StatusCancelled, StatusFailed:
 	default:
 		return fmt.Errorf("%w: session status %q", ErrRelay, s.Status)
 	}
@@ -103,7 +126,7 @@ func (l *Ledger) PairDir(slug string) string { return filepath.Join(l.Root, slug
 func (l *Ledger) LoadSession(slug string) (*Session, error) {
 	raw, err := os.ReadFile(filepath.Join(l.PairDir(slug), "session.json"))
 	if errors.Is(err, os.ErrNotExist) {
-		return nil, fmt.Errorf("%w: pair %q not found under %s", ErrRelay, slug, l.Root)
+		return nil, relayError(ErrPairNotFound, "pair %q not found under %s", slug, l.Root)
 	}
 	if err != nil {
 		return nil, err
@@ -145,7 +168,7 @@ func (l *Ledger) ActivePairs() ([]string, error) {
 		if err != nil {
 			continue // corrupt pairs surface via status/doctor, not listing
 		}
-		if !s.Terminal() {
+		if s.Status == StatusActive {
 			active = append(active, slug)
 		}
 	}
@@ -185,63 +208,131 @@ func (l *Ledger) NewPair(topic, peer, project string, dryRun bool) (*Session, er
 			return nil, fmt.Errorf("%w: cannot infer peer for author %q; pass --peer", ErrRelay, author)
 		}
 	}
-	slug := l.Now().UTC().Format("20060102") + "-" + topic
+	now := l.Now().UTC()
+	slug := pairSlug(now, topic, "")
 	s := &Session{
 		Schema:       Schema,
 		Pair:         slug,
 		Project:      project,
 		Participants: []string{author, peer},
 		Roles:        map[string]string{"lead": author, "planner": author, "implementer": author, "reviewer": peer},
-		Status:       "active",
-		Created:      l.Now().UTC(),
+		Status:       StatusActive,
+		Created:      now,
 	}
 	if err := s.Validate(); err != nil {
 		return nil, err
 	}
-	if _, err := os.Stat(l.PairDir(slug)); err == nil {
-		return nil, fmt.Errorf("%w: pair %s already exists", ErrRelay, slug)
-	}
 	if dryRun {
 		return s, nil
 	}
-	for _, sub := range []string{".draft", ".seq", ".heartbeat"} {
-		if err := os.MkdirAll(filepath.Join(l.PairDir(slug), sub), 0o700); err != nil {
+	if err := os.MkdirAll(l.Root, 0o700); err != nil {
+		return nil, err
+	}
+	for attempt := 0; attempt < 16; attempt++ {
+		if attempt > 0 {
+			suffix, err := randomPairSuffix()
+			if err != nil {
+				return nil, err
+			}
+			s.Pair = pairSlug(now, topic, suffix)
+			if err := s.Validate(); err != nil {
+				return nil, err
+			}
+		}
+		pairDir := l.PairDir(s.Pair)
+		if err := os.Mkdir(pairDir, 0o700); err != nil {
+			if errors.Is(err, os.ErrExist) {
+				continue
+			}
 			return nil, err
+		}
+		if err := l.initPairDir(s); err != nil {
+			_ = os.RemoveAll(pairDir)
+			return nil, err
+		}
+		return s, nil
+	}
+	return nil, relayError(ErrConflict, "could not create a unique pair id for topic %q", topic)
+}
+
+func (l *Ledger) initPairDir(s *Session) error {
+	for _, sub := range []string{".draft", ".seq", ".heartbeat"} {
+		if err := os.Mkdir(filepath.Join(l.PairDir(s.Pair), sub), 0o700); err != nil {
+			return err
 		}
 	}
 	if err := l.saveSession(s); err != nil {
-		return nil, err
+		return err
 	}
-	if err := l.writeBinding(slug); err != nil {
-		return nil, err
+	if err := l.writeBinding(s.Pair); err != nil {
+		return err
 	}
-	l.touchHeartbeat(slug)
-	return s, nil
+	l.touchHeartbeat(s.Pair)
+	return nil
+}
+
+func pairSlug(now time.Time, topic, suffix string) string {
+	label := topic
+	if suffix != "" {
+		maxTopic := 48 - 1 - len(suffix)
+		if len(label) > maxTopic {
+			label = strings.TrimRight(label[:maxTopic], "-")
+			if label == "" {
+				label = topic[:1]
+			}
+		}
+		label += "-" + suffix
+	}
+	return now.Format("20060102") + "-" + label
+}
+
+func randomPairSuffix() (string, error) {
+	var b [2]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b[:]), nil
 }
 
 // SetLead persists a user-confirmed lead swap (docs/reference/workflows.md §4.1: the
 // swap is recorded as kind: decision AND session.json.roles.lead is
 // updated so later turns resolve the new authority).
 func (l *Ledger) SetLead(slug, name string, dryRun bool) (*Session, error) {
-	s, err := l.LoadSession(slug)
-	if err != nil {
-		return nil, err
-	}
-	if s.Terminal() {
-		return nil, fmt.Errorf("%w: pair %s is %s", ErrRelay, slug, s.Status)
-	}
-	if _, err := s.Peer(name); err != nil {
-		return nil, fmt.Errorf("%w: lead %q is not a participant of %s (%v)", ErrRelay, name, slug, s.Participants)
-	}
-	s.Roles["lead"] = name
 	if dryRun {
+		s, err := l.LoadSession(slug)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.mutationError(); err != nil {
+			return nil, err
+		}
+		if _, err := s.Peer(name); err != nil {
+			return nil, fmt.Errorf("%w: lead %q is not a participant of %s (%v)", ErrRelay, name, slug, s.Participants)
+		}
+		s.Roles["lead"] = name
 		return s, nil
 	}
-	if err := l.saveSession(s); err != nil {
-		return nil, err
-	}
-	l.touchHeartbeat(slug)
-	return s, nil
+	var s *Session
+	err := l.withPairLock(slug, func() error {
+		var err error
+		s, err = l.LoadSession(slug)
+		if err != nil {
+			return err
+		}
+		if err := s.mutationError(); err != nil {
+			return err
+		}
+		if _, err := s.Peer(name); err != nil {
+			return fmt.Errorf("%w: lead %q is not a participant of %s (%v)", ErrRelay, name, slug, s.Participants)
+		}
+		s.Roles["lead"] = name
+		if err := l.saveSession(s); err != nil {
+			return err
+		}
+		l.touchHeartbeat(slug)
+		return nil
+	})
+	return s, err
 }
 
 // Close ends a pair and archives it (protocol §9).
@@ -254,44 +345,77 @@ func (l *Ledger) Close(slug, outcome, reason string, dryRun bool) error {
 	if strings.TrimSpace(reason) == "" {
 		return fmt.Errorf("%w: --reason is required", ErrRelay)
 	}
-	s, err := l.LoadSession(slug)
-	if err != nil {
-		return err
-	}
-	if s.Terminal() {
-		return fmt.Errorf("%w: pair %s is already %s", ErrRelay, slug, s.Status)
-	}
-	// A2 quality gate: `approve` is fail-closed unless the lead's latest
-	// kind:decision carries a valid completion receipt over a non-lead
-	// approve review (the referenced plan + review must still hash-match).
-	// reject and abandon need no receipt. Runs under --dry-run too so it
-	// previews the refusal.
-	if outcome == "approve" {
-		if err := l.verifyApproveClose(slug); err != nil {
+	if dryRun {
+		s, err := l.LoadSession(slug)
+		if err != nil {
 			return err
 		}
-	}
-	if dryRun {
+		if err := s.mutationError(); err != nil {
+			return err
+		}
+		if outcome == "approve" {
+			return l.verifyApproveClose(slug)
+		}
 		return nil
 	}
-	now := l.Now().UTC()
-	s.Status = "closed"
-	s.Closed = &now
-	s.Outcome = &outcome
-	s.Reason = &reason
-	if err := l.saveSession(s); err != nil {
-		return err
-	}
-	if err := writeFileAtomic(filepath.Join(l.PairDir(slug), "CLOSED"), []byte(now.Format(time.RFC3339)+"\n"), 0o600); err != nil {
-		return err
-	}
-	archive := filepath.Join(l.Root, "_archive")
-	if err := os.MkdirAll(archive, 0o700); err != nil {
-		return err
-	}
-	dest := filepath.Join(archive, slug)
-	if _, err := os.Stat(dest); err == nil {
-		return fmt.Errorf("%w: archive already holds %s; resolve manually", ErrRelay, slug)
-	}
-	return os.Rename(l.PairDir(slug), dest)
+	return l.withPairLock(slug, func() error {
+		s, err := l.LoadSession(slug)
+		if err != nil {
+			return err
+		}
+		if err := s.mutationError(); err != nil {
+			return err
+		}
+		archive := filepath.Join(l.Root, "_archive")
+		dest := filepath.Join(archive, slug)
+		if _, err := os.Stat(dest); err == nil {
+			return fmt.Errorf("%w: archive already holds %s; resolve manually", ErrRelay, slug)
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		if err := os.MkdirAll(archive, 0o700); err != nil {
+			return err
+		}
+
+		s.Status = StatusClosing
+		if err := l.saveSession(s); err != nil {
+			return err
+		}
+		committed := false
+		closedPath := filepath.Join(l.PairDir(slug), "CLOSED")
+		defer func() {
+			if !committed {
+				_ = os.Remove(closedPath)
+				s.Status = StatusActive
+				s.Closed, s.Outcome, s.Reason = nil, nil, nil
+				_ = l.saveSession(s)
+			}
+		}()
+
+		// A2 quality gate: `approve` is fail-closed unless the lead's
+		// latest kind:decision carries a valid completion receipt. This
+		// re-check runs while holding the pair mutation lock.
+		if outcome == "approve" {
+			if err := l.verifyApproveClose(slug); err != nil {
+				return err
+			}
+		}
+
+		now := l.Now().UTC()
+		s.Status = StatusClosed
+		s.Closed = &now
+		s.Outcome = &outcome
+		s.Reason = &reason
+		if err := l.saveSession(s); err != nil {
+			return err
+		}
+		if err := writeFileAtomic(closedPath, []byte(now.Format(time.RFC3339)+"\n"), 0o600); err != nil {
+			return err
+		}
+		if err := os.Rename(l.PairDir(slug), dest); err != nil {
+			return err
+		}
+		committed = true
+		return nil
+	})
 }

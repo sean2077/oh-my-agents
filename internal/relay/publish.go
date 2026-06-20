@@ -27,22 +27,35 @@ type PublishInput struct {
 }
 
 // Publish runs the §7 transaction: render the draft into its final form
-// (durable publish intent), then formal.tmp → rename → .sha256 → .ready
-// → delete draft + .seq reservation, in that strict order. Every step is
-// idempotent so re-running the same command after a kill converges; a
-// formal file that disagrees with the draft render fails closed.
+// (durable publish intent), then unique temp → formal rename → .sha256
+// → .ready → delete draft + .seq reservation, in that strict order. Every
+// step is idempotent so re-running the same command after a kill converges;
+// a formal file that disagrees with the draft render fails closed.
 func (l *Ledger) Publish(draftPath string, in PublishInput, dryRun bool) (string, error) {
 	pairDir, seq, kind, err := l.ownDraftPath(draftPath)
 	if err != nil {
 		return "", err
 	}
+	if dryRun {
+		return l.publishLocked(pairDir, seq, kind, draftPath, in, true)
+	}
+	var formal string
+	err = l.withPairLock(filepath.Base(pairDir), func() error {
+		var err error
+		formal, err = l.publishLocked(pairDir, seq, kind, draftPath, in, false)
+		return err
+	})
+	return formal, err
+}
+
+func (l *Ledger) publishLocked(pairDir string, seq int, kind, draftPath string, in PublishInput, dryRun bool) (string, error) {
 	slug := filepath.Base(pairDir)
 	s, err := l.LoadSession(slug)
 	if err != nil {
 		return "", err
 	}
-	if s.Terminal() {
-		return "", fmt.Errorf("%w: pair %s is %s", ErrRelay, slug, s.Status)
+	if err := s.mutationError(); err != nil {
+		return "", err
 	}
 	raw, err := os.ReadFile(draftPath)
 	if errors.Is(err, os.ErrNotExist) {

@@ -18,15 +18,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Windows is build-target only for now: the test suite exercises
-        # symlink projections and Unix permission-bit refusals (0o002
-        # world-writable, chmod-based fixtures) whose semantics differ on
-        # Windows runners. Release builds still cross-compile windows
-        # binaries; enabling the windows test leg is a deliberate
-        # follow-up, not a matrix toggle.
         os:
           - ubuntu-latest
           - macos-latest
+          - windows-latest
 
     steps:
       - name: Checkout
@@ -39,7 +34,7 @@ jobs:
           cache: true
 
       - name: gofmt
-        if: runner.os != 'Windows'
+        shell: bash
         run: |
           out="$(gofmt -l .)"
           if [ -n "$out" ]; then
@@ -71,6 +66,6 @@ jobs:
           cache: true
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v8
+        uses: golangci/golangci-lint-action@4afd733a84b1f43292c63897423277bb7f4313a9
         with:
           version: v2.12.2

@@ -1,8 +1,11 @@
 package state
 
 import (
+	"bytes"
 	"errors"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -21,9 +24,12 @@ func TestSetThenGet(t *testing.T) {
 	if _, err := s.Set("autopilot/phase", "planning", "", false); err != nil {
 		t.Fatalf("set: %v", err)
 	}
-	v, ok, err := s.Get("autopilot/phase", "")
+	v, ok, rev, err := s.GetWithRevision("autopilot/phase", "")
 	if err != nil || !ok || v != "planning" {
 		t.Fatalf("get = %q ok=%v err=%v", v, ok, err)
+	}
+	if rev != 1 {
+		t.Fatalf("revision = %d, want 1", rev)
 	}
 	// file lands at the namespace path with 0600 on POSIX. Windows exposes ACLs
 	// through approximate mode bits, so the exact permission assertion is not
@@ -61,6 +67,110 @@ func TestMultipleFieldsSameNamespace(t *testing.T) {
 			t.Errorf("%s = %q, want %q", k, v, want)
 		}
 	}
+}
+
+func TestSetExpectedRevision(t *testing.T) {
+	s := newStore(t)
+	if _, err := s.Set("wf/a", "1", "", false); err != nil {
+		t.Fatal(err)
+	}
+	_, _, rev, err := s.GetWithRevision("wf/a", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SetExpected("wf/b", "2", "", false, &rev); err != nil {
+		t.Fatalf("expected revision set: %v", err)
+	}
+	if _, err := s.SetExpected("wf/c", "3", "", false, &rev); !errors.Is(err, ErrConflict) {
+		t.Fatalf("stale revision set: err = %v, want ErrConflict", err)
+	}
+	_, _, rev, err = s.GetWithRevision("wf/a", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rev != 2 {
+		t.Fatalf("revision after two writes = %d, want 2", rev)
+	}
+}
+
+func TestConcurrentProcessSetsDoNotLoseFields(t *testing.T) {
+	root := t.TempDir()
+	start := filepath.Join(root, "start")
+	const workers = 16
+	type child struct {
+		cmd *exec.Cmd
+		out *bytes.Buffer
+	}
+	children := make([]child, 0, workers)
+	for i := 0; i < workers; i++ {
+		field := fmt.Sprintf("f%02d", i)
+		cmd := exec.Command(os.Args[0], "-test.run=^TestStateSetHelperProcess$")
+		cmd.Env = append(os.Environ(),
+			"OMA_STATE_HELPER=1",
+			"OMA_STATE_ROOT="+root,
+			"OMA_STATE_FIELD="+field,
+			"OMA_STATE_START="+start,
+		)
+		out := &bytes.Buffer{}
+		cmd.Stdout = out
+		cmd.Stderr = out
+		if err := cmd.Start(); err != nil {
+			t.Fatalf("start helper %s: %v", field, err)
+		}
+		children = append(children, child{cmd: cmd, out: out})
+	}
+	if err := os.WriteFile(start, []byte("go\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for i, child := range children {
+		if err := child.cmd.Wait(); err != nil {
+			t.Fatalf("helper %02d: %v\n%s", i, err, child.out.String())
+		}
+	}
+	s := New(root)
+	for i := 0; i < workers; i++ {
+		field := fmt.Sprintf("f%02d", i)
+		if v, ok, err := s.Get("shared/"+field, ""); err != nil || !ok || v != field {
+			t.Fatalf("%s = %q ok=%v err=%v", field, v, ok, err)
+		}
+	}
+	_, _, rev, err := s.GetWithRevision("shared/f00", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rev != workers {
+		t.Fatalf("revision = %d, want %d", rev, workers)
+	}
+}
+
+func TestStateSetHelperProcess(t *testing.T) {
+	if os.Getenv("OMA_STATE_HELPER") != "1" {
+		return
+	}
+	root := os.Getenv("OMA_STATE_ROOT")
+	field := os.Getenv("OMA_STATE_FIELD")
+	start := os.Getenv("OMA_STATE_START")
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, err := os.Stat(start); err == nil {
+			break
+		} else if !errors.Is(err, os.ErrNotExist) {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
+		}
+		if time.Now().After(deadline) {
+			fmt.Fprintln(os.Stderr, "timed out waiting for start file")
+			os.Exit(2)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	s := New(root)
+	s.Now = func() time.Time { return time.Date(2026, 6, 11, 12, 0, 0, 0, time.UTC) }
+	if _, err := s.Set("shared/"+field, field, "", false); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	os.Exit(0)
 }
 
 func TestListFiltersByNamespacePrefix(t *testing.T) {

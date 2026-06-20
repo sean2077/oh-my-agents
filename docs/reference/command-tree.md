@@ -32,14 +32,15 @@ oma asset link --dev [--repo <path>]            # dogfood: symlink the local che
 
 ```
 oma state get <key> [--file <path>] [--json]
-oma state set <key> <value> [--file <path>]
+oma state set <key> <value> [--file <path>] [--expected-revision <n>]
 oma state list [namespace-prefix] [--json]
 ```
 
 - The default file is `<project root>/.oma/state/<namespace>.json`, with keys of the form `<namespace>/<field>` (e.g. `autopilot/phase`); `--file` overrides the whole file path. A linked git worktree resolves `<project root>` back to the primary checkout, so one repository has one `.oma`.
 - By default, `state get/set autopilot/phase` is stored under the current session namespace (`autopilot-<session>/phase`); `oma state list autopilot` lists only the current session's autopilot namespaces. `--session <slug>` switches to an explicit scope.
+- `get --json` includes the namespace file revision; `set --expected-revision <n>` fails closed when another writer has advanced the file first.
 - `list` scans the project `.oma/state/*.json`, optionally filtering by namespace prefix, and validates every matching file with the same fail-closed schema/namespace checks as `get`.
-- Writes: atomic via tmp+rename, mode 0600; concurrency safety is guaranteed by the atomicity of rename (last writer wins; state files take no lock — the workflow convention is a single writer).
+- Writes: namespace-level cross-process lock, unique same-directory tmp+rename, single-generation `.bak`, mode 0600, and monotonic revision increments. Concurrent writers serialize instead of overwriting each other's fields.
 - A value is always stored as a string; structured data is serialized by the caller (keeping state semantics minimal).
 
 ## 4. `oma doctor` — diagnostics and gates

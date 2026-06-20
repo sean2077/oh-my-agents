@@ -7,7 +7,7 @@
 - Every persisted file carries a `schema` field in the form `oma-<domain>/<major>` (e.g. `oma-registry/1`).
 - **Unrecognized major → fail-closed**: reads and writes are refused, prompting the user to upgrade oma or check the file's origin.
 - Minor evolution = additive fields only: readers tolerate unknown fields (preserved and passed through, never dropped); deletion, renaming, or any semantic change must bump the major and ship an `oma doctor` migration subcommand (versioned migration is a terminal-state mechanism, not a transitional form).
-- Writes are always atomic (tmp+rename) and `0600`; before writing, a single-generation `.bak` backup is taken of any existing file.
+- Writes are always atomic (unique same-directory tmp+rename) and `0600`; before writing state-like JSON documents, a single-generation `.bak` backup is taken of any existing file.
 
 ## 2. Install registry `~/.config/oma/registry.json` (`oma-registry/1`)
 
@@ -32,9 +32,10 @@
 ## 3. Generic project state `.oma/state/<namespace>.json` (`oma-state/1`)
 
 ```json
-{"schema": "oma-state/1", "namespace": "autopilot-release-20260619", "data": {"<key>": "<string value>"}, "updated": "ISO-8601"}
+{"schema": "oma-state/1", "namespace": "autopilot-release-20260619", "revision": 7, "data": {"<key>": "<string value>"}, "updated": "ISO-8601"}
 ```
 - The carrier for `oma state get/set`; values are always strings, leaving any structure to the caller.
+- Each namespace file has a monotonic `revision`; `state set` runs under a namespace-level cross-process lock, and callers that need compare-and-set semantics can pass an expected revision.
 - Workflows that can run concurrently use CLI-level current-session scoping by default, or an explicit `--session <slug>` override instead of a shared namespace.
 - `oma state list [namespace-prefix] --json` discovers validated namespaces in the shared project `.oma/state/`; state commands transform/filter namespaces by the resolved session suffix. Matching corrupt state fails closed instead of being skipped.
 
@@ -47,11 +48,12 @@
   "project": "oh-my-agents",
   "participants": ["claude", "codex"],
   "roles": {"lead": "claude", "planner": "claude", "implementer": "claude", "reviewer": "codex"},
-  "status": "active|closed|cancelled|failed",
+  "status": "active|closing|closed|cancelled|failed",
   "created": "ISO-8601", "closed": null, "outcome": null, "reason": null
 }
 ```
 - Artifact frontmatter schema `oma-relay/4` (see protocol §5; a ready `kind:review` **must carry** `verdict` + `review_target_seq` (≥1), and additionally a fenced `oma-review-evidence/1` block in its body plus a frontmatter `evidence_hash`; a `kind:decision` adds completion-receipt fields including `quality_gate_evidence_hash`; the session and sentinel remain `oma-relay/2`); the `.oma-relay-v2` sentinel: `{"schema":"oma-relay/2","created":"..."}`.
+- `closing` is a transient pair-mutation state written during `close`; draft/publish/set-lead/join refuse it, and a failed close rolls back to `active`.
 - Completion receipt `oma-completion-receipt/2` (embedded in decision frontmatter): `{schema, pair, decision_seq, reviewed_head{seq,hash}, quality_gate_ref{seq,verdict,hash,evidence_hash}, verified_at}`; `reviewed_head` = the approved "work" (the latest non-review, non-decision artifact), `quality_gate_ref` = the non-lead approve review targeting it, whose `evidence_hash` = the canonicalized sha256 of that review body's `oma-review-evidence/1` block. The receipt's sha256 is stored as the frontmatter `receipt_id`, which `close --outcome approve` uses for fail-closed verification (protocol §9).
 - Review evidence `oma-review-evidence/1` (a single fenced block inside the review body): `{schema, findings[{severity(critical|high|medium|low), confidence(high|medium|low), claim, refs[{type(repo|official|source_reference|supplemental), ref, version_or_date?}]}], basis_refs[…], commands_run[], limitations[]}`. publish validates by verdict (revise / approve-with-changes must carry findings; approve must carry basis_refs + commands_run + limitations), plus non-placeholder content, plus a repo ref must be `path:line[-line]` with no absolute path or `..`, and an external ref must be an http(s) URL; the canonicalized sha256 = the frontmatter `evidence_hash`, which is bound into the decision receipt (protocol §9, the close gate's additional check).
 - pair binding `.oma/relay/_bindings/<author-session>.json` (`oma-relay-binding/1`): `{"schema":"oma-relay-binding/1","author":"claude","session_hash":"<hash of platform session id>","pair":"20260611-topic","created":"ISO-8601","updated":"ISO-8601"}`; the resolution order and fail-closed semantics are in protocol §4a.

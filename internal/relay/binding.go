@@ -90,6 +90,9 @@ func (l *Ledger) ResolvePair(explicit string, autoBind bool) (*Session, error) {
 		if s.Terminal() {
 			continue
 		}
+		if s.Status != StatusActive {
+			continue
+		}
 		if _, perr := s.Peer(l.Identity.Author); perr == nil {
 			mine = append(mine, slug)
 		}
@@ -122,6 +125,9 @@ func (l *Ledger) Join(slug string, dryRun bool) (*Session, error) {
 	}
 	if s.Terminal() {
 		return nil, fmt.Errorf("%w: pair %s is %s", ErrRelay, slug, s.Status)
+	}
+	if err := s.mutationError(); err != nil {
+		return nil, err
 	}
 	if _, err := s.Peer(l.Identity.Author); err != nil {
 		return nil, err

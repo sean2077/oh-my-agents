@@ -32,7 +32,7 @@ func newStateGetCmd() *cobra.Command {
 				return err
 			}
 			st := state.New(findProjectRoot())
-			value, ok, err := st.Get(key, file)
+			value, ok, revision, err := st.GetWithRevision(key, file)
 			if err != nil {
 				return Errf(ExitState, "%v", err)
 			}
@@ -42,7 +42,7 @@ func newStateGetCmd() *cobra.Command {
 			if asJSON {
 				enc := json.NewEncoder(cmd.OutOrStdout())
 				enc.SetIndent("", "  ")
-				return enc.Encode(map[string]any{"schema": "oma-cli/1", "key": key, "value": value})
+				return enc.Encode(map[string]any{"schema": "oma-cli/1", "key": key, "value": value, "revision": revision})
 			}
 			_, _ = fmt.Fprintln(cmd.OutOrStdout(), value)
 			return nil
@@ -55,6 +55,7 @@ func newStateGetCmd() *cobra.Command {
 
 func newStateSetCmd() *cobra.Command {
 	var file string
+	var expectedRevision int64
 	cmd := &cobra.Command{
 		Use:   "set <namespace/field> <value>",
 		Short: "Write a state value (atomic)",
@@ -65,7 +66,11 @@ func newStateSetCmd() *cobra.Command {
 				return err
 			}
 			st := state.New(findProjectRoot())
-			path, err := st.Set(key, args[1], file, DryRun())
+			var expected *int64
+			if expectedRevision >= 0 {
+				expected = &expectedRevision
+			}
+			path, err := st.SetExpected(key, args[1], file, DryRun(), expected)
 			if err != nil {
 				return Errf(ExitState, "%v", err)
 			}
@@ -78,6 +83,7 @@ func newStateSetCmd() *cobra.Command {
 		}),
 	}
 	cmd.Flags().StringVar(&file, "file", "", "explicit state file path (overrides .oma/state/<namespace>.json)")
+	cmd.Flags().Int64Var(&expectedRevision, "expected-revision", -1, "fail unless the state file is at this revision")
 	return cmd
 }
 

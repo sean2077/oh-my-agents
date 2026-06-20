@@ -57,6 +57,26 @@ func TestNewPairDefaultsLeadToCreator(t *testing.T) {
 	}
 }
 
+func TestNewPairCollisionAddsUniqueSuffix(t *testing.T) {
+	ck := newClock()
+	root, _ := initRoot(t, ck)
+	claude := testLedger(t, root, "claude", ck)
+	s1 := mustPair(t, claude, "topic")
+	s2, err := claude.NewPair("topic", "", "p", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s2.Pair == s1.Pair {
+		t.Fatal("same-day same-topic pair must get a unique id")
+	}
+	if !strings.HasPrefix(s2.Pair, "20260611-topic-") {
+		t.Fatalf("collision slug = %s, want date-topic-<suffix>", s2.Pair)
+	}
+	if _, err := os.Stat(filepath.Join(root, s2.Pair, "session.json")); err != nil {
+		t.Fatalf("second pair session missing: %v", err)
+	}
+}
+
 func TestSecretScanBlocksPublishDraftSurvives(t *testing.T) {
 	ck := newClock()
 	root, _ := initRoot(t, ck)
@@ -476,6 +496,9 @@ func TestCloseArchivesAndRestoreBringsBack(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(archived, "CLOSED")); err != nil {
 		t.Fatal("CLOSED sentinel missing in archive")
 	}
+	if _, err := os.Stat(filepath.Join(archived, ".mutation.lock")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("archive must not retain an in-pair mutation lock")
+	}
 	if err := claude.Restore(s.Pair, false); err != nil {
 		t.Fatalf("restore: %v", err)
 	}
@@ -596,6 +619,46 @@ func TestSetLeadPersistsSwap(t *testing.T) {
 	}
 	if _, err := claude.SetLead(s.Pair, "claude", false); err == nil {
 		t.Fatal("set-lead on terminal pair must refuse")
+	}
+}
+
+func TestCloseApproveGateFailureRollsBackClosing(t *testing.T) {
+	ck := newClock()
+	root, _ := initRoot(t, ck)
+	claude := testLedger(t, root, "claude", ck)
+	s := mustPair(t, claude, "gate")
+	mustPublish(t, claude, s.Pair, "plan", "body", "review")
+
+	if err := claude.Close(s.Pair, "approve", "not yet", false); !errors.Is(err, ErrGate) {
+		t.Fatalf("close approve without receipt: err = %v, want ErrGate", err)
+	}
+	got, err := claude.LoadSession(s.Pair)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != StatusActive {
+		t.Fatalf("status after refused close = %q, want active", got.Status)
+	}
+	if _, err := os.Stat(filepath.Join(claude.PairDir(s.Pair), "CLOSED")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("refused close must not leave CLOSED sentinel")
+	}
+}
+
+func TestPublishRefusesClosingPair(t *testing.T) {
+	ck := newClock()
+	root, _ := initRoot(t, ck)
+	claude := testLedger(t, root, "claude", ck)
+	s := mustPair(t, claude, "closing")
+	draft, err := claude.CreateDraft(s.Pair, "note", nil, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Status = StatusClosing
+	if err := claude.saveSession(s); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := claude.Publish(draft, PublishInput{Body: "body", Prompt: "next"}, false); !errors.Is(err, ErrPairClosing) {
+		t.Fatalf("publish closing pair: err = %v, want ErrPairClosing", err)
 	}
 }
 

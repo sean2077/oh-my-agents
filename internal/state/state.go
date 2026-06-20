@@ -15,6 +15,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/sean2077/oh-my-agents/internal/atomicfile"
 )
 
 // Schema is the persisted state-file schema (docs/reference/schemas.md §3).
@@ -23,15 +25,21 @@ const Schema = "oma-state/1"
 // ErrState marks fail-closed state errors (bad key, unknown schema, IO).
 var ErrState = errors.New("invalid state")
 
+// ErrConflict reports an expected revision mismatch.
+var ErrConflict = errors.New("revision conflict")
+
 var (
 	nsRe    = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
 	fieldRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$`)
 )
 
+const stateLockTimeout = 30 * time.Second
+
 // File is one namespace's on-disk document.
 type File struct {
 	Schema    string            `json:"schema"`
 	Namespace string            `json:"namespace"`
+	Revision  int64             `json:"revision"`
 	Data      map[string]string `json:"data"`
 	Updated   string            `json:"updated"`
 }
@@ -39,6 +47,7 @@ type File struct {
 // Entry is one validated state namespace returned by List.
 type Entry struct {
 	Namespace string            `json:"namespace"`
+	Revision  int64             `json:"revision"`
 	Data      map[string]string `json:"data"`
 	Updated   string            `json:"updated"`
 	Path      string            `json:"path"`
@@ -162,15 +171,39 @@ func (s *Store) List(prefix string) ([]Entry, error) {
 		for k, v := range f.Data {
 			data[k] = v
 		}
-		out = append(out, Entry{Namespace: f.Namespace, Data: data, Updated: f.Updated, Path: path})
+		out = append(out, Entry{Namespace: f.Namespace, Revision: f.Revision, Data: data, Updated: f.Updated, Path: path})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Namespace < out[j].Namespace })
 	return out, nil
 }
 
-// Set writes key=value atomically (tmp+rename, 0600, dirs 0700). When
-// dryRun is set it returns the resolved path and writes nothing.
+// GetWithRevision returns the value and current file revision for key.
+func (s *Store) GetWithRevision(key, override string) (value string, ok bool, revision int64, err error) {
+	ns, field, err := splitKey(key)
+	if err != nil {
+		return "", false, 0, err
+	}
+	path, err := s.path(ns, override)
+	if err != nil {
+		return "", false, 0, err
+	}
+	f, err := load(path, ns)
+	if err != nil {
+		return "", false, 0, err
+	}
+	v, ok := f.Data[field]
+	return v, ok, f.Revision, nil
+}
+
+// Set writes key=value atomically (lock+unique tmp+rename, 0600, dirs 0700).
+// When dryRun is set it returns the resolved path and writes nothing.
 func (s *Store) Set(key, value, override string, dryRun bool) (path string, err error) {
+	return s.SetExpected(key, value, override, dryRun, nil)
+}
+
+// SetExpected writes key=value only when expectedRevision is nil or matches
+// the state file's current revision.
+func (s *Store) SetExpected(key, value, override string, dryRun bool, expectedRevision *int64) (path string, err error) {
 	ns, field, err := splitKey(key)
 	if err != nil {
 		return "", err
@@ -186,37 +219,51 @@ func (s *Store) Set(key, value, override string, dryRun bool) (path string, err 
 	if err != nil {
 		return "", err
 	}
+	if expectedRevision != nil && f.Revision != *expectedRevision {
+		return "", fmt.Errorf("%w: %s revision is %d, expected %d", ErrConflict, path, f.Revision, *expectedRevision)
+	}
 	if dryRun {
 		return path, nil
 	}
-	f.Schema, f.Namespace = Schema, ns
-	f.Data[field] = value
-	f.Updated = s.Now().UTC().Format(time.RFC3339)
-	if err := writeAtomic(path, f); err != nil {
-		return "", err
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return "", fmt.Errorf("%w: %v", ErrState, err)
 	}
-	return path, nil
+	return path, withStateLock(path, func() error {
+		f, err := load(path, ns)
+		if err != nil {
+			return err
+		}
+		if expectedRevision != nil && f.Revision != *expectedRevision {
+			return fmt.Errorf("%w: %s revision is %d, expected %d", ErrConflict, path, f.Revision, *expectedRevision)
+		}
+		f.Schema, f.Namespace = Schema, ns
+		f.Revision++
+		f.Data[field] = value
+		f.Updated = s.Now().UTC().Format(time.RFC3339)
+		if err := writeAtomic(path, f); err != nil {
+			return err
+		}
+		return nil
+	})
 }
 
 func writeAtomic(path string, f *File) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return fmt.Errorf("%w: %v", ErrState, err)
-	}
-	// single-generation .bak of the prior file (docs/reference/schemas.md §1)
-	if prev, err := os.ReadFile(path); err == nil {
-		if err := os.WriteFile(path+".bak", prev, 0o600); err != nil {
-			return fmt.Errorf("%w: write %s.bak: %v", ErrState, path, err)
-		}
-	}
 	raw, err := json.MarshalIndent(f, "", "  ")
 	if err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, append(raw, '\n'), 0o600); err != nil {
+	if err := atomicfile.WriteWithBackup(path, append(raw, '\n'), 0o600); err != nil {
 		return fmt.Errorf("%w: write %s: %v", ErrState, path, err)
 	}
-	return os.Rename(tmp, path)
+	return nil
+}
+
+func withStateLock(path string, fn func() error) error {
+	err := atomicfile.WithLock(path+".lock", stateLockTimeout, fn)
+	if errors.Is(err, atomicfile.ErrLockHeld) {
+		return fmt.Errorf("%w: %v", ErrState, err)
+	}
+	return err
 }
 
 // schemaMajor mirrors the strict parser used elsewhere (digits only, >= 1).
