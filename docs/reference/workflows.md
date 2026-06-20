@@ -1,16 +1,26 @@
 # Workflow terminal-state spec (interview / ralph / autopilot / pair-delivery)
 
-## 0. Parallel worktree/session isolation
+## 0. Project-root state and session isolation
 
-Workflow state is anchored to the current git worktree by default. A session
-running in worktree A writes to worktree A's `.oma/`; a session running in
-worktree B writes to worktree B's `.oma/`. Cross-worktree sharing is explicit
-only: use a shared `--ledger-root` for relay if that is truly intended.
+Workflow state is anchored to the primary project root by default. A linked git
+worktree resolves back to the checkout that owns the common `.git` directory, so
+one repository has one `<project root>/.oma/` even when active work happens under
+`<project root>/.worktrees/<branch>`.
 
-Within one worktree, workflows must still avoid project-global collisions:
-interview and ralph use explicit ids, relay uses author-session bindings, and
-pure-markdown workflows such as autopilot use scoped `oma state` namespaces
-discoverable through `oma state list`.
+Parallelism is handled by CLI-level session scoping, not by making each
+worktree a separate state universe:
+
+- `oma --session current state set autopilot/phase ...` stores
+  `autopilot-<session>/phase` in the shared project `.oma/state/`.
+- `oma --session current interview start --id same` and
+  `oma --session current ralph start --id same` scope the ids before reading or
+  writing, so two host sessions can reuse the same human id without colliding.
+- `oma relay` uses the shared project `.oma/relay/` root and separates pairs by
+  author-session binding files.
+
+Without `--session`, commands preserve the legacy project-global behavior:
+explicit ids/namespaces are project-wide, and omitted ids auto-resolve only when
+there is exactly one active project-level instance.
 
 ## 1. `oma interview` — the fixed surface of Socratic requirements clarification
 
@@ -25,7 +35,7 @@ created ──start──▶ topology_pending ──(lock topology)──▶ int
    any state ──abort──▶ aborted
 ```
 
-### 1.2 Persistence (`.oma/state/interview-<id>.json`, schema `oma-interview/1`)
+### 1.2 Persistence (`<project root>/.oma/state/interview-<id>.json`, schema `oma-interview/1`)
 
 Fields: `id, phase, type(greenfield|brownfield), threshold, threshold_source, initial_idea, topology{status, components[{id,name,description,status,evidence[],clarity_scores{goal,constraints,criteria,context?}}], deferrals[], last_targeted_component_id}, rounds[{round, component, dimension, question, answer, scores, ambiguity}], ontology_snapshots[{round, entities[], stability_ratio, matching_reasoning}], challenge_modes_used[], current_ambiguity, gate_waiver?, spec_path, created, updated`. `gate_waiver` carries the early-exit warning record — the landing field for the state machine's `gate_waived(warning recorded)` transition.
 
@@ -50,7 +60,7 @@ Fields: `id, phase, type(greenfield|brownfield), threshold, threshold_source, in
 
 Fixing principle: **counting, stop judgment, and history live in the CLI; doing the work and running the verification stay with the agent.** oma **never executes** the verifier command (security contract); the agent runs the verification itself and reports the exit code to the CLI.
 
-### 2.1 State machine and persistence (`.oma/state/ralph-<id>.json`, schema `oma-ralph/2`)
+### 2.1 State machine and persistence (`<project root>/.oma/state/ralph-<id>.json`, schema `oma-ralph/2`)
 
 ```
 created ──start──▶ running ──next──▶ running (round+1)
@@ -73,8 +83,8 @@ Fields: `id, phase, goal, keep_policy(pass_only|score_improvement, default pass_
 ## 3. autopilot — a pure-markdown workflow (no dedicated command surface)
 
 - There is no `oma autopilot *` command and none may be added (a change requires reopening the spec and re-reviewing this document).
-- Persistent state uses the generic `oma state` under a scoped namespace. New runs use `autopilot-<scope>/phase`, `autopilot-<scope>/goal`, and `autopilot-<scope>/plan-path`, where `<scope>` is derived from the host session, worktree, or task goal. The unscoped `autopilot/` namespace is legacy single-run state only.
-- Resume discovery uses `oma state list autopilot --json` and must not guess across concurrent runs: if more than one non-`done` autopilot namespace exists in the current worktree, the agent asks which namespace to resume.
+- Persistent state uses the generic `oma state` plus global `--session`. New runs use logical keys `autopilot/phase`, `autopilot/goal`, and `autopilot/plan-path`; the CLI stores them under `autopilot-<session>/...` when `--session current` or an explicit session slug is supplied. The unscoped `autopilot/` namespace is legacy single-run state only.
+- Resume discovery uses `oma --session current state list autopilot --json` and must not guess across concurrent runs: if more than one non-`done` autopilot namespace remains in the current session scope, the agent asks which namespace to resume.
 - Skill-text skeleton: clarify (may invoke interview) → plan → implement → verify (may invoke ralph) → deliver; each step records state so an interrupted session can resume.
 - CC acceleration branch (explicitly marked): Plan mode / subagent parallel exploration is available; the Codex default path runs the pure-text flow plus `oma state`.
 

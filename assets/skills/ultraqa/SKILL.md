@@ -5,7 +5,7 @@ description: Adversarial end-to-end QA as a ralph profile — drive oma ralph wi
 
 # ultraqa
 
-Adversarial end-to-end QA, run as a **ralph profile**: you drive `oma ralph` with a deliberately hostile scenario matrix and loop until every scenario behaves safely. The CLI owns the loop mechanics (counting, stall detection, stop judgment); you own the adversarial scenario design and run the checks yourself. ultraqa adds **no new engine** — it is `oma ralph` with an adversarial goal.
+Adversarial end-to-end QA, run as a **ralph profile**: you drive `oma --session current ralph` with a deliberately hostile scenario matrix and loop until every scenario behaves safely. The CLI owns the loop mechanics (counting, stall detection, stop judgment); you own the adversarial scenario design and run the checks yourself. ultraqa adds **no new engine** — it is `oma ralph` with an adversarial goal.
 
 Use to harden a feature/flow before shipping — when "it works on the happy path" isn't enough.
 
@@ -14,7 +14,7 @@ Use to harden a feature/flow before shipping — when "it works on the happy pat
 Frame the QA bar as verifiable, then start a ralph loop:
 
 ```
-oma ralph start --goal "all ultraqa scenarios pass: <feature>" --max-rounds 10 --stall-window 3 --id qa-<slug>
+oma --session current ralph start --goal "all ultraqa scenarios pass: <feature>" --max-rounds 10 --stall-window 3 --id qa-<slug>
 ```
 
 ## The scenario matrix (design before looping)
@@ -32,13 +32,13 @@ Each scenario states: setup → action → **expected safe behavior** (reject / 
 
 ## Each round
 
-1. `oma ralph next --json` — `continue:false` (exit 4) means a terminal state; act on it, don't push on.
+1. `oma --session current ralph next --json` — `continue:false` (exit 4) means a terminal state; act on it, don't push on.
 2. Run the next batch of scenarios YOURSELF; compare actual vs expected behavior.
 3. Fix the defects the round surfaced.
 4. Record the result:
 
    ```
-   oma ralph check --verifier-exit <0|nonzero> --note "<failing scenario signature>"
+   oma --session current ralph check --verifier-exit <0|nonzero> --note "<failing scenario signature>"
    ```
 
    exit 0 only when EVERY scenario passes. The `--note` is the stall signature: same scenario failing → same note; a new failure → a new note.
@@ -57,5 +57,5 @@ Each scenario states: setup → action → **expected safe behavior** (reject / 
 1. No new engine — never re-implement counting / stall / stop; that is `oma ralph`.
 2. A scenario "passes" only on observed safe behavior, never assumption. You run the checks; you never fake an exit code.
 3. Expand the matrix when a defect reveals a missed axis — coverage grows with what you learn.
-4. Done = every matrix scenario green, recorded via `oma ralph check`.
+4. Done = every matrix scenario green, recorded via `oma --session current ralph check`.
 5. Keep your OWN probes inside safe bounds: bounded timeouts, no destructive / production / secret-exfil actions, no unbounded spawns. You are firing hostile inputs — don't let the harness become the incident.

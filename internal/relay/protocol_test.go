@@ -68,13 +68,16 @@ func initRoot(t *testing.T, ck *clock) (root string, top string) {
 	return root, top
 }
 
-func TestDefaultRootUsesCurrentLinkedWorktree(t *testing.T) {
+func TestDefaultRootUsesPrimaryRootFromLinkedWorktree(t *testing.T) {
 	main := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(main, ".git", "worktrees", "feature"), 0o700); err != nil {
+	gitdir := filepath.Join(main, ".git", "worktrees", "feature")
+	if err := os.MkdirAll(gitdir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(gitdir, "commondir"), []byte("../..\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	wt := t.TempDir()
-	gitdir := filepath.Join(main, ".git", "worktrees", "feature")
 	if err := os.WriteFile(filepath.Join(wt, ".git"), []byte("gitdir: "+gitdir+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -87,9 +90,9 @@ func TestDefaultRootUsesCurrentLinkedWorktree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := filepath.Join(wt, ".oma", "relay")
+	want := filepath.Join(main, ".oma", "relay")
 	if got != want {
-		t.Fatalf("DefaultRoot = %s, want current worktree root %s", got, want)
+		t.Fatalf("DefaultRoot = %s, want primary project root %s", got, want)
 	}
 }
 

@@ -4,31 +4,26 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/sean2077/oh-my-agents/internal/config"
+	"github.com/sean2077/oh-my-agents/internal/projectroot"
 	"github.com/spf13/cobra"
 )
 
-// findProjectRoot walks up from cwd to the nearest directory containing
-// .git (the project anchor for <root>/.oma/config.toml). Empty when none.
+// findProjectRoot resolves oma's shared project root. A linked git worktree
+// maps back to the primary checkout, so all worktrees share <root>/.oma.
 func findProjectRoot() string {
 	dir, err := os.Getwd()
 	if err != nil {
 		return ""
 	}
-	for {
-		if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
-			return dir
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return ""
-		}
-		dir = parent
+	root, err := projectroot.ProjectRoot(dir)
+	if err != nil {
+		return ""
 	}
+	return root
 }
 
 func loadConfig() (*config.Config, error) {

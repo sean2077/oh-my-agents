@@ -35,8 +35,8 @@
 {"schema": "oma-state/1", "namespace": "autopilot-release-20260619", "data": {"<key>": "<string value>"}, "updated": "ISO-8601"}
 ```
 - The carrier for `oma state get/set`; values are always strings, leaving any structure to the caller.
-- Workflows that can run concurrently should use a scoped namespace (for example `autopilot-<scope>`, `ralph-<id>`, `interview-<id>`) instead of a shared project-global namespace.
-- `oma state list [namespace-prefix] --json` discovers validated namespaces in the current worktree only; matching corrupt state fails closed instead of being skipped.
+- Workflows that can run concurrently should use CLI-level session scoping (`oma --session current ...`) or an explicit scoped namespace/id instead of a shared project-global namespace.
+- `oma state list [namespace-prefix] --json` discovers validated namespaces in the shared project `.oma/state/`; with global `--session`, state commands transform/filter namespaces by the resolved session suffix. Matching corrupt state fails closed instead of being skipped.
 
 ## 4. relay v2 `session.json` (`oma-relay/2`, see relay-v2-protocol.md)
 
@@ -79,7 +79,7 @@ The field set is in workflows.md §2.1 (id/phase/goal/keep_policy/max_rounds/rou
 
 ## 7. User config `config.toml` (`oma-config/1`)
 
-- The location and precedence chain are in config.md: `~/.config/oma/config.toml` (user) and `<worktree>/.oma/config.toml` (project, private/local by default).
+- The location and precedence chain are in config.md: `~/.config/oma/config.toml` (user) and `<project root>/.oma/config.toml` (project, private/local by default).
 - The TOML root may carry `schema = "oma-config/1"`: a missing value is treated as the current major (tolerating a hand-written omission); a present value whose major ≠ 1 → fail-closed.
 - It is user-intent configuration, not runtime state: it is carried exclusively through viper (the config.md §1 boundary) and does not go through the encoding/json read layer used by the rest of this document's schemas, but the major's fail-closed semantics are identical; it is registered in `version.Schemas["config"]`.
 

@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -145,10 +144,15 @@ func TestWorkflowCLIOmittedIDFailsClosedOnCorruptState(t *testing.T) {
 	}
 }
 
-func TestWorkflowStateUsesCurrentWorktreeRoot(t *testing.T) {
+func TestWorkflowStateUsesProjectRootAndSessionScope(t *testing.T) {
+	t.Setenv("CLAUDE_CODE_SESSION_ID", "")
 	main := t.TempDir()
 	for _, name := range []string{"one", "two"} {
-		if err := os.MkdirAll(filepath.Join(main, ".git", "worktrees", name), 0o700); err != nil {
+		gitdir := filepath.Join(main, ".git", "worktrees", name)
+		if err := os.MkdirAll(gitdir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(gitdir, "commondir"), []byte("../..\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -165,20 +169,22 @@ func TestWorkflowStateUsesCurrentWorktreeRoot(t *testing.T) {
 	wt2 := worktree("two")
 
 	for _, tc := range []struct {
-		root  string
-		phase string
+		root   string
+		thread string
+		phase  string
 	}{
-		{wt1, "implement"},
-		{wt2, "verify"},
+		{wt1, "thread-one", "implement"},
+		{wt2, "thread-two", "verify"},
 	} {
 		t.Chdir(tc.root)
-		if code, out := runOma(t, "state", "set", "autopilot-session/phase", tc.phase); code != ExitOK {
+		t.Setenv("CODEX_THREAD_ID", tc.thread)
+		if code, out := runOma(t, "--session", "current", "state", "set", "autopilot/phase", tc.phase); code != ExitOK {
 			t.Fatalf("%s state set exit %d: %s", tc.root, code, out)
 		}
-		if code, out := runOma(t, "interview", "start", "--id", "same", "--idea", "parallel worktree"); code != ExitOK {
+		if code, out := runOma(t, "--session", "current", "interview", "start", "--id", "same", "--idea", "parallel session"); code != ExitOK {
 			t.Fatalf("%s interview start exit %d: %s", tc.root, code, out)
 		}
-		if code, out := runOma(t, "ralph", "start", "--id", "same", "--goal", "parallel worktree verifier"); code != ExitOK {
+		if code, out := runOma(t, "--session", "current", "ralph", "start", "--id", "same", "--goal", "parallel session verifier"); code != ExitOK {
 			t.Fatalf("%s ralph start exit %d: %s", tc.root, code, out)
 		}
 	}
@@ -187,10 +193,15 @@ func TestWorkflowStateUsesCurrentWorktreeRoot(t *testing.T) {
 		Namespace string            `json:"namespace"`
 		Data      map[string]string `json:"data"`
 	}
-	readAutopilot := func(root string) []stateEntry {
+	readAutopilot := func(root, thread string, sessionScoped bool) []stateEntry {
 		t.Helper()
 		t.Chdir(root)
-		code, out := runOma(t, "state", "list", "autopilot", "--json")
+		t.Setenv("CODEX_THREAD_ID", thread)
+		args := []string{"state", "list", "autopilot", "--json"}
+		if sessionScoped {
+			args = append([]string{"--session", "current"}, args...)
+		}
+		code, out := runOma(t, args...)
 		if code != ExitOK {
 			t.Fatalf("%s state list exit %d: %s", root, code, out)
 		}
@@ -202,13 +213,29 @@ func TestWorkflowStateUsesCurrentWorktreeRoot(t *testing.T) {
 		}
 		return got.States
 	}
-	if got := readAutopilot(wt1); len(got) != 1 || got[0].Data["phase"] != "implement" {
-		t.Fatalf("wt1 states = %+v, want implement only", got)
+	if got := readAutopilot(wt1, "thread-one", true); len(got) != 1 || got[0].Data["phase"] != "implement" {
+		t.Fatalf("session one states = %+v, want implement only", got)
 	}
-	if got := readAutopilot(wt2); len(got) != 1 || got[0].Data["phase"] != "verify" {
-		t.Fatalf("wt2 states = %+v, want verify only", got)
+	if got := readAutopilot(wt2, "thread-two", true); len(got) != 1 || got[0].Data["phase"] != "verify" {
+		t.Fatalf("session two states = %+v, want verify only", got)
 	}
-	if _, err := os.Stat(filepath.Join(main, ".oma")); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("primary repo .oma should not be used by linked worktree sessions: %v", err)
+	if got := readAutopilot(wt1, "thread-one", false); len(got) != 2 {
+		t.Fatalf("unscoped list = %+v, want both session namespaces", got)
+	}
+	t.Chdir(wt1)
+	t.Setenv("CODEX_THREAD_ID", "thread-one")
+	if code, out := runOma(t, "--session", "current", "state", "set", "autopilot-extra/phase", "plan"); code != ExitOK {
+		t.Fatalf("extra state set exit %d: %s", code, out)
+	}
+	if got := readAutopilot(wt1, "thread-one", true); len(got) != 2 {
+		t.Fatalf("session one prefix list = %+v, want both autopilot namespaces for this session", got)
+	}
+	if _, err := os.Stat(filepath.Join(main, ".oma", "state")); err != nil {
+		t.Fatalf("primary repo .oma/state should hold workflow state: %v", err)
+	}
+	for _, wt := range []string{wt1, wt2} {
+		if _, err := os.Stat(filepath.Join(wt, ".oma")); !os.IsNotExist(err) {
+			t.Fatalf("linked worktree .oma should not be used: %s err=%v", wt, err)
+		}
 	}
 }

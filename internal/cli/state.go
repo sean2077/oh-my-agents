@@ -27,18 +27,22 @@ func newStateGetCmd() *cobra.Command {
 		Short: "Read a state value",
 		Args:  cobra.ExactArgs(1),
 		RunE: run(func(cmd *cobra.Command, args []string) error {
+			key, err := scopeStateKey(args[0])
+			if err != nil {
+				return err
+			}
 			st := state.New(findProjectRoot())
-			value, ok, err := st.Get(args[0], file)
+			value, ok, err := st.Get(key, file)
 			if err != nil {
 				return Errf(ExitState, "%v", err)
 			}
 			if !ok {
-				return Errf(ExitState, "key %q not set", args[0])
+				return Errf(ExitState, "key %q not set", key)
 			}
 			if asJSON {
 				enc := json.NewEncoder(cmd.OutOrStdout())
 				enc.SetIndent("", "  ")
-				return enc.Encode(map[string]any{"schema": "oma-cli/1", "key": args[0], "value": value})
+				return enc.Encode(map[string]any{"schema": "oma-cli/1", "key": key, "value": value})
 			}
 			_, _ = fmt.Fprintln(cmd.OutOrStdout(), value)
 			return nil
@@ -56,8 +60,12 @@ func newStateSetCmd() *cobra.Command {
 		Short: "Write a state value (atomic)",
 		Args:  cobra.ExactArgs(2),
 		RunE: run(func(cmd *cobra.Command, args []string) error {
+			key, err := scopeStateKey(args[0])
+			if err != nil {
+				return err
+			}
 			st := state.New(findProjectRoot())
-			path, err := st.Set(args[0], args[1], file, DryRun())
+			path, err := st.Set(key, args[1], file, DryRun())
 			if err != nil {
 				return Errf(ExitState, "%v", err)
 			}
@@ -77,7 +85,7 @@ func newStateListCmd() *cobra.Command {
 	var asJSON bool
 	cmd := &cobra.Command{
 		Use:   "list [namespace-prefix]",
-		Short: "List state namespaces in the current worktree",
+		Short: "List state namespaces in the project .oma",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: run(func(cmd *cobra.Command, args []string) error {
 			prefix := ""
@@ -88,6 +96,12 @@ func newStateListCmd() *cobra.Command {
 			entries, err := st.List(prefix)
 			if err != nil {
 				return Errf(ExitState, "%v", err)
+			}
+			if WorkflowSession() != "" {
+				entries, err = filterSessionEntries(entries)
+				if err != nil {
+					return err
+				}
 			}
 			if asJSON {
 				enc := json.NewEncoder(cmd.OutOrStdout())

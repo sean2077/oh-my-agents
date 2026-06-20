@@ -42,7 +42,7 @@ func relayLedger(ledgerRoot string, open bool) (*relay.Ledger, error) {
 func newRelayCmd() *cobra.Command {
 	var ledgerRoot string
 	cmd := &cobra.Command{Use: "relay", Short: "Pair ledger for cross-agent delivery (relay v2)"}
-	cmd.PersistentFlags().StringVar(&ledgerRoot, "ledger-root", "", "override the ledger root (default: <current git worktree>/.oma/relay)")
+	cmd.PersistentFlags().StringVar(&ledgerRoot, "ledger-root", "", "override the ledger root (default: <project root>/.oma/relay)")
 
 	cmd.AddCommand(
 		newRelayInitCmd(&ledgerRoot),
@@ -488,14 +488,14 @@ func newRelayCloseCmd(rootFlag *string) *cobra.Command {
 	return cmd
 }
 
-// projectName labels session.json.project from the checkout directory.
+// projectName labels session.json.project from the shared project root.
 func projectName() string {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return ""
 	}
 	if root, err := relay.DefaultRoot(cwd); err == nil {
-		// DefaultRoot = <current-worktree>/.oma/relay
+		// DefaultRoot = <project-root>/.oma/relay
 		return filepath.Base(filepath.Dir(filepath.Dir(root)))
 	}
 	return filepath.Base(cwd)

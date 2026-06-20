@@ -46,7 +46,7 @@ Clean AI-generated code slop — bloated, repetitive, weakly-tested, over-abstra
 
 A deslop pass is **not done** until either:
 
-- a verifier you actually ran is **green** over the touched area (record the command + exit code — via `oma ralph check` when this runs inside ralph, otherwise report it directly), OR
+- a verifier you actually ran is **green** over the touched area (record the command + exit code — via `oma --session current ralph check` when this runs inside ralph, otherwise report it directly), OR
 - the user has **explicitly approved a no-test rationale** for why a verifier cannot apply here.
 
 Cleanup without one of these is a permission slip, not a finished pass — keep going or escalate. Never declare done on "looks cleaner".
@@ -69,4 +69,4 @@ Can be bounded to an explicit file list or a session's changed files. Preserve t
 2. Deletion over addition; reuse over new abstraction; no new deps unprompted.
 3. One smell per pass; re-verify between passes.
 4. Not done without a green verifier or a user-approved no-test rationale.
-5. When invoked as ralph's deslop step, do not spawn a nested cleanup or ralph loop — run the pass, record it via `oma ralph check`, and return.
+5. When invoked as ralph's deslop step, do not spawn a nested cleanup or ralph loop — run the pass, record it via `oma --session current ralph check`, and return.

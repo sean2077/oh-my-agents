@@ -15,19 +15,19 @@ The spec this produces is marked `pending approval`; implementation is a separat
 ## Start
 
 ```
-oma interview start --depth deep --type greenfield --id <slug> --idea "<one-line prompt-safe summary>"
+oma --session current interview start --depth deep --type greenfield --id <slug> --idea "<one-line prompt-safe summary>"
 ```
 
 `--depth` maps quick/standard/deep to thresholds 0.30/0.20/0.10; `--threshold` overrides it; config supplies a default when both are omitted. Use `--type brownfield` when the idea modifies an existing codebase (this adds the required `context` dimension). The first output line reports the resolved threshold and its source — repeat it to the user verbatim before anything else.
 
-The `--id` is the parallel-instance boundary inside the current worktree; choose a task/session slug when multiple interviews may run side by side. Resuming after an interruption: `oma interview status --json` when there is only one active interview, or `oma interview status --id <slug> --json` when several are active; then continue from the reported phase (`oma interview start --resume --id <slug>` shows an existing interview without modifying it).
+The global `--session current` is the normal parallel-instance boundary; it scopes the CLI id inside the shared project `.oma/state/`. Choose `--id <slug>` for the task name, not for host-session isolation. Resuming after an interruption: `oma --session current interview status --json`, or `oma --session current interview status --id <slug> --json` when you supplied an id; then continue from the reported phase (`oma --session current interview start --resume --id <slug>` shows an existing interview without modifying it).
 
 ## Round 0: lock the topology
 
 Before any scoring, enumerate the idea's top-level components (1–6 outcomes that can succeed or fail independently) and ask the user ONE confirmation question: is this the right shape — add, remove, merge, split, or defer anything? Then lock the confirmed shape:
 
 ```
-oma interview score --input round0.json
+oma --session current interview score --input round0.json
 ```
 
 where `round0.json` is exactly:
@@ -71,7 +71,7 @@ Never ask the user for something you can read. **Cadence guard**: after 2 consec
 4. **Submit**:
 
    ```
-   oma interview score --input roundN.json --json
+   oma --session current interview score --input roundN.json --json
    ```
 
    with `round` = previous round + 1 (replays and skips are refused) and shape:
@@ -103,7 +103,7 @@ Never ask the user for something you can read. **Cadence guard**: after 2 consec
 ## Gate, crystallize, complete
 
 ```
-oma interview gate --json
+oma --session current interview gate --json
 ```
 
 Exit 0 = ambiguity ≤ threshold: write the spec file (goal / constraints / non-goals / acceptance criteria / topology with per-component clarity / ontology / open assumptions resolved), mark it `pending approval`, then record it and close out:
@@ -136,13 +136,13 @@ The spec file follows this shape (your judgment fills it; the structure is fixed
 ```
 
 ```
-oma interview crystallize --spec <path-to-spec>
-oma interview complete
+oma --session current interview crystallize --spec <path-to-spec>
+oma --session current interview complete
 ```
 
 `complete` only after the user approves the spec. Exit 4 = not there yet: the JSON carries the gap and the weakest target — continue the loop.
 
-**Early exit** (user wants to stop above threshold): require their explicit confirmation, then `oma interview gate --waive --reason "<their words>"` — the waiver is recorded in the state file as a warning — and crystallize with the gaps listed prominently in the spec. **Abandon** entirely: `oma interview abort`.
+**Early exit** (user wants to stop above threshold): require their explicit confirmation, then `oma --session current interview gate --waive --reason "<their words>"` — the waiver is recorded in the state file as a warning — and crystallize with the gaps listed prominently in the spec. **Abandon** entirely: `oma --session current interview abort`.
 
 ## Hard rules
 

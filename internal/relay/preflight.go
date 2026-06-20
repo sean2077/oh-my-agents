@@ -44,7 +44,7 @@ const PreflightSchema = "oma-relay-preflight/1"
 // diagnoses whether a ledger CAN be constructed, so it never depends on a
 // successfully-opened Ledger.
 type PreflightInput struct {
-	ExplicitRoot string // --ledger-root; "" = default <current git worktree>/.oma/relay
+	ExplicitRoot string // --ledger-root; "" = default <project root>/.oma/relay
 	Cwd          string
 	ProjectRoot  string // for the legacy .shared/ check; "" skips it
 	Getenv       func(string) string

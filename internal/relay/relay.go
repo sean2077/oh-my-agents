@@ -16,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/sean2077/oh-my-agents/internal/projectroot"
 )
 
 // Schema constants (docs/reference/schemas.md §4).
@@ -53,41 +55,15 @@ type sentinel struct {
 	Created time.Time `json:"created"`
 }
 
-// DefaultRoot resolves `<current git worktree toplevel>/.oma/relay` starting
-// from dir (protocol §1). A linked worktree's .git FILE marks the current
-// checkout root; it is not followed back to the main repository, so separate
-// worktrees can host independent workflow ledgers by default.
+// DefaultRoot resolves `<primary project root>/.oma/relay` starting from dir
+// (protocol §1). Linked worktrees map back to the primary checkout, so all
+// sessions for one repository share the same project-level ledger by default.
 func DefaultRoot(dir string) (string, error) {
-	top, err := gitToplevel(dir)
+	top, err := projectroot.ProjectRoot(dir)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("%w: %v", ErrRelay, err)
 	}
 	return filepath.Join(top, ".oma", "relay"), nil
-}
-
-func gitToplevel(dir string) (string, error) {
-	dir, err := filepath.Abs(dir)
-	if err != nil {
-		return "", err
-	}
-	for {
-		gitPath := filepath.Join(dir, ".git")
-		info, statErr := os.Stat(gitPath)
-		if statErr == nil {
-			if info.IsDir() || info.Mode().IsRegular() {
-				return dir, nil
-			}
-			return "", fmt.Errorf("%w: .git at %s is neither directory nor file", ErrRelay, gitPath)
-		}
-		if !os.IsNotExist(statErr) {
-			return "", statErr
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "", fmt.Errorf("%w: not inside a git checkout (no .git found above %s)", ErrRelay, dir)
-		}
-		dir = parent
-	}
 }
 
 // Init creates the ledger root and sentinel (idempotent). It refuses v1

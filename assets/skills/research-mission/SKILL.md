@@ -44,19 +44,19 @@ evaluator:
 ## 3. Drive it with ralph
 
 ```
-oma ralph start --keep-policy score_improvement --goal "<mission goal>" --plateau-window 3 --max-rounds <N> --id <slug>
+oma --session current ralph start --keep-policy score_improvement --goal "<mission goal>" --plateau-window 3 --max-rounds <N> --id <slug>
 ```
 
-This IS the "research profile" — a ralph preset expressed through `--keep-policy score_improvement`, not a separate command. `--id` is the parallel mission boundary inside the current worktree; use a task/session slug when more than one research loop may run. `--max-rounds` bounds the search (the `exhausted` terminal below); set it deliberately, since the default of 10 is often too few for a real optimization run.
+This IS the "research profile" — a ralph preset expressed through `--keep-policy score_improvement`, not a separate command. Global `--session current` is the host-session boundary inside the shared project `.oma/state/`; `--id` names the mission within that session. `--max-rounds` bounds the search (the `exhausted` terminal below); set it deliberately, since the default of 10 is often too few for a real optimization run.
 
 Each round:
 
-1. `oma ralph next --json` — `continue: false` (exit 4) means a terminal state; act on it.
+1. `oma --session current ralph next --json` — `continue: false` (exit 4) means a terminal state; act on it.
 2. Form ONE hypothesis and implement the smallest change that tests it.
 3. Run the evaluator YOURSELF, parse its JSON, and record it:
 
    ```
-   oma ralph check --verifier-exit <0-if-pass-else-1> --score <score> --json
+   oma --session current ralph check --verifier-exit <0-if-pass-else-1> --score <score> --json
    ```
 
    `--score` is required every round under `score_improvement` and must be finite. The CLI keeps the strict-best (`best_round`/`best_score`) and plateaus after `--plateau-window` rounds with no strict improvement.
@@ -75,7 +75,7 @@ Append one row per attempt to a skill-owned ledger (`<work>/candidates.md` or th
 
 - **passed**: the evaluator's `pass` went true. Report the kept best and stop.
 - **plateaued**: `plateau_window` rounds bought no strict improvement — the current approach is mined out. Present `best_score`@`best_round`, 2–3 genuinely different strategies, and let the user pick.
-- **exhausted**: the round budget ran out. Report the kept best — `best_score`@`best_round` from `oma ralph status --json` (it earns a receipt) — and ask: raise the bound, change approach, or stop.
+- **exhausted**: the round budget ran out. Report the kept best — `best_score`@`best_round` from `oma --session current ralph status --json` (it earns a receipt) — and ask: raise the bound, change approach, or stop.
 
 ## Hard rules
 
