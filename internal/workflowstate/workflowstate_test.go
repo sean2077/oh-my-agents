@@ -37,7 +37,7 @@ func TestScopeCurrentUsesPlatformSession(t *testing.T) {
 	}
 }
 
-func TestScopeEmptyDefaultsToCurrent(t *testing.T) {
+func TestScopeDefaultUsesCurrent(t *testing.T) {
 	scope := Scope{
 		Getenv: func(k string) string {
 			if k == "OMA_SESSION_ID" {

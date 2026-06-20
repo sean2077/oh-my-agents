@@ -11,15 +11,12 @@ import (
 
 var slugRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
 
-// Resolve returns a path-safe session suffix. Empty input is reserved for
-// callers that deliberately need no suffix; the CLI and workflowstate package
-// default ordinary workflow commands to "current".
+// Resolve returns a path-safe session suffix. The default session value is
+// "current"; workflow state always has a session boundary.
 func Resolve(value string, getenv func(string) string) (string, error) {
 	value = strings.TrimSpace(value)
 	switch value {
-	case "":
-		return "", nil
-	case "current":
+	case "", "current":
 		return current(getenv)
 	default:
 		return explicit(value), nil
@@ -29,8 +26,9 @@ func Resolve(value string, getenv func(string) string) (string, error) {
 // ScopeName appends the session suffix to a workflow namespace or id.
 func ScopeName(name, suffix string) (string, error) {
 	name = strings.TrimSpace(name)
+	suffix = strings.TrimSpace(suffix)
 	if suffix == "" {
-		return name, nil
+		return "", fmt.Errorf("session suffix is required")
 	}
 	if name == "" {
 		return suffix, nil

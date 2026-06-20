@@ -17,6 +17,21 @@ func TestResolveCurrentCodexSession(t *testing.T) {
 	}
 }
 
+func TestResolveDefaultUsesCurrent(t *testing.T) {
+	got, err := Resolve("", func(k string) string {
+		if k == "OMA_SESSION_ID" {
+			return "default"
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "default" {
+		t.Fatalf("Resolve default = %q", got)
+	}
+}
+
 func TestResolveExplicitSlug(t *testing.T) {
 	got, err := Resolve("release-qa", func(string) string { return "" })
 	if err != nil {
@@ -50,5 +65,11 @@ func TestScopeName(t *testing.T) {
 	}
 	if got != "autopilot-codex-abc" {
 		t.Fatalf("ScopeName = %q", got)
+	}
+}
+
+func TestScopeNameRequiresSuffix(t *testing.T) {
+	if _, err := ScopeName("autopilot", ""); err == nil {
+		t.Fatal("ScopeName must require a session suffix")
 	}
 }

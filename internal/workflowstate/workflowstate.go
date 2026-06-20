@@ -14,24 +14,19 @@ import (
 )
 
 // Scope applies the workflow-session setting. Session is the raw flag value:
-// an explicit slug or "current". Empty defaults to "current".
+// an explicit slug or "current".
 type Scope struct {
 	Session string
 	Getenv  func(string) string
 }
 
-// Suffix resolves the path-safe session suffix. Empty Session defaults to
-// "current" so workflows isolate by host session unless explicitly scoped.
+// Suffix resolves the path-safe session suffix.
 func (s Scope) Suffix() (string, error) {
 	getenv := s.Getenv
 	if getenv == nil {
 		getenv = func(string) string { return "" }
 	}
-	raw := s.Session
-	if raw == "" {
-		raw = "current"
-	}
-	return session.Resolve(raw, getenv)
+	return session.Resolve(s.Session, getenv)
 }
 
 // ID scopes a workflow id, such as an interview or ralph id.
@@ -61,9 +56,6 @@ func (s Scope) FilterEntries(entries []state.Entry) ([]state.Entry, error) {
 	suffix, err := s.Suffix()
 	if err != nil {
 		return nil, err
-	}
-	if suffix == "" {
-		return entries, nil
 	}
 	out := make([]state.Entry, 0, len(entries))
 	for _, ent := range entries {
