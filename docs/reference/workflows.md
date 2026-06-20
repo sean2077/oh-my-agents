@@ -8,22 +8,20 @@ one repository has one `<project root>/.oma/` even when active work happens unde
 `<project root>/.worktrees/<branch>`.
 
 Parallelism is handled by CLI-level session scoping, not by making each
-worktree a separate state universe:
+worktree a separate state universe. The default workflow session is `current`;
+if the host has no platform session signal, set `OMA_SESSION_ID=<slug>` or pass
+an explicit `--session <slug>`:
 
-- `oma --session current state set autopilot/phase ...` stores
+- `oma state set autopilot/phase <phase>` stores
   `autopilot-<session>/phase` in the shared project `.oma/state/`.
-- `oma --session current interview start --id same` and
-  `oma --session current ralph start --id same` scope the ids before reading or
+- `oma interview start --id same` and
+  `oma ralph start --id same` scope the ids before reading or
   writing, so two host sessions can reuse the same human id without colliding.
 - `oma relay` uses the shared project `.oma/relay/` root and separates pairs by
   author-session binding files. It intentionally ignores workflow `--session`
   scoping because each pair workflow is itself a Codex-session + Claude-session
   pair. Multiple pair workflows run in parallel by using different platform
   session pairs, each with its own bindings.
-
-Without `--session`, commands preserve the legacy project-global behavior:
-explicit ids/namespaces are project-wide, and omitted ids auto-resolve only when
-there is exactly one active project-level instance.
 
 ## 1. `oma interview` — the fixed surface of Socratic requirements clarification
 
@@ -86,8 +84,8 @@ Fields: `id, phase, goal, keep_policy(pass_only|score_improvement, default pass_
 ## 3. autopilot — a pure-markdown workflow (no dedicated command surface)
 
 - There is no `oma autopilot *` command and none may be added (a change requires reopening the spec and re-reviewing this document).
-- Persistent state uses the generic `oma state` plus global `--session`. New runs use logical keys `autopilot/phase`, `autopilot/goal`, and `autopilot/plan-path`; the CLI stores them under `autopilot-<session>/...` when `--session current` or an explicit session slug is supplied. The unscoped `autopilot/` namespace is legacy single-run state only.
-- Resume discovery uses `oma --session current state list autopilot --json` and must not guess across concurrent runs: if more than one non-`done` autopilot namespace remains in the current session scope, the agent asks which namespace to resume.
+- Persistent state uses the generic `oma state` plus default current-session scoping. New runs use logical keys `autopilot/phase`, `autopilot/goal`, and `autopilot/plan-path`; the CLI stores them under `autopilot-<session>/...`. Pass `--session <slug>` only to override the platform session boundary.
+- Resume discovery uses `oma state list autopilot --json` and must not guess across concurrent runs: if more than one non-`done` autopilot namespace remains in the current session scope, the agent asks which namespace to resume.
 - Skill-text skeleton: clarify (may invoke interview) → plan → implement → verify (may invoke ralph) → deliver; each step records state so an interrupted session can resume.
 - CC acceleration branch (explicitly marked): Plan mode / subagent parallel exploration is available; the Codex default path runs the pure-text flow plus `oma state`.
 

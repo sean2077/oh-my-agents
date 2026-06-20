@@ -97,11 +97,9 @@ func newStateListCmd() *cobra.Command {
 			if err != nil {
 				return Errf(ExitState, "%v", err)
 			}
-			if WorkflowSession() != "" {
-				entries, err = filterSessionEntries(entries)
-				if err != nil {
-					return err
-				}
+			entries, err = filterSessionEntries(entries)
+			if err != nil {
+				return err
 			}
 			if asJSON {
 				enc := json.NewEncoder(cmd.OutOrStdout())

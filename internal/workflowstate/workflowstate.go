@@ -13,21 +13,25 @@ import (
 	"github.com/sean2077/oh-my-agents/internal/state"
 )
 
-// Scope applies the global workflow-session setting. Session is the raw flag
-// value: "", an explicit slug, or "current".
+// Scope applies the workflow-session setting. Session is the raw flag value:
+// an explicit slug or "current". Empty defaults to "current".
 type Scope struct {
 	Session string
 	Getenv  func(string) string
 }
 
-// Suffix resolves the path-safe session suffix. Empty means unscoped legacy
-// project-wide behavior.
+// Suffix resolves the path-safe session suffix. Empty Session defaults to
+// "current" so workflows isolate by host session unless explicitly scoped.
 func (s Scope) Suffix() (string, error) {
 	getenv := s.Getenv
 	if getenv == nil {
 		getenv = func(string) string { return "" }
 	}
-	return session.Resolve(s.Session, getenv)
+	raw := s.Session
+	if raw == "" {
+		raw = "current"
+	}
+	return session.Resolve(raw, getenv)
 }
 
 // ID scopes a workflow id, such as an interview or ralph id.
@@ -53,7 +57,6 @@ func (s Scope) StateKey(key string) (string, error) {
 }
 
 // FilterEntries keeps only state entries belonging to this session suffix.
-// Unscoped legacy behavior returns the original entries unchanged.
 func (s Scope) FilterEntries(entries []state.Entry) ([]state.Entry, error) {
 	suffix, err := s.Suffix()
 	if err != nil {

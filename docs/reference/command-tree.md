@@ -5,7 +5,7 @@
 - **Exit codes**: `0` success; `1` completed but with warnings (doctor check warnings, etc.); `2` usage error; `3` environment/state error (permissions, corrupt schema, fail-closed refusal); `4` gate not passed (gate/budget/refcheck verdict negative); relay wait uses a dedicated `10/11/12` (see §6).
 - **`--json`**: supported by all query commands; output carries a `schema` field (e.g. `"oma-cli/1"`); fields are stable once published, added fields are backward-compatible, and removal/rename requires a major bump.
 - **`--dry-run`**: a **global persistent flag**, inherited by every mutating command (the whole asset family, state set, relay draft/publish/close, self-update, etc.); it prints the exact absolute paths to be created/modified/deleted and the operation type, touching nothing on disk (zero backups, zero leftover temp files). Query commands accept it but ignore it.
-- **`--session <slug|current>`**: a **global workflow-state scope** used by `state`, `interview`, and `ralph`. `current` resolves `CODEX_THREAD_ID`, `CLAUDE_CODE_SESSION_ID`, or `OMA_SESSION_ID` into a path-safe suffix. Without `--session`, commands preserve the legacy project-global behavior. Relay commands accept the global flag as part of the root command surface but do not use it for pair isolation; relay uses platform author-session bindings instead.
+- **`--session <slug|current>`**: a **global workflow-state scope** used by `state`, `interview`, and `ralph`; it defaults to `current`. `current` resolves `CODEX_THREAD_ID`, `CLAUDE_CODE_SESSION_ID`, or `OMA_SESSION_ID` into a path-safe suffix and fails closed when none is available. Pass an explicit slug only to override the platform session boundary. Relay commands accept the global flag as part of the root command surface but do not use it for pair isolation; relay uses platform author-session bindings instead.
 - **Error-message convention**: a single-line first sentence stating the reason for refusal plus a one-line suggested action (`hint:` prefix); a fail-closed refusal must name the check that triggered it.
 - Single asset namespace: **no `oma skill *` alias**. `oma update` is a documented alias for `oma asset update` (noted in help).
 
@@ -37,7 +37,7 @@ oma state list [namespace-prefix] [--json]
 ```
 
 - The default file is `<project root>/.oma/state/<namespace>.json`, with keys of the form `<namespace>/<field>` (e.g. `autopilot/phase`); `--file` overrides the whole file path. A linked git worktree resolves `<project root>` back to the primary checkout, so one repository has one `.oma`.
-- With global `--session`, `state get/set autopilot/phase` is stored under the session-scoped namespace (`autopilot-<session>/phase`); `oma --session current state list autopilot` lists only the current session's autopilot namespaces.
+- By default, `state get/set autopilot/phase` is stored under the current session namespace (`autopilot-<session>/phase`); `oma state list autopilot` lists only the current session's autopilot namespaces. `--session <slug>` switches to an explicit scope.
 - `list` scans the project `.oma/state/*.json`, optionally filtering by namespace prefix, and validates every matching file with the same fail-closed schema/namespace checks as `get`.
 - Writes: atomic via tmp+rename, mode 0600; concurrency safety is guaranteed by the atomicity of rename (last writer wins; state files take no lock — the workflow convention is a single writer).
 - A value is always stored as a string; structured data is serialized by the caller (keeping state semantics minimal).
@@ -71,7 +71,7 @@ oma ralph abort [--id <id>]
 oma ralph status [--id <id>] [--json]
 ```
 
-- State lands in `<project root>/.oma/state/interview-<id>.json` / `.oma/state/ralph-<id>.json`. With global `--session`, the CLI scopes ids before reading or writing (`--id same --session current` becomes a session-specific id; no `--id` becomes the session suffix). Without `--session`, an omitted `--id` resolves the **single** non-terminal project-level instance of that type, and ambiguity (>1 active) is refused with the candidates listed.
+- State lands in `<project root>/.oma/state/interview-<id>.json` / `.oma/state/ralph-<id>.json`. The CLI scopes ids before reading or writing (`--id same` becomes a current-session-specific id; no `--id` becomes the session suffix). `--session <slug>` switches to an explicit scope.
 - The verdict output of `gate`/`next` must contain: the verdict, the numbers it rests on, and the suggested next step (both machine-readable and human-readable forms).
 - **No `oma autopilot *` surface** (autopilot is pure markdown, using general `oma state`; changing this requires reopening the spec).
 - **ralph start ambiguity gate (advisory)**: if `--goal` is too vague (≤15 words and lacking a file/issue/symbol/test-runner anchor), a suggestion is printed to stderr (clarify with deep-interview first, or plan with ralplan) — it does **not** block startup.

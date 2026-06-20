@@ -11,8 +11,9 @@ import (
 
 var slugRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
 
-// Resolve returns a path-safe session suffix. Empty input means unscoped.
-// The special value "current" resolves platform session signals.
+// Resolve returns a path-safe session suffix. Empty input is reserved for
+// callers that deliberately need no suffix; the CLI and workflowstate package
+// default ordinary workflow commands to "current".
 func Resolve(value string, getenv func(string) string) (string, error) {
 	value = strings.TrimSpace(value)
 	switch value {

@@ -39,7 +39,7 @@ Permissions: directories 0700, files 0600 (checked by `oma doctor`).
 
 - author resolution priority: **platform signal** (`CLAUDE_CODE_SESSION_ID` → `claude`; `CODEX_THREAD_ID` → `codex`) > the `OMA_RELAY_AUTHOR` environment variable > resolution failure is rejected.
 - Both platform signals present with no `OMA_RELAY_AUTHOR` to arbitrate → rejected (fail-closed, zero writes).
-- Relay identity is deliberately separate from the global workflow `--session` flag. `--session` scopes project workflow state (`oma state` / `interview` / `ralph`); relay pairs are cross-session ledgers where each side keeps its own author-session binding. Parallel pair workflows are represented by different Codex/Claude platform session pairs, each bound to its own pair.
+- Relay identity is deliberately separate from workflow session scope. Workflow commands default to current-session state (`oma state` / `interview` / `ralph`); relay pairs are cross-session ledgers where each side keeps its own author-session binding. Parallel pair workflows are represented by different Codex/Claude platform session pairs, each bound to its own pair.
 - Participants are exactly 2; identical names on both sides are not allowed (claude+claude is rejected).
 - **Roles**: `session.json.roles` maps `lead / planner / implementer / reviewer` to participant names (one person may hold several roles). `lead` = the primary decision-maker, **required and unique**, defaulting to the bootstrap initiator; the remaining roles may be assigned to either participant. The relay mechanism does not enforce role behavior; the role fields are read and surfaced by skills such as the pair-delivery flow (lead semantics and the swap rules are in workflows.md §4).
 

@@ -50,6 +50,8 @@ func run(fn func(*cobra.Command, []string) error) func(*cobra.Command, []string)
 	}
 }
 
+const defaultWorkflowSession = "current"
+
 var dryRun bool
 var workflowSession string
 
@@ -57,9 +59,15 @@ var workflowSession string
 // mutating commands must report exact paths and write nothing).
 func DryRun() bool { return dryRun }
 
-// WorkflowSession returns the optional workflow-session scope requested by
-// the global --session flag.
-func WorkflowSession() string { return workflowSession }
+// WorkflowSession returns the workflow-session scope requested by the global
+// --session flag. The default is "current", so ordinary workflow commands are
+// isolated by the platform session unless the caller supplies an explicit slug.
+func WorkflowSession() string {
+	if workflowSession == "" {
+		return defaultWorkflowSession
+	}
+	return workflowSession
+}
 
 func newRootCmd() *cobra.Command {
 	root := &cobra.Command{
@@ -69,7 +77,7 @@ func newRootCmd() *cobra.Command {
 		SilenceErrors: true,
 	}
 	root.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "report exact paths that would change, write nothing")
-	root.PersistentFlags().StringVar(&workflowSession, "session", "", "scope workflow state to a session slug, or 'current' for the platform session")
+	root.PersistentFlags().StringVar(&workflowSession, "session", defaultWorkflowSession, "scope workflow state to a session slug, or 'current' for the platform session")
 	root.AddCommand(newVersionCmd(), newAssetCmd(), newConfigCmd(), newStateCmd(), newDoctorCmd(), newRelayCmd(), newInterviewCmd(), newRalphCmd(), newSelfUpdateCmd())
 	return root
 }

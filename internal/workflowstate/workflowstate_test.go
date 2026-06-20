@@ -37,6 +37,25 @@ func TestScopeCurrentUsesPlatformSession(t *testing.T) {
 	}
 }
 
+func TestScopeEmptyDefaultsToCurrent(t *testing.T) {
+	scope := Scope{
+		Getenv: func(k string) string {
+			if k == "OMA_SESSION_ID" {
+				return "default"
+			}
+			return ""
+		},
+	}
+
+	got, err := scope.StateKey("autopilot/phase")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "autopilot-default/phase" {
+		t.Fatalf("StateKey = %q", got)
+	}
+}
+
 func TestFilterEntriesBySessionSuffix(t *testing.T) {
 	scope := Scope{Session: "codex-abc"}
 	entries := []state.Entry{
@@ -51,16 +70,5 @@ func TestFilterEntriesBySessionSuffix(t *testing.T) {
 	}
 	if len(got) != 2 || got[0].Namespace != "autopilot-codex-abc" || got[1].Namespace != "autopilot-extra-codex-abc" {
 		t.Fatalf("FilterEntries = %+v", got)
-	}
-}
-
-func TestUnscopedReturnsAllEntries(t *testing.T) {
-	entries := []state.Entry{{Namespace: "a"}, {Namespace: "b"}}
-	got, err := (Scope{}).FilterEntries(entries)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(got) != 2 {
-		t.Fatalf("FilterEntries unscoped = %+v", got)
 	}
 }

@@ -44,6 +44,7 @@ func TestWorkflowCLIDryRunSnapshot(t *testing.T) {
 	// review 060 blocker 1 at the CLI layer: snapshot .oma/state around
 	// every --dry-run mutator, including the passing gate path that
 	// previously wrote state and a .bak.
+	t.Setenv("OMA_SESSION_ID", "dryrun")
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, ".git"), 0o700); err != nil {
 		t.Fatal(err)
@@ -62,12 +63,12 @@ func TestWorkflowCLIDryRunSnapshot(t *testing.T) {
 		return p
 	}
 	topo := writeJSON("topo.json", `{"schema":"oma-interview-scores/1","round":0,"topology":{"components":[{"id":"a","name":"a","description":"d","status":"active"}]}}`)
-	if code, out := runOma(t, "interview", "score", "--input", topo); code != ExitOK {
+	if code, out := runOma(t, "interview", "score", "--id", "t1", "--input", topo); code != ExitOK {
 		t.Fatalf("topology exit %d: %s", code, out)
 	}
 	// ambiguity 0.10 == deep threshold: the passing edge case
 	pass := writeJSON("r1.json", `{"schema":"oma-interview-scores/1","round":1,"component_scores":{"a":{"goal":0.9,"constraints":0.9,"criteria":0.9}}}`)
-	if code, out := runOma(t, "interview", "score", "--input", pass); code != ExitOK {
+	if code, out := runOma(t, "interview", "score", "--id", "t1", "--input", pass); code != ExitOK {
 		t.Fatalf("score exit %d: %s", code, out)
 	}
 
@@ -82,8 +83,8 @@ func TestWorkflowCLIDryRunSnapshot(t *testing.T) {
 	if got := treeFingerprint(t, stateDir); got != before {
 		t.Fatal("--dry-run interview gate wrote state")
 	}
-	if _, err := os.Stat(filepath.Join(stateDir, "interview-t1.json.bak")); err == nil {
-		raw, _ := os.ReadFile(filepath.Join(stateDir, "interview-t1.json.bak"))
+	if _, err := os.Stat(filepath.Join(stateDir, "interview-t1-dryrun.json.bak")); err == nil {
+		raw, _ := os.ReadFile(filepath.Join(stateDir, "interview-t1-dryrun.json.bak"))
 		// a .bak from the earlier REAL score command is fine; the dry-run
 		// must not have refreshed it — covered by the fingerprint above.
 		_ = raw
@@ -124,6 +125,7 @@ func TestWorkflowCLIDryRunSnapshot(t *testing.T) {
 
 func TestWorkflowCLIOmittedIDFailsClosedOnCorruptState(t *testing.T) {
 	// review 060 blocker 2 at the CLI layer.
+	t.Setenv("OMA_SESSION_ID", "corrupt")
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, ".git"), 0o700); err != nil {
 		t.Fatal(err)
@@ -133,10 +135,10 @@ func TestWorkflowCLIOmittedIDFailsClosedOnCorruptState(t *testing.T) {
 		t.Fatalf("start exit %d: %s", code, out)
 	}
 	stateDir := filepath.Join(dir, ".oma", "state")
-	if err := os.WriteFile(filepath.Join(stateDir, "interview-bad.json"), []byte(`{"schema":"oma-interview/9","id":"bad"}`), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(stateDir, "interview-corrupt.json"), []byte(`{"schema":"oma-interview/9","id":"corrupt"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if code, out := runOma(t, "interview", "status"); code != ExitState || !strings.Contains(out, "interview-bad.json") {
+	if code, out := runOma(t, "interview", "status"); code != ExitState || !strings.Contains(out, `schema "oma-interview/9"`) {
 		t.Fatalf("omitted-id with corrupt sibling: exit %d out=%s", code, out)
 	}
 	if code, _ := runOma(t, "interview", "status", "--id", "good"); code != ExitOK {
@@ -178,13 +180,13 @@ func TestWorkflowStateUsesProjectRootAndSessionScope(t *testing.T) {
 	} {
 		t.Chdir(tc.root)
 		t.Setenv("CODEX_THREAD_ID", tc.thread)
-		if code, out := runOma(t, "--session", "current", "state", "set", "autopilot/phase", tc.phase); code != ExitOK {
+		if code, out := runOma(t, "state", "set", "autopilot/phase", tc.phase); code != ExitOK {
 			t.Fatalf("%s state set exit %d: %s", tc.root, code, out)
 		}
-		if code, out := runOma(t, "--session", "current", "interview", "start", "--id", "same", "--idea", "parallel session"); code != ExitOK {
+		if code, out := runOma(t, "interview", "start", "--id", "same", "--idea", "parallel session"); code != ExitOK {
 			t.Fatalf("%s interview start exit %d: %s", tc.root, code, out)
 		}
-		if code, out := runOma(t, "--session", "current", "ralph", "start", "--id", "same", "--goal", "parallel session verifier"); code != ExitOK {
+		if code, out := runOma(t, "ralph", "start", "--id", "same", "--goal", "parallel session verifier"); code != ExitOK {
 			t.Fatalf("%s ralph start exit %d: %s", tc.root, code, out)
 		}
 	}
@@ -193,14 +195,11 @@ func TestWorkflowStateUsesProjectRootAndSessionScope(t *testing.T) {
 		Namespace string            `json:"namespace"`
 		Data      map[string]string `json:"data"`
 	}
-	readAutopilot := func(root, thread string, sessionScoped bool) []stateEntry {
+	readAutopilot := func(root, thread string) []stateEntry {
 		t.Helper()
 		t.Chdir(root)
 		t.Setenv("CODEX_THREAD_ID", thread)
 		args := []string{"state", "list", "autopilot", "--json"}
-		if sessionScoped {
-			args = append([]string{"--session", "current"}, args...)
-		}
 		code, out := runOma(t, args...)
 		if code != ExitOK {
 			t.Fatalf("%s state list exit %d: %s", root, code, out)
@@ -213,21 +212,18 @@ func TestWorkflowStateUsesProjectRootAndSessionScope(t *testing.T) {
 		}
 		return got.States
 	}
-	if got := readAutopilot(wt1, "thread-one", true); len(got) != 1 || got[0].Data["phase"] != "implement" {
+	if got := readAutopilot(wt1, "thread-one"); len(got) != 1 || got[0].Data["phase"] != "implement" {
 		t.Fatalf("session one states = %+v, want implement only", got)
 	}
-	if got := readAutopilot(wt2, "thread-two", true); len(got) != 1 || got[0].Data["phase"] != "verify" {
+	if got := readAutopilot(wt2, "thread-two"); len(got) != 1 || got[0].Data["phase"] != "verify" {
 		t.Fatalf("session two states = %+v, want verify only", got)
-	}
-	if got := readAutopilot(wt1, "thread-one", false); len(got) != 2 {
-		t.Fatalf("unscoped list = %+v, want both session namespaces", got)
 	}
 	t.Chdir(wt1)
 	t.Setenv("CODEX_THREAD_ID", "thread-one")
-	if code, out := runOma(t, "--session", "current", "state", "set", "autopilot-extra/phase", "plan"); code != ExitOK {
+	if code, out := runOma(t, "state", "set", "autopilot-extra/phase", "plan"); code != ExitOK {
 		t.Fatalf("extra state set exit %d: %s", code, out)
 	}
-	if got := readAutopilot(wt1, "thread-one", true); len(got) != 2 {
+	if got := readAutopilot(wt1, "thread-one"); len(got) != 2 {
 		t.Fatalf("session one prefix list = %+v, want both autopilot namespaces for this session", got)
 	}
 	if _, err := os.Stat(filepath.Join(main, ".oma", "state")); err != nil {

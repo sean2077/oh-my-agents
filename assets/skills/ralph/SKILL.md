@@ -13,17 +13,17 @@ You iterate on a goal until a verifier proves it done, with the stop judgment so
 ## Start
 
 ```
-oma --session current ralph start --goal "<what done means>" --max-rounds 10 --stall-window 3 --id <slug>
+oma ralph start --goal "<what done means>" --max-rounds 10 --stall-window 3 --id <slug>
 ```
 
-`--goal` is required and should be verifiable ("go test ./... passes", not "make it better"). Use global `--session current` for host-session isolation inside the shared project `.oma/state/`; `--id` names the loop within that session and may be omitted when one loop is enough. Inspect state after an interruption with `oma --session current ralph status --json`, or `oma --session current ralph status --id <slug> --json` when you supplied an id; resume the loop by continuing the `next → work → check` cycle below.
+`--goal` is required and should be verifiable ("go test ./... passes", not "make it better"). The default current workflow session isolates loops inside the shared project `.oma/state/`; `--id` names the loop within that session and may be omitted when one loop is enough. Inspect state after an interruption with `oma ralph status --json`, or `oma ralph status --id <slug> --json` when you supplied an id; resume the loop by continuing the `next → work → check` cycle below.
 
 ## Each round
 
 1. Advance and check the verdict:
 
    ```
-   oma --session current ralph next --json
+   oma ralph next --json
    ```
 
    `continue: false` (exit 4) means the loop already reached a terminal state — act on it (below), never push on.
@@ -33,7 +33,7 @@ oma --session current ralph start --goal "<what done means>" --max-rounds 10 --s
 3. Run the verifier YOURSELF and capture its exit code. Then record it:
 
    ```
-   oma --session current ralph check --verifier-exit <code> --note "<failure signature>" --json
+   oma ralph check --verifier-exit <code> --note "<failure signature>" --json
    ```
 
    The `--note` is the stall detector's input: give the SAME signature for the same failure (first failing test name, error class — e.g. `TestFooBar fails`), a DIFFERENT one when the failure changed, and a non-empty one whenever the exit code is nonzero. Raw log dumps and empty notes both blind the detector. Never report an exit code you did not actually observe.
@@ -43,13 +43,13 @@ oma --session current ralph start --goal "<what done means>" --max-rounds 10 --s
 When "done" is a quality *score* climbing rather than a binary pass — beating a baseline, optimizing a metric — start under the `score_improvement` keep-policy instead of the default `pass_only`:
 
 ```
-oma --session current ralph start --goal "<score bar>" --keep-policy score_improvement --plateau-window 3 --id <slug>
+oma ralph start --goal "<score bar>" --keep-policy score_improvement --plateau-window 3 --id <slug>
 ```
 
 Then report a finite `--score` (required under this policy) alongside the exit code every round:
 
 ```
-oma --session current ralph check --verifier-exit <code> --score <n> --json
+oma ralph check --verifier-exit <code> --score <n> --json
 ```
 
 The CLI keeps the strict-best (`best_round`/`best_score`) and stops with the `plateaued` terminal (below) once the score stops improving. For a full optimization scaffold — mission spec, evaluator contract, candidate ledger — use the `research-mission` skill, which wraps this policy.
@@ -60,7 +60,7 @@ The CLI keeps the strict-best (`best_round`/`best_score`) and stops with the `pl
 - **exhausted** (round > max_rounds): the budget ran out. Summarize what was attempted per round, name the closest-to-green state, and ask the user: raise the bound, change approach, or stop here.
 - **stalled** (stall_window consecutive identical signatures): repeating the same fix is disproven. STOP iterating on the current strategy; present the stuck signature, 2–3 genuinely different strategies, and let the user pick (or pick one yourself only if the user pre-authorized strategy changes).
 - **plateaued** (score_improvement only: no strict `best_score` gain for plateau_window rounds): the current approach is mined out — same posture as `stalled`, but the signal is a stuck score, not a repeated failure. Present `best_score`@`best_round`, 2–3 genuinely different strategies, and let the user pick.
-- **aborted**: only via `oma --session current ralph abort` on the user's instruction.
+- **aborted**: only via `oma ralph abort` on the user's instruction.
 
 `next`/`check` on a terminal loop never advance it: `next` reports the stop idempotently, `check` is refused.
 
@@ -73,4 +73,4 @@ The CLI keeps the strict-best (`best_round`/`best_score`) and stops with the `pl
 
 > **CC acceleration (optional, Claude Code only)**: long verifier runs may go through a background shell task while you prepare the next change. Codex and other hosts run the verifier in the foreground — the recorded exit codes and signatures are identical either way.
 >
-> **`/goal` driver (optional, host-native)**: on hosts shipping a native Ralph loop — `/goal` (Claude Code ≥2.1.139, Codex ≥0.128.0, both experimental) — you may let the host auto-continue rounds instead of re-prompting each one. Keep the stop judgment in oma: phrase the goal so the host's evaluator only has to confirm oma's verdict, e.g. `/goal advance one ralph round each turn until 'oma --session current ralph status --json' reports a terminal state (passed/exhausted/stalled/plateaued); print that JSON every turn`. The round count, exhaustion bound, stall detection and terminal persistence still come from `oma ralph` — deterministic and identical across hosts — and no Stop-hook wiring is needed to keep the loop alive.
+> **`/goal` driver (optional, host-native)**: on hosts shipping a native Ralph loop — `/goal` (Claude Code ≥2.1.139, Codex ≥0.128.0, both experimental) — you may let the host auto-continue rounds instead of re-prompting each one. Keep the stop judgment in oma: phrase the goal so the host's evaluator only has to confirm oma's verdict, e.g. `/goal advance one ralph round each turn until 'oma ralph status --json' reports a terminal state (passed/exhausted/stalled/plateaued); print that JSON every turn`. The round count, exhaustion bound, stall detection and terminal persistence still come from `oma ralph` — deterministic and identical across hosts — and no Stop-hook wiring is needed to keep the loop alive.
