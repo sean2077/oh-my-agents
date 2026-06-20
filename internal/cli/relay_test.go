@@ -90,38 +90,70 @@ func TestRelayCLIIgnoresWorkflowSessionFlag(t *testing.T) {
 	}
 }
 
-func TestRelayCLIBindsCodexAndClaudeSessionsToOnePair(t *testing.T) {
+func TestRelayCLIParallelPairsUseDistinctSessionPairs(t *testing.T) {
 	t.Setenv("OMA_RELAY_AUTHOR", "")
 	t.Setenv("OMA_SESSION_ID", "")
 	ledger := filepath.Join(t.TempDir(), "relay")
 
-	t.Setenv("CODEX_THREAD_ID", "codex-thread")
-	t.Setenv("CLAUDE_CODE_SESSION_ID", "")
+	setCodex := func(id string) {
+		t.Helper()
+		t.Setenv("CODEX_THREAD_ID", id)
+		t.Setenv("CLAUDE_CODE_SESSION_ID", "")
+	}
+	setClaude := func(id string) {
+		t.Helper()
+		t.Setenv("CODEX_THREAD_ID", "")
+		t.Setenv("CLAUDE_CODE_SESSION_ID", id)
+	}
+	newPair := func(codexSession, topic string) string {
+		t.Helper()
+		setCodex(codexSession)
+		code, out := runRelay(t, "--session", "current", "relay", "pair", "new", topic, "--ledger-root", ledger)
+		if code != ExitOK {
+			t.Fatalf("%s pair new exit %d: %s", codexSession, code, out)
+		}
+		return strings.Split(strings.TrimSpace(out), "\n")[0]
+	}
+	joinPair := func(claudeSession, pair string) {
+		t.Helper()
+		setClaude(claudeSession)
+		if code, out := runRelay(t, "--session", "current", "relay", "pair", "join", pair, "--ledger-root", ledger); code != ExitOK {
+			t.Fatalf("%s pair join exit %d: %s", claudeSession, code, out)
+		}
+	}
+	assertShows := func(sessionKind, sessionID, pair, peer string) {
+		t.Helper()
+		if sessionKind == "codex" {
+			setCodex(sessionID)
+		} else {
+			setClaude(sessionID)
+		}
+		code, out := runRelay(t, "--session", "current", "relay", "pair", "show", "--ledger-root", ledger)
+		if code != ExitOK || !strings.Contains(out, "pair: "+pair) || !strings.Contains(out, "peer: "+peer) {
+			t.Fatalf("%s/%s show exit %d: %s", sessionKind, sessionID, code, out)
+		}
+	}
+
+	setCodex("codex-one")
 	if code, out := runRelay(t, "--session", "current", "relay", "init", "--ledger-root", ledger); code != ExitOK {
 		t.Fatalf("codex init exit %d: %s", code, out)
 	}
-	code, out := runRelay(t, "--session", "current", "relay", "pair", "new", "pair-scope", "--ledger-root", ledger)
-	if code != ExitOK {
-		t.Fatalf("codex pair new exit %d: %s", code, out)
-	}
-	pair := strings.Split(strings.TrimSpace(out), "\n")[0]
+	pairOne := newPair("codex-one", "pair-one")
+	joinPair("claude-one", pairOne)
+	pairTwo := newPair("codex-two", "pair-two")
+	joinPair("claude-two", pairTwo)
 
-	t.Setenv("CODEX_THREAD_ID", "")
-	t.Setenv("CLAUDE_CODE_SESSION_ID", "claude-thread")
-	if code, out := runRelay(t, "--session", "current", "relay", "pair", "join", pair, "--ledger-root", ledger); code != ExitOK {
-		t.Fatalf("claude pair join exit %d: %s", code, out)
-	}
-	if code, out := runRelay(t, "--session", "current", "relay", "pair", "show", "--ledger-root", ledger); code != ExitOK ||
-		!strings.Contains(out, "pair: "+pair) || !strings.Contains(out, "peer: codex") {
-		t.Fatalf("claude show exit %d: %s", code, out)
-	}
+	assertShows("codex", "codex-one", pairOne, "claude")
+	assertShows("claude", "claude-one", pairOne, "codex")
+	assertShows("codex", "codex-two", pairTwo, "claude")
+	assertShows("claude", "claude-two", pairTwo, "codex")
 
 	entries, err := os.ReadDir(filepath.Join(ledger, "_bindings"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 2 {
-		t.Fatalf("bindings = %d, want codex + claude author-session bindings", len(entries))
+	if len(entries) != 4 {
+		t.Fatalf("bindings = %d, want two codex + two claude author-session bindings", len(entries))
 	}
 }
 

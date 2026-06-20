@@ -26,7 +26,9 @@ per author-session, so separate sessions can run unrelated pairs or workflows
 without colliding. Use an explicit `--ledger-root` only for a deliberate
 non-project ledger. Do not use workflow `--session` for relay isolation: pair
 delivery is intentionally cross-session, with Codex and Claude Code each bound
-through their own platform author-session.
+through their own platform author-session. To run multiple pair workflows in
+parallel, open a separate Codex session and Claude Code session for each pair;
+each session pair binds to its own relay pair.
 
 ```
 oma relay init
