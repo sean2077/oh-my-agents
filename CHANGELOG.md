@@ -4,6 +4,17 @@
 >
 > Section heading format: `## vX.Y.Z - YYYY-MM-DD` (CI matches the tag by exact prefix; a tag with no matching section fails the release, fail-closed).
 
+## v0.7.0 - 2026-06-20
+
+This release moves parallel workflow isolation into the CLI itself, so agents can run several workflow sessions against one project without each skill inventing its own state layout.
+
+- **Current-session workflow state by default**: `oma state`, `oma interview`, and `oma ralph` now default to the current host session (`OMA_SESSION_ID`, `CODEX_THREAD_ID`, or `CLAUDE_CODE_SESSION_ID`). Missing session identity fails closed instead of falling back to project-global state.
+- **Shared project `.oma` across worktrees**: linked git worktrees now resolve workflow and relay state back to the primary project root, keeping one `.oma` tree per repository while still isolating sessions by CLI-managed suffixes.
+- **Reusable workflow-state scope helper**: session suffixing for state keys, interview ids, ralph ids, and state listing now lives in shared internal packages instead of being repeated by individual commands or skills.
+- **Autopilot state contract**: the bundled `autopilot` skill now records progress through plain `oma state` commands, relying on the CLI's default current-session scope for resumable parallel runs.
+- **Pair workflow parallelism clarified**: `pair-delivery` and relay docs now make the intended model explicit: multiple pair workflows are multiple Codex/Claude session pairs, while relay continues to use author-session bindings rather than workflow `--session`.
+- **Regression coverage**: tests now cover primary-root resolution from linked worktrees, current-session state isolation, state listing filters, relay ignoring workflow session flags, and two independent pair workflows sharing one ledger root.
+
 ## v0.6.0 - 2026-06-19
 
 This release makes autonomous workflows safer to run side by side in one checkout, and tightens the shipped skill metadata gate that protects resident trigger text.
