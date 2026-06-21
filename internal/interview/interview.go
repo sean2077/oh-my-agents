@@ -16,6 +16,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/sean2077/oh-my-agents/internal/atomicfile"
+	"github.com/sean2077/oh-my-agents/internal/session"
 )
 
 // Schema constants (docs/reference/schemas.md §5).
@@ -93,6 +96,7 @@ type OntologySnapshot struct {
 type State struct {
 	Schema             string             `json:"schema"`
 	ID                 string             `json:"id"`
+	Revision           int64              `json:"revision"`
 	Phase              string             `json:"phase"`
 	Type               string             `json:"type"` // greenfield | brownfield
 	Threshold          float64            `json:"threshold"`
@@ -116,8 +120,9 @@ var idRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
 
 // Engine anchors interview state under dir (.oma/state).
 type Engine struct {
-	Dir string
-	Now func() time.Time
+	Dir           string
+	Now           func() time.Time
+	SessionSuffix string
 }
 
 // NewEngine builds an Engine for the given state directory.
@@ -125,11 +130,27 @@ func NewEngine(dir string) *Engine { return &Engine{Dir: dir, Now: time.Now} }
 
 func (e *Engine) path(id string) string { return filepath.Join(e.Dir, "interview-"+id+".json") }
 
+func (e *Engine) scopedID(id string) (string, error) {
+	if strings.TrimSpace(id) == "" || e.SessionSuffix == "" {
+		return strings.TrimSpace(id), nil
+	}
+	return session.ScopeName(id, e.SessionSuffix)
+}
+
+func (e *Engine) matchesSession(id string) bool {
+	return e.SessionSuffix == "" || strings.HasSuffix(id, "-"+e.SessionSuffix)
+}
+
 // Start initializes a new interview (phase topology_pending). An existing
 // id is refused unless resume=true, which loads and returns it untouched.
 func (e *Engine) Start(id, typ string, threshold float64, source, idea string, resume, dryRun bool) (*State, error) {
 	if id == "" {
 		id = e.Now().UTC().Format("20060102-150405")
+	}
+	var err error
+	id, err = e.scopedID(id)
+	if err != nil {
+		return nil, err
 	}
 	if !idRe.MatchString(id) {
 		return nil, fmt.Errorf("%w: id %q (want %s)", ErrInterview, id, idRe)
@@ -158,7 +179,19 @@ func (e *Engine) Start(id, typ string, threshold float64, source, idea string, r
 	if dryRun {
 		return s, nil
 	}
-	return s, e.save(s)
+	err = e.withInstanceLock(id, func() error {
+		if _, statErr := os.Stat(e.path(id)); statErr == nil {
+			if resume {
+				s, statErr = e.Load(id)
+				return statErr
+			}
+			return fmt.Errorf("%w: interview %q already exists (use --resume to inspect/continue)", ErrInterview, id)
+		} else if !errors.Is(statErr, os.ErrNotExist) {
+			return statErr
+		}
+		return e.save(s)
+	})
+	return s, err
 }
 
 // StatePath is the absolute state file for one id (dry-run reporting).
@@ -190,7 +223,11 @@ func (e *Engine) Load(id string) (*State, error) {
 // non-terminal interview must exist (ambiguity is refused, listing ids).
 func (e *Engine) Resolve(id string) (*State, error) {
 	if id != "" {
-		return e.Load(id)
+		scoped, err := e.scopedID(id)
+		if err != nil {
+			return nil, err
+		}
+		return e.Load(scoped)
 	}
 	matches, err := filepath.Glob(filepath.Join(e.Dir, "interview-*.json"))
 	if err != nil {
@@ -199,6 +236,9 @@ func (e *Engine) Resolve(id string) (*State, error) {
 	var active []*State
 	for _, m := range matches {
 		base := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(m), "interview-"), ".json")
+		if !e.matchesSession(base) {
+			continue
+		}
 		s, err := e.Load(base)
 		if err != nil {
 			// A corrupt or foreign-major candidate must fail the omitted-id
@@ -245,60 +285,55 @@ func (s *State) transition(to string) error {
 
 // Crystallize records the spec path (gate_passed|gate_waived → crystallized).
 func (e *Engine) Crystallize(id, specPath string, dryRun bool) (*State, error) {
-	s, err := e.Resolve(id)
-	if err != nil {
-		return nil, err
-	}
 	if specPath == "" {
 		return nil, fmt.Errorf("%w: --spec is required", ErrInterview)
 	}
 	if _, err := os.Stat(specPath); err != nil {
 		return nil, fmt.Errorf("%w: spec file %s not found (write it before crystallizing)", ErrInterview, specPath)
 	}
-	if err := s.transition(PhaseCrystallized); err != nil {
-		return nil, err
-	}
-	s.SpecPath = specPath
-	if dryRun {
-		return s, nil
-	}
-	return s, e.save(s)
+	return e.withResolved(id, dryRun, func(s *State) error {
+		if err := s.transition(PhaseCrystallized); err != nil {
+			return err
+		}
+		s.SpecPath = specPath
+		if dryRun {
+			return nil
+		}
+		return e.save(s)
+	})
 }
 
 // Complete closes a crystallized interview.
 func (e *Engine) Complete(id string, dryRun bool) (*State, error) {
-	s, err := e.Resolve(id)
-	if err != nil {
-		return nil, err
-	}
-	if err := s.transition(PhaseCompleted); err != nil {
-		return nil, err
-	}
-	if dryRun {
-		return s, nil
-	}
-	return s, e.save(s)
+	return e.withResolved(id, dryRun, func(s *State) error {
+		if err := s.transition(PhaseCompleted); err != nil {
+			return err
+		}
+		if dryRun {
+			return nil
+		}
+		return e.save(s)
+	})
 }
 
 // Abort ends any non-terminal interview.
 func (e *Engine) Abort(id string, dryRun bool) (*State, error) {
-	s, err := e.Resolve(id)
-	if err != nil {
-		return nil, err
-	}
-	if s.Terminal() {
-		return nil, fmt.Errorf("%w: interview %s is already %s", ErrInterview, s.ID, s.Phase)
-	}
-	s.Phase = PhaseAborted
-	if dryRun {
-		return s, nil
-	}
-	return s, e.save(s)
+	return e.withResolved(id, dryRun, func(s *State) error {
+		if s.Terminal() {
+			return fmt.Errorf("%w: interview %s is already %s", ErrInterview, s.ID, s.Phase)
+		}
+		s.Phase = PhaseAborted
+		if dryRun {
+			return nil
+		}
+		return e.save(s)
+	})
 }
 
 // save persists atomically with a single-generation .bak.
 func (e *Engine) save(s *State) error {
 	s.Updated = e.Now().UTC()
+	s.Revision++
 	raw, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
 		return err
@@ -307,16 +342,45 @@ func (e *Engine) save(s *State) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	if prev, err := os.ReadFile(path); err == nil {
-		if err := os.WriteFile(path+".bak", prev, 0o600); err != nil {
-			return fmt.Errorf("write state backup: %w", err)
-		}
+	if err := atomicfile.WriteWithBackup(path, append(raw, '\n'), 0o600); err != nil {
+		return fmt.Errorf("write interview state: %w", err)
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, append(raw, '\n'), 0o600); err != nil {
+	return nil
+}
+
+func (e *Engine) withResolved(id string, dryRun bool, fn func(*State) error) (*State, error) {
+	s, err := e.Resolve(id)
+	if err != nil {
+		return nil, err
+	}
+	if dryRun {
+		return s, fn(s)
+	}
+	err = e.withInstanceLock(s.ID, func() error {
+		var err error
+		s, err = e.Load(s.ID)
+		if err != nil {
+			return err
+		}
+		return fn(s)
+	})
+	return s, err
+}
+
+func (e *Engine) withInstanceLock(id string, fn func() error) error {
+	lockRoot := filepath.Join(e.Dir, ".locks")
+	if err := os.MkdirAll(lockRoot, 0o700); err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	lock, err := atomicfile.AcquireLock(filepath.Join(lockRoot, "interview-"+id+".lock"), 30*time.Second)
+	if err != nil {
+		if errors.Is(err, atomicfile.ErrLockHeld) {
+			return fmt.Errorf("%w: interview %s is being mutated by another process", ErrInterview, id)
+		}
+		return err
+	}
+	defer func() { _ = lock.Release() }()
+	return fn()
 }
 
 // schemaMajor: strict digit-only parse (per-package copy by convention).

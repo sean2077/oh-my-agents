@@ -135,7 +135,7 @@ func TestWorkflowCLIOmittedIDFailsClosedOnCorruptState(t *testing.T) {
 		t.Fatalf("start exit %d: %s", code, out)
 	}
 	stateDir := filepath.Join(dir, ".oma", "state")
-	if err := os.WriteFile(filepath.Join(stateDir, "interview-corrupt.json"), []byte(`{"schema":"oma-interview/9","id":"corrupt"}`), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(stateDir, "interview-bad-corrupt.json"), []byte(`{"schema":"oma-interview/9","id":"bad-corrupt"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if code, out := runOma(t, "interview", "status"); code != ExitState || !strings.Contains(out, `schema "oma-interview/9"`) {
@@ -143,6 +143,36 @@ func TestWorkflowCLIOmittedIDFailsClosedOnCorruptState(t *testing.T) {
 	}
 	if code, _ := runOma(t, "interview", "status", "--id", "good"); code != ExitOK {
 		t.Fatal("explicit good id must still work")
+	}
+}
+
+func TestWorkflowCLIOmittedIDResolvesSingleScopedInstance(t *testing.T) {
+	t.Setenv("OMA_SESSION_ID", "defaultid")
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".git"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+
+	if code, out := runOma(t, "interview", "start", "--id", "feature-a"); code != ExitOK {
+		t.Fatalf("interview start exit %d: %s", code, out)
+	}
+	topo := filepath.Join(dir, "topo.json")
+	if err := os.WriteFile(topo, []byte(`{"schema":"oma-interview-scores/1","round":0,"topology":{"components":[{"id":"a","name":"a","description":"d","status":"active"}]}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if code, out := runOma(t, "interview", "score", "--input", topo); code != ExitOK {
+		t.Fatalf("omitted-id interview score exit %d: %s", code, out)
+	}
+	if code, out := runOma(t, "interview", "status"); code != ExitOK || !strings.Contains(out, "feature-a-defaultid") {
+		t.Fatalf("omitted-id interview status exit %d: %s", code, out)
+	}
+
+	if code, out := runOma(t, "ralph", "start", "--id", "loop", "--goal", "keep going"); code != ExitOK {
+		t.Fatalf("ralph start exit %d: %s", code, out)
+	}
+	if code, out := runOma(t, "ralph", "next"); code != ExitOK || !strings.Contains(out, "round=1") {
+		t.Fatalf("omitted-id ralph next exit %d: %s", code, out)
 	}
 }
 

@@ -39,7 +39,7 @@ func (l *Ledger) reserveSeq(slug string) (int, error) {
 		if err != nil {
 			return 0, err
 		}
-		_, werr := fmt.Fprintf(f, "%s %s\n", l.Identity.Author, l.Now().UTC().Format(time.RFC3339))
+		_, werr := fmt.Fprintf(f, "%s %s\n", ownerToken(l.Identity.Author, l.Identity.SessionKey), l.Now().UTC().Format(time.RFC3339))
 		cerr := f.Close()
 		if werr != nil || cerr != nil {
 			return 0, errors.Join(werr, cerr)
@@ -95,6 +95,9 @@ func (l *Ledger) CreateDraft(slug, kind string, inReplyTo, corrects *int, dryRun
 		if err := s.mutationError(); err != nil {
 			return "", err
 		}
+		if err := s.requireParticipantSession(l.Identity); err != nil {
+			return "", err
+		}
 		if _, err := s.Peer(l.Identity.Author); err != nil {
 			return "", err
 		}
@@ -113,6 +116,9 @@ func (l *Ledger) CreateDraft(slug, kind string, inReplyTo, corrects *int, dryRun
 		if err := s.mutationError(); err != nil {
 			return err
 		}
+		if err := s.requireParticipantSession(l.Identity); err != nil {
+			return err
+		}
 		peer, err := s.Peer(l.Identity.Author)
 		if err != nil {
 			return err
@@ -122,7 +128,7 @@ func (l *Ledger) CreateDraft(slug, kind string, inReplyTo, corrects *int, dryRun
 			return err
 		}
 		fm := &Frontmatter{
-			Schema: ArtifactSchema, Seq: seq, Author: l.Identity.Author, Peer: peer,
+			Schema: ArtifactSchema, Seq: seq, Author: l.Identity.Author, AuthorSession: l.Identity.SessionKey, Peer: peer,
 			Kind: kind, Status: "ready", Created: l.Now().UTC(),
 			InReplyTo: inReplyTo, Corrects: corrects, TouchedPaths: []string{},
 		}

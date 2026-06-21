@@ -69,6 +69,32 @@ func TestMultipleFieldsSameNamespace(t *testing.T) {
 	}
 }
 
+func TestPatchExpectedWritesSeveralFieldsWithOneRevision(t *testing.T) {
+	s := newStore(t)
+	path, err := s.PatchExpected("wf", map[string]string{"a": "1", "b": "2"}, "", false, nil)
+	if err != nil {
+		t.Fatalf("patch: %v", err)
+	}
+	if filepath.Base(path) != "wf.json" {
+		t.Fatalf("path = %s", path)
+	}
+	for k, want := range map[string]string{"wf/a": "1", "wf/b": "2"} {
+		if v, ok, err := s.Get(k, ""); err != nil || !ok || v != want {
+			t.Fatalf("%s = %q ok=%v err=%v", k, v, ok, err)
+		}
+	}
+	_, _, rev, err := s.GetWithRevision("wf/a", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rev != 1 {
+		t.Fatalf("revision = %d, want 1", rev)
+	}
+	if _, err := s.PatchExpected("wf", map[string]string{}, "", false, nil); !errors.Is(err, ErrState) {
+		t.Fatalf("empty patch err = %v, want ErrState", err)
+	}
+}
+
 func TestSetExpectedRevision(t *testing.T) {
 	s := newStore(t)
 	if _, err := s.Set("wf/a", "1", "", false); err != nil {

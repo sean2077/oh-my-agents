@@ -15,7 +15,7 @@ func newStateCmd() *cobra.Command {
 		Use:   "state",
 		Short: "Get/set generic project-level workflow state",
 	}
-	cmd.AddCommand(newStateGetCmd(), newStateSetCmd(), newStateListCmd())
+	cmd.AddCommand(newStateGetCmd(), newStateSetCmd(), newStatePatchCmd(), newStateListCmd())
 	return cmd
 }
 
@@ -84,6 +84,51 @@ func newStateSetCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&file, "file", "", "explicit state file path (overrides .oma/state/<namespace>.json)")
 	cmd.Flags().Int64Var(&expectedRevision, "expected-revision", -1, "fail unless the state file is at this revision")
+	return cmd
+}
+
+func newStatePatchCmd() *cobra.Command {
+	var file string
+	var expectedRevision int64
+	var sets []string
+	cmd := &cobra.Command{
+		Use:   "patch <namespace> --set <field=value> [--set <field=value>...]",
+		Short: "Write several state fields atomically",
+		Args:  cobra.ExactArgs(1),
+		RunE: run(func(cmd *cobra.Command, args []string) error {
+			ns, err := workflowScope().ID(args[0])
+			if err != nil {
+				return Errf(ExitState, "%v", err)
+			}
+			values := map[string]string{}
+			for _, item := range sets {
+				field, value, ok := strings.Cut(item, "=")
+				if !ok {
+					return Errf(ExitState, "--set %q must be field=value", item)
+				}
+				values[field] = value
+			}
+			st := state.New(findProjectRoot())
+			var expected *int64
+			if expectedRevision >= 0 {
+				expected = &expectedRevision
+			}
+			path, err := st.PatchExpected(ns, values, file, DryRun(), expected)
+			if err != nil {
+				return Errf(ExitState, "%v", err)
+			}
+			prefix := ""
+			if DryRun() {
+				prefix = "[dry-run] "
+			}
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%swrite %s\n", prefix, path)
+			return nil
+		}),
+	}
+	cmd.Flags().StringVar(&file, "file", "", "explicit state file path (overrides .oma/state/<namespace>.json)")
+	cmd.Flags().Int64Var(&expectedRevision, "expected-revision", -1, "fail unless the state file is at this revision")
+	cmd.Flags().StringArrayVar(&sets, "set", nil, "field=value to write (repeatable)")
+	_ = cmd.MarkFlagRequired("set")
 	return cmd
 }
 

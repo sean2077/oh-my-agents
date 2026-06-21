@@ -23,6 +23,19 @@ import (
 //
 // Live authors' in-flight reservations are never touched.
 func (l *Ledger) CleanStale(slug string, dryRun bool) ([]string, error) {
+	if dryRun {
+		return l.cleanStaleLocked(slug, true)
+	}
+	var actions []string
+	err := l.withPairLock(slug, func() error {
+		var err error
+		actions, err = l.cleanStaleLocked(slug, false)
+		return err
+	})
+	return actions, err
+}
+
+func (l *Ledger) cleanStaleLocked(slug string, dryRun bool) ([]string, error) {
 	s, err := l.LoadSession(slug)
 	if err != nil {
 		return nil, err
@@ -41,8 +54,9 @@ func (l *Ledger) CleanStale(slug string, dryRun bool) ([]string, error) {
 	}
 
 	for _, author := range s.Participants {
-		stale := l.heartbeatStale(slug, author)
-		for _, seq := range l.reservations(slug, author) {
+		sessionKey, _ := s.participantSession(author)
+		stale := l.heartbeatStale(slug, author, sessionKey)
+		for _, seq := range l.reservations(slug, author, sessionKey) {
 			seqPath := filepath.Join(pairDir, ".seq", fmt.Sprintf("%03d", seq))
 			draftGlob, _ := filepath.Glob(filepath.Join(pairDir, ".draft", fmt.Sprintf("%03d-%s-*.md", seq, author)))
 			switch {
@@ -107,6 +121,15 @@ func (l *Ledger) CleanStale(slug string, dryRun bool) ([]string, error) {
 // Restore moves an archived pair back to the active root (surfaced as
 // `oma doctor relay --restore <slug>`).
 func (l *Ledger) Restore(slug string, dryRun bool) error {
+	if dryRun {
+		return l.restoreLocked(slug, true)
+	}
+	return l.withPairLock(slug, func() error {
+		return l.restoreLocked(slug, false)
+	})
+}
+
+func (l *Ledger) restoreLocked(slug string, dryRun bool) error {
 	src := filepath.Join(l.Root, "_archive", slug)
 	if _, err := os.Stat(src); err != nil {
 		return fmt.Errorf("%w: no archived pair %q", ErrRelay, slug)

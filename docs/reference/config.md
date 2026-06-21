@@ -52,7 +52,7 @@ This is isomorphic to the resolution chain for the deep-interview threshold in t
 
 **Bootstrap-level (not via viper, pure env):**
 - `OMA_HOME` — determines the location of the config file itself, a chicken-and-egg problem, so it is the lowest-level env, read directly at CLI startup.
-- `OMA_RELAY_AUTHOR` — explicit operator override for relay identity. **Identity is not user-preference data**: it is derived by default from the protocol's platform signals (relay-v2-protocol §4), with env serving only as an explicit override; it **never enters the config file** — in particular, project-local `.oma/config.toml` must not change the author, or it could break or forge pair bindings.
+- `OMA_RELAY_AUTHOR` — explicit operator override for relay identity. Manual use must also provide `OMA_RELAY_SESSION_ID` or `OMA_SESSION_ID`, so two same-author shells do not share one relay session. **Identity is not user-preference data**: it is derived by default from the protocol's platform signals (relay-v2-protocol §4), with env serving only as an explicit override; it **never enters the config file** — in particular, project-local `.oma/config.toml` must not change the author, or it could break or forge pair bindings.
 
 ### 4a. interview effective-threshold resolution (aligned with A3 workflows.md)
 

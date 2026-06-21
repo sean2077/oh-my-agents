@@ -13,7 +13,13 @@ func ralphEngine() (*ralph.Engine, error) {
 	if root == "" {
 		return nil, fmt.Errorf("not inside a git checkout (ralph state lives in <root>/.oma/state)")
 	}
-	return ralph.NewEngine(filepath.Join(root, ".oma", "state")), nil
+	suffix, err := workflowScope().Suffix()
+	if err != nil {
+		return nil, err
+	}
+	eng := ralph.NewEngine(filepath.Join(root, ".oma", "state"))
+	eng.SessionSuffix = suffix
+	return eng, nil
 }
 
 func newRalphCmd() *cobra.Command {
@@ -30,15 +36,11 @@ func newRalphStartCmd() *cobra.Command {
 		Short: "Initialize a loop (--goal anchors the stop semantics)",
 		Args:  cobra.NoArgs,
 		RunE: run(func(cmd *cobra.Command, _ []string) error {
-			scopedID, err := scopeWorkflowID(id)
-			if err != nil {
-				return err
-			}
 			eng, err := ralphEngine()
 			if err != nil {
 				return err
 			}
-			s, err := eng.Start(scopedID, ralph.StartOpts{
+			s, err := eng.Start(id, ralph.StartOpts{
 				Goal: goal, KeepPolicy: keepPolicy,
 				MaxRounds: maxRounds, StallWindow: stallWindow, PlateauWindow: plateauWindow,
 			}, DryRun())
@@ -74,15 +76,11 @@ func newRalphNextCmd() *cobra.Command {
 		Short: "Advance one round; stop verdicts (passed/exhausted/stalled/plateaued) exit 4",
 		Args:  cobra.NoArgs,
 		RunE: run(func(cmd *cobra.Command, _ []string) error {
-			scopedID, err := scopeWorkflowID(id)
-			if err != nil {
-				return err
-			}
 			eng, err := ralphEngine()
 			if err != nil {
 				return err
 			}
-			st, v, err := eng.Next(scopedID, DryRun())
+			st, v, err := eng.Next(id, DryRun())
 			if err != nil {
 				return err
 			}
@@ -117,10 +115,6 @@ func newRalphCheckCmd() *cobra.Command {
 		Short: "Record a verifier result the AGENT ran (oma never executes verifiers)",
 		Args:  cobra.NoArgs,
 		RunE: run(func(cmd *cobra.Command, _ []string) error {
-			scopedID, err := scopeWorkflowID(id)
-			if err != nil {
-				return err
-			}
 			eng, err := ralphEngine()
 			if err != nil {
 				return err
@@ -131,7 +125,7 @@ func newRalphCheckCmd() *cobra.Command {
 			if cmd.Flags().Changed("score") {
 				scorePtr = &score
 			}
-			st, v, err := eng.RecordCheck(scopedID, verifierExit, scorePtr, note, DryRun())
+			st, v, err := eng.RecordCheck(id, verifierExit, scorePtr, note, DryRun())
 			if err != nil {
 				return err
 			}
@@ -167,15 +161,11 @@ func newRalphAbortCmd() *cobra.Command {
 		Short: "Abort a running loop",
 		Args:  cobra.NoArgs,
 		RunE: run(func(cmd *cobra.Command, _ []string) error {
-			scopedID, err := scopeWorkflowID(id)
-			if err != nil {
-				return err
-			}
 			eng, err := ralphEngine()
 			if err != nil {
 				return err
 			}
-			s, err := eng.Abort(scopedID, DryRun())
+			s, err := eng.Abort(id, DryRun())
 			if err != nil {
 				return err
 			}
@@ -198,15 +188,11 @@ func newRalphStatusCmd() *cobra.Command {
 		Short: "Show loop state (read-only)",
 		Args:  cobra.NoArgs,
 		RunE: run(func(cmd *cobra.Command, _ []string) error {
-			scopedID, err := scopeWorkflowID(id)
-			if err != nil {
-				return err
-			}
 			eng, err := ralphEngine()
 			if err != nil {
 				return err
 			}
-			s, err := eng.Resolve(scopedID)
+			s, err := eng.Resolve(id)
 			if err != nil {
 				return err
 			}

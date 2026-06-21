@@ -33,12 +33,13 @@ oma asset link --dev [--repo <path>]            # dogfood: symlink the local che
 ```
 oma state get <key> [--file <path>] [--json]
 oma state set <key> <value> [--file <path>] [--expected-revision <n>]
+oma state patch <namespace> --set <field=value>... [--file <path>] [--expected-revision <n>]
 oma state list [namespace-prefix] [--json]
 ```
 
 - The default file is `<project root>/.oma/state/<namespace>.json`, with keys of the form `<namespace>/<field>` (e.g. `autopilot/phase`); `--file` overrides the whole file path. A linked git worktree resolves `<project root>` back to the primary checkout, so one repository has one `.oma`.
-- By default, `state get/set autopilot/phase` is stored under the current session namespace (`autopilot-<session>/phase`); `oma state list autopilot` lists only the current session's autopilot namespaces. `--session <slug>` switches to an explicit scope.
-- `get --json` includes the namespace file revision; `set --expected-revision <n>` fails closed when another writer has advanced the file first.
+- By default, `state get/set autopilot/phase` and `state patch autopilot --set phase=...` are stored under the current session namespace (`autopilot-<session>/...`); `oma state list autopilot` lists only the current session's autopilot namespaces. `--session <slug>` switches to an explicit scope.
+- `get --json` includes the namespace file revision; `set --expected-revision <n>` and `patch --expected-revision <n>` fail closed when another writer has advanced the file first.
 - `list` scans the project `.oma/state/*.json`, optionally filtering by namespace prefix, and validates every matching file with the same fail-closed schema/namespace checks as `get`.
 - Writes: namespace-level cross-process lock, unique same-directory tmp+rename, single-generation `.bak`, mode 0600, and monotonic revision increments. Concurrent writers serialize instead of overwriting each other's fields.
 - A value is always stored as a string; structured data is serialized by the caller (keeping state semantics minimal).
@@ -72,7 +73,7 @@ oma ralph abort [--id <id>]
 oma ralph status [--id <id>] [--json]
 ```
 
-- State lands in `<project root>/.oma/state/interview-<id>.json` / `.oma/state/ralph-<id>.json`. The CLI scopes ids before reading or writing (`--id same` becomes a current-session-specific id; no `--id` becomes the session suffix). `--session <slug>` switches to an explicit scope.
+- State lands in `<project root>/.oma/state/interview-<id>.json` / `.oma/state/ralph-<id>.json`. The engine scopes logical ids before reading or writing (`--id same` becomes `same-<session>`). For `start`, omitted `--id` first generates a timestamp logical id and then appends the session suffix; for read/mutate commands, omitted `--id` resolves the current session's single active instance. `--session <slug>` switches to an explicit scope.
 - The verdict output of `gate`/`next` must contain: the verdict, the numbers it rests on, and the suggested next step (both machine-readable and human-readable forms).
 - **No `oma autopilot *` surface** (autopilot is pure markdown, using general `oma state`; changing this requires reopening the spec).
 - **ralph start ambiguity gate (advisory)**: if `--goal` is too vague (≤15 words and lacking a file/issue/symbol/test-runner anchor), a suggestion is printed to stderr (clarify with deep-interview first, or plan with ralplan) — it does **not** block startup.
@@ -102,8 +103,8 @@ oma relay close --outcome <approve|reject|abandon> --reason <text> [--pair <slug
 - The host-write commands `statusline install/uninstall/doctor` and the whole `hooks install/uninstall/doctor` group (which wrote to the host's `settings.json`/`hooks.json`) are not part of the surface — the user manages host config themselves, and an install wizard would overwrite their custom statusline/hooks. What remains is `oma relay statusline` (render) and the hidden `hook <event>` (dispatcher); the manual-wiring convention is in relay-v2-protocol.md §12.4. The **public relay group is exactly 9** (init/pair/draft/publish/wait/status/close/preflight/statusline; the dispatcher is hidden).
 - `pair set-lead` updates `session.json.roles.lead` — the confirmation that workflows §4.1 requires after a role swap.
 - `pair new` is the entry point for creating a pair (`ensure`/`join` carry only binding semantics); the creator becomes `roles.lead` by default (protocol §4), and `--peer` defaults to the claude↔codex counterpart. `draft` carries `--corrects <seq>` for the protocol §5 `corrects` field, mandatory when kind=correction.
-- The global workflow `--session` flag does not scope relay. A pair is deliberately cross-session: Codex and Claude Code each resolve their own platform author-session, then bind to the same pair under `.oma/relay/_bindings/`. Multiple pair workflows run in parallel as multiple Codex/Claude session pairs, not as multiple bindings for one author-session.
-- `claim` and `heartbeat` are internal protocol operations and have no public surface: claim is internalized as the sequence-number reservation step of `draft`; the heartbeat is refreshed automatically into this party's heartbeat file whenever any relay subcommand runs; stale diagnosis goes through `oma relay status --json` (the `last_heartbeat`/`stale` fields).
+- The global workflow `--session` flag does not scope relay. A pair is deliberately cross-session: Codex and Claude Code each resolve their own platform author-session, claim their author slot in `session.json.participant_sessions`, then bind to the same pair under `.oma/relay/_bindings/`. Multiple pair workflows run in parallel as multiple Codex/Claude session pairs, not as multiple bindings for one author-session.
+- `claim` and `heartbeat` are internal protocol operations and have no public surface: participant claim happens at `pair new`, `pair join`, or single-active auto-adopt; sequence claim is internalized as the sequence-number reservation step of `draft`; the heartbeat is refreshed automatically into this party's author-session heartbeat file whenever any relay subcommand runs; stale diagnosis goes through `oma relay status --json` (the `last_heartbeat`/`stale` fields).
 - **pair resolution order** (protocol §4a): explicit `--pair` ＞ the author-session binding file in the project ledger root (`.oma/relay/_bindings/`, written by `pair join|ensure`) ＞ auto-binding when there is exactly one active pair ＞ exit 3 listing candidates, zero writes.
 - **draft lifecycle**: a draft is created only just before publish (silence during the work period = a wait timeout, not stale; exit 11 = a crash after the peer signals draft intent).
 - `publish` can fold draft fill-in and publication into one step (body/prompt read from files, then through the §7 publish transaction after validation); a draft still containing a `TODO:` placeholder → refused.

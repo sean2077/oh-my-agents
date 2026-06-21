@@ -1,9 +1,12 @@
 package ralph
 
 import (
+	"bytes"
 	"errors"
+	"fmt"
 	"math"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -38,6 +41,134 @@ func mustStartScore(t *testing.T, e *Engine, maxRounds, plateauWindow int) *Stat
 }
 
 func fptr(f float64) *float64 { return &f }
+
+func TestSessionScopedDefaultIDAndOmittedResolve(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "state")
+	base := time.Date(2026, 6, 11, 12, 0, 0, 0, time.UTC)
+	e1 := NewEngine(dir)
+	e1.SessionSuffix = "sess-a"
+	e1.Now = func() time.Time { return base }
+	e2 := NewEngine(dir)
+	e2.SessionSuffix = "sess-b"
+	e2.Now = func() time.Time { return base.Add(time.Second) }
+
+	first, err := e1.Start("", StartOpts{Goal: "g"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.ID != "20260611-120000-sess-a" {
+		t.Fatalf("default scoped id = %q", first.ID)
+	}
+	if _, err := e2.Start("feature", StartOpts{Goal: "other"}, false); err != nil {
+		t.Fatal(err)
+	}
+	got, err := e1.Resolve("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ID != first.ID {
+		t.Fatalf("omitted resolve = %q, want %q", got.ID, first.ID)
+	}
+	if _, err := e1.Resolve("feature"); err == nil {
+		t.Fatal("explicit logical id must stay inside the current session")
+	}
+}
+
+func TestConcurrentProcessChecksDoNotLoseRecords(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "state")
+	e := NewEngine(dir)
+	e.SessionSuffix = "same"
+	e.Now = func() time.Time { return time.Date(2026, 6, 11, 12, 0, 0, 0, time.UTC) }
+	if _, err := e.Start("loop", StartOpts{Goal: "record every check", MaxRounds: 64}, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := e.Next("", false); err != nil {
+		t.Fatal(err)
+	}
+
+	start := filepath.Join(t.TempDir(), "start")
+	const workers = 16
+	type child struct {
+		cmd *exec.Cmd
+		out *bytes.Buffer
+	}
+	children := make([]child, 0, workers)
+	for i := 0; i < workers; i++ {
+		cmd := exec.Command(os.Args[0], "-test.run=^TestRalphCheckHelperProcess$")
+		cmd.Env = append(os.Environ(),
+			"OMA_RALPH_HELPER=1",
+			"OMA_RALPH_DIR="+dir,
+			"OMA_RALPH_START="+start,
+			"OMA_RALPH_NOTE="+fmt.Sprintf("sig-%02d", i),
+		)
+		out := &bytes.Buffer{}
+		cmd.Stdout = out
+		cmd.Stderr = out
+		if err := cmd.Start(); err != nil {
+			t.Fatalf("start helper %02d: %v", i, err)
+		}
+		children = append(children, child{cmd: cmd, out: out})
+	}
+	if err := os.WriteFile(start, []byte("go\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for i, child := range children {
+		if err := child.cmd.Wait(); err != nil {
+			t.Fatalf("helper %02d: %v\n%s", i, err, child.out.String())
+		}
+	}
+
+	got, err := e.Load("loop-same")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Checks) != workers {
+		t.Fatalf("checks = %d, want %d: %+v", len(got.Checks), workers, got.Checks)
+	}
+	if got.Revision != int64(2+workers) {
+		t.Fatalf("revision = %d, want %d", got.Revision, 2+workers)
+	}
+	seen := map[string]bool{}
+	for _, c := range got.Checks {
+		seen[c.Note] = true
+	}
+	for i := 0; i < workers; i++ {
+		note := fmt.Sprintf("sig-%02d", i)
+		if !seen[note] {
+			t.Fatalf("missing check note %s in %+v", note, got.Checks)
+		}
+	}
+}
+
+func TestRalphCheckHelperProcess(t *testing.T) {
+	if os.Getenv("OMA_RALPH_HELPER") != "1" {
+		return
+	}
+	waitForFile := func(path string) {
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			if _, err := os.Stat(path); err == nil {
+				return
+			} else if !errors.Is(err, os.ErrNotExist) {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(2)
+			}
+			if time.Now().After(deadline) {
+				fmt.Fprintln(os.Stderr, "timed out waiting for start file")
+				os.Exit(2)
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+	waitForFile(os.Getenv("OMA_RALPH_START"))
+	e := NewEngine(os.Getenv("OMA_RALPH_DIR"))
+	e.SessionSuffix = "same"
+	if _, _, err := e.RecordCheck("", 1, nil, os.Getenv("OMA_RALPH_NOTE"), false); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	os.Exit(0)
+}
 
 func TestStartRequiresGoal(t *testing.T) {
 	e := testEngine(t)

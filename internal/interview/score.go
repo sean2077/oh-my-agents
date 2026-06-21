@@ -90,29 +90,32 @@ func ParseScoresInput(path string) (*ScoresInput, error) {
 // ambiguity, ontology stability, weakest-target rotation, challenge
 // suggestions) and append the round record.
 func (e *Engine) Score(id string, in *ScoresInput, dryRun bool) (*State, *Report, error) {
-	s, err := e.Resolve(id)
+	var rep *Report
+	s, err := e.withResolved(id, dryRun, func(s *State) error {
+		// Round numbering: topology lock is round 0 and lives outside Rounds;
+		// scored rounds are 1-based and append to Rounds.
+		expected := len(s.Rounds) + 1
+		if s.Phase == PhaseTopologyPending {
+			expected = 0
+		}
+		if in.Round != expected {
+			return fmt.Errorf("%w: input round %d, expected %d (replays and skips are refused)", ErrInterview, in.Round, expected)
+		}
+		var err error
+		switch s.Phase {
+		case PhaseTopologyPending:
+			rep, err = e.lockTopology(s, in, dryRun)
+		case PhaseInterviewing:
+			rep, err = e.scoreRound(s, in, dryRun)
+		default:
+			err = fmt.Errorf("%w: score is not legal in phase %s", ErrInterview, s.Phase)
+		}
+		return err
+	})
 	if err != nil {
 		return nil, nil, err
 	}
-	// Round numbering: topology lock is round 0 and lives outside Rounds;
-	// scored rounds are 1-based and append to Rounds.
-	expected := len(s.Rounds) + 1
-	if s.Phase == PhaseTopologyPending {
-		expected = 0
-	}
-	if in.Round != expected {
-		return nil, nil, fmt.Errorf("%w: input round %d, expected %d (replays and skips are refused)", ErrInterview, in.Round, expected)
-	}
-	switch s.Phase {
-	case PhaseTopologyPending:
-		rep, err := e.lockTopology(s, in, dryRun)
-		return s, rep, err
-	case PhaseInterviewing:
-		rep, err := e.scoreRound(s, in, dryRun)
-		return s, rep, err
-	default:
-		return nil, nil, fmt.Errorf("%w: score is not legal in phase %s", ErrInterview, s.Phase)
-	}
+	return s, rep, nil
 }
 
 func (e *Engine) lockTopology(s *State, in *ScoresInput, dryRun bool) (*Report, error) {
@@ -433,60 +436,63 @@ type GateResult struct {
 // passed). waive records an early exit: interviewing → gate_waived with
 // the warning persisted.
 func (e *Engine) Gate(id string, waive bool, waiveReason string, dryRun bool) (*State, *GateResult, error) {
-	s, err := e.Resolve(id)
+	var res *GateResult
+	s, err := e.withResolved(id, dryRun, func(s *State) error {
+		res = &GateResult{
+			Ambiguity: s.CurrentAmbiguity, Threshold: s.Threshold,
+			Gap: s.CurrentAmbiguity - s.Threshold, Rounds: len(s.Rounds),
+			Warnings: roundWarnings(len(s.Rounds)),
+		}
+		if waive {
+			if waiveReason == "" {
+				return fmt.Errorf("%w: --waive requires --reason (the warning record)", ErrInterview)
+			}
+			if err := s.transition(PhaseGateWaived); err != nil {
+				return err
+			}
+			s.GateWaiver = fmt.Sprintf("waived at round %d with ambiguity %.3f > threshold %.3f: %s",
+				len(s.Rounds), s.CurrentAmbiguity, s.Threshold, waiveReason)
+			if !dryRun {
+				if err := e.save(s); err != nil {
+					return err
+				}
+			}
+			res.Phase, res.Waived, res.Mutated = s.Phase, true, true
+			return nil
+		}
+		res.Pass = s.CurrentAmbiguity <= s.Threshold
+		if res.Pass {
+			if s.Phase == PhaseInterviewing {
+				if err := s.transition(PhaseGatePassed); err != nil {
+					return err
+				}
+				res.Mutated = true
+				if !dryRun {
+					if err := e.save(s); err != nil {
+						return err
+					}
+				}
+			} else if s.Phase != PhaseGatePassed {
+				return fmt.Errorf("%w: gate is not legal in phase %s", ErrInterview, s.Phase)
+			}
+		} else {
+			if s.Phase != PhaseInterviewing {
+				return fmt.Errorf("%w: gate is not legal in phase %s", ErrInterview, s.Phase)
+			}
+			if last := s.lastRound(); last != nil {
+				weakest := Target{Component: last.Component, Dimension: last.Dimension}
+				if cs, ok := last.Scores[last.Component]; ok {
+					weakest.Score = cs[last.Dimension]
+				}
+				res.Weakest = &weakest
+			}
+		}
+		res.Phase = s.Phase
+		return nil
+	})
 	if err != nil {
 		return nil, nil, err
 	}
-	res := &GateResult{
-		Ambiguity: s.CurrentAmbiguity, Threshold: s.Threshold,
-		Gap: s.CurrentAmbiguity - s.Threshold, Rounds: len(s.Rounds),
-		Warnings: roundWarnings(len(s.Rounds)),
-	}
-	if waive {
-		if waiveReason == "" {
-			return nil, nil, fmt.Errorf("%w: --waive requires --reason (the warning record)", ErrInterview)
-		}
-		if err := s.transition(PhaseGateWaived); err != nil {
-			return nil, nil, err
-		}
-		s.GateWaiver = fmt.Sprintf("waived at round %d with ambiguity %.3f > threshold %.3f: %s",
-			len(s.Rounds), s.CurrentAmbiguity, s.Threshold, waiveReason)
-		if !dryRun {
-			if err := e.save(s); err != nil {
-				return nil, nil, err
-			}
-		}
-		res.Phase, res.Waived, res.Mutated = s.Phase, true, true
-		return s, res, nil
-	}
-	res.Pass = s.CurrentAmbiguity <= s.Threshold
-	if res.Pass {
-		if s.Phase == PhaseInterviewing {
-			if err := s.transition(PhaseGatePassed); err != nil {
-				return nil, nil, err
-			}
-			res.Mutated = true
-			if !dryRun {
-				if err := e.save(s); err != nil {
-					return nil, nil, err
-				}
-			}
-		} else if s.Phase != PhaseGatePassed {
-			return nil, nil, fmt.Errorf("%w: gate is not legal in phase %s", ErrInterview, s.Phase)
-		}
-	} else {
-		if s.Phase != PhaseInterviewing {
-			return nil, nil, fmt.Errorf("%w: gate is not legal in phase %s", ErrInterview, s.Phase)
-		}
-		if last := s.lastRound(); last != nil {
-			weakest := Target{Component: last.Component, Dimension: last.Dimension}
-			if cs, ok := last.Scores[last.Component]; ok {
-				weakest.Score = cs[last.Dimension]
-			}
-			res.Weakest = &weakest
-		}
-	}
-	res.Phase = s.Phase
 	return s, res, nil
 }
 

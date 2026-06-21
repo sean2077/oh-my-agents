@@ -51,6 +51,7 @@ type Frontmatter struct {
 	Schema        string
 	Seq           int
 	Author        string
+	AuthorSession string
 	Peer          string
 	Kind          string
 	Status        string
@@ -92,6 +93,9 @@ func (f *Frontmatter) Validate() error {
 	}
 	if !authorRe.MatchString(f.Author) || !authorRe.MatchString(f.Peer) {
 		return fmt.Errorf("%w: author/peer %q/%q invalid", ErrRelay, f.Author, f.Peer)
+	}
+	if !sessionKeyRe.MatchString(f.AuthorSession) {
+		return fmt.Errorf("%w: author_session %q invalid", ErrRelay, f.AuthorSession)
 	}
 	if f.Author == f.Peer {
 		return fmt.Errorf("%w: author equals peer (%s)", ErrRelay, f.Author)
@@ -180,6 +184,7 @@ func Render(f *Frontmatter, body string) []byte {
 	fmt.Fprintf(&b, "schema: %s\n", f.Schema)
 	fmt.Fprintf(&b, "seq: %d\n", f.Seq)
 	fmt.Fprintf(&b, "author: %s\n", f.Author)
+	fmt.Fprintf(&b, "author_session: %s\n", f.AuthorSession)
 	fmt.Fprintf(&b, "peer: %s\n", f.Peer)
 	fmt.Fprintf(&b, "kind: %s\n", f.Kind)
 	fmt.Fprintf(&b, "status: %s\n", f.Status)
@@ -270,6 +275,8 @@ func Parse(raw []byte) (*Frontmatter, string, error) {
 			f.Seq, err = strconv.Atoi(value)
 		case "author":
 			f.Author = value
+		case "author_session":
+			f.AuthorSession = value
 		case "peer":
 			f.Peer = value
 		case "kind":

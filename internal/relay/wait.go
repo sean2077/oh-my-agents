@@ -41,10 +41,14 @@ func (l *Ledger) Wait(slug string, timeout time.Duration) (*WaitResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := s.requireParticipantSession(l.Identity); err != nil {
+		return nil, err
+	}
 	peer, err := s.Peer(l.Identity.Author)
 	if err != nil {
 		return nil, err
 	}
+	peerSession, _ := s.participantSession(peer)
 	if archived {
 		return l.archivedResult(dir, peer)
 	}
@@ -73,7 +77,7 @@ func (l *Ledger) Wait(slug string, timeout time.Duration) (*WaitResult, error) {
 		if cur.Terminal() {
 			return &WaitResult{Code: WaitTerminal, Reason: "pair is " + cur.Status}, nil
 		}
-		if stale, seq := l.staleIntent(s.Pair, peer); stale {
+		if stale, seq := l.staleIntent(s.Pair, peer, peerSession); stale {
 			return &WaitResult{Code: WaitStaleIntent, Reason: fmt.Sprintf("%s reserved seq %03d then went silent (heartbeat stale)", peer, seq)}, nil
 		}
 		if !l.Now().Before(deadline) {
@@ -185,11 +189,11 @@ func (l *Ledger) newPeerArtifact(pairDir, peer string) (string, bool, error) {
 // formal artifact while the peer heartbeat is stale. A reservation WITH
 // a matching ready artifact is post-publish residue: a cleanup warning
 // surfaced by status/doctor, never a stale-intent signal.
-func (l *Ledger) staleIntent(slug, peer string) (bool, int) {
-	if !l.heartbeatStale(slug, peer) {
+func (l *Ledger) staleIntent(slug, peer, peerSession string) (bool, int) {
+	if !l.heartbeatStale(slug, peer, peerSession) {
 		return false, 0
 	}
-	for _, seq := range l.reservations(slug, peer) {
+	for _, seq := range l.reservations(slug, peer, peerSession) {
 		if !l.hasReadyAt(slug, seq, peer) {
 			return true, seq
 		}
@@ -200,7 +204,10 @@ func (l *Ledger) staleIntent(slug, peer string) (bool, int) {
 // reservations lists .seq reservation numbers owned by one author; the
 // owner lives in the marker CONTENT (first token), the filename is the
 // bare seq so O_EXCL is exclusive across authors.
-func (l *Ledger) reservations(slug, author string) []int {
+func (l *Ledger) reservations(slug, author, sessionKey string) []int {
+	if sessionKey == "" {
+		return nil
+	}
 	dir := filepath.Join(l.PairDir(slug), ".seq")
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -217,7 +224,7 @@ func (l *Ledger) reservations(slug, author string) []int {
 			continue
 		}
 		owner, _, _ := strings.Cut(strings.TrimSpace(string(raw)), " ")
-		if owner == author {
+		if owner == ownerToken(author, sessionKey) {
 			seqs = append(seqs, n)
 		}
 	}

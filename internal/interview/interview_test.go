@@ -50,6 +50,38 @@ func mustScore(t *testing.T, e *Engine, in *ScoresInput) *Report {
 	return rep
 }
 
+func TestSessionScopedDefaultIDAndOmittedResolve(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "state")
+	base := time.Date(2026, 6, 11, 12, 0, 0, 0, time.UTC)
+	e1 := NewEngine(dir)
+	e1.SessionSuffix = "sess-a"
+	e1.Now = func() time.Time { return base }
+	e2 := NewEngine(dir)
+	e2.SessionSuffix = "sess-b"
+	e2.Now = func() time.Time { return base.Add(time.Second) }
+
+	first, err := e1.Start("", "greenfield", 0.20, "test", "idea", false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.ID != "20260611-120000-sess-a" {
+		t.Fatalf("default scoped id = %q", first.ID)
+	}
+	if _, err := e2.Start("feature", "greenfield", 0.20, "test", "idea", false, false); err != nil {
+		t.Fatal(err)
+	}
+	got, err := e1.Resolve("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ID != first.ID {
+		t.Fatalf("omitted resolve = %q, want %q", got.ID, first.ID)
+	}
+	if _, err := e1.Resolve("feature"); err == nil {
+		t.Fatal("explicit logical id must stay inside the current session")
+	}
+}
+
 func TestGreenfieldAmbiguityFormula(t *testing.T) {
 	e := testEngine(t)
 	mustStart(t, e, "greenfield", 0.20)

@@ -44,6 +44,9 @@ func (l *Ledger) Status(slug string, last int) (*PairStatus, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := s.requireParticipantSession(l.Identity); err != nil {
+		return nil, err
+	}
 	pairDir := l.PairDir(s.Pair)
 	st := &PairStatus{Pair: s.Pair, Session: s, Heartbeats: map[string]HeartbeatInfo{}}
 
@@ -76,7 +79,8 @@ func (l *Ledger) Status(slug string, last int) (*PairStatus, error) {
 
 	for _, p := range s.Participants {
 		info := HeartbeatInfo{}
-		if age, ok := l.heartbeatAge(s.Pair, p); ok {
+		sessionKey, _ := s.participantSession(p)
+		if age, ok := l.heartbeatAge(s.Pair, p, sessionKey); ok {
 			t := l.Now().Add(-age)
 			info.LastBeat = &t
 			info.AgeSeconds = int(age.Seconds())
@@ -96,13 +100,14 @@ func (l *Ledger) Status(slug string, last int) (*PairStatus, error) {
 		}
 	}
 	peer, _ := s.Peer(l.Identity.Author)
-	for _, seq := range l.reservations(s.Pair, peer) {
+	peerSession, _ := s.participantSession(peer)
+	for _, seq := range l.reservations(s.Pair, peer, peerSession) {
 		st.PeerReservations = append(st.PeerReservations, seq)
 		if l.hasReadyAt(s.Pair, seq, peer) {
 			st.Residue = append(st.Residue, fmt.Sprintf(".seq/%03d.%s has a published counterpart (post-publish leftover; doctor cleans)", seq, peer))
 		}
 	}
-	for _, seq := range l.reservations(s.Pair, l.Identity.Author) {
+	for _, seq := range l.reservations(s.Pair, l.Identity.Author, l.Identity.SessionKey) {
 		if l.hasReadyAt(s.Pair, seq, l.Identity.Author) {
 			st.Residue = append(st.Residue, fmt.Sprintf(".seq/%03d.%s has a published counterpart (post-publish leftover; doctor cleans)", seq, l.Identity.Author))
 		}

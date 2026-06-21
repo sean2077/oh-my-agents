@@ -14,9 +14,10 @@ func TestRolesLeadValidation(t *testing.T) {
 	base := func() *Session {
 		return &Session{
 			Schema: Schema, Pair: "20260611-x", Project: "p",
-			Participants: []string{"claude", "codex"},
-			Roles:        map[string]string{"lead": "claude"},
-			Status:       "active", Created: time.Now(),
+			Participants:        []string{"claude", "codex"},
+			ParticipantSessions: map[string]string{"claude": "0123456789ab"},
+			Roles:               map[string]string{"lead": "claude"},
+			Status:              "active", Created: time.Now(),
 		}
 	}
 	if err := base().Validate(); err != nil {
@@ -104,7 +105,8 @@ func TestFrontmatterRoundTrip(t *testing.T) {
 	cor := 7
 	fm := &Frontmatter{
 		Schema: ArtifactSchema, Seq: 42, Author: "claude", Peer: "codex",
-		Kind: "correction", Status: "timed_out",
+		AuthorSession: "0123456789ab",
+		Kind:          "correction", Status: "timed_out",
 		Created:       time.Date(2026, 6, 11, 13, 0, 0, 0, time.UTC),
 		InReplyTo:     &in,
 		Corrects:      &cor,
@@ -451,7 +453,7 @@ func TestSecretScannerShapes(t *testing.T) {
 }
 
 func TestParseRejectsDuplicateFrontmatterKeys(t *testing.T) {
-	fm := &Frontmatter{Schema: ArtifactSchema, Seq: 1, Author: "claude", Peer: "codex",
+	fm := &Frontmatter{Schema: ArtifactSchema, Seq: 1, Author: "claude", AuthorSession: "0123456789ab", Peer: "codex",
 		Kind: "note", Status: "ready", Created: time.Date(2026, 6, 11, 13, 0, 0, 0, time.UTC),
 		TouchedPaths: []string{}, PromptForNext: "x"}
 	raw := string(Render(fm, "body"))
@@ -509,6 +511,158 @@ func TestCloseArchivesAndRestoreBringsBack(t *testing.T) {
 	// Double close refused.
 	if err := claude.Close(s.Pair, "abandon", "again", false); err == nil {
 		t.Fatal("closing a terminal pair must refuse")
+	}
+}
+
+func TestCloseCanResumeClosingPair(t *testing.T) {
+	ck := newClock()
+	root, _ := initRoot(t, ck)
+	claude := testLedger(t, root, "claude", ck)
+	s := mustPair(t, claude, "topic")
+	s.Status = StatusClosing
+	if err := claude.saveSession(s); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := claude.Close(s.Pair, "abandon", "operator retry", false); err != nil {
+		t.Fatalf("resume close from closing: %v", err)
+	}
+	if _, err := os.Stat(claude.PairDir(s.Pair)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("active pair after resumed close: %v", err)
+	}
+	archived, _, err := claude.loadArchivedSession(s.Pair)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if archived.Status != StatusClosed || archived.Outcome == nil || *archived.Outcome != "abandon" {
+		t.Fatalf("archived session = %+v", archived)
+	}
+}
+
+func TestCloseCanArchiveClosedButActivePair(t *testing.T) {
+	ck := newClock()
+	root, _ := initRoot(t, ck)
+	claude := testLedger(t, root, "claude", ck)
+	s := mustPair(t, claude, "topic")
+	now := ck.now().UTC()
+	outcome, reason := "abandon", "recover archive"
+	s.Status = StatusClosed
+	s.Closed = &now
+	s.Outcome = &outcome
+	s.Reason = &reason
+	if err := claude.saveSession(s); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := claude.Close(s.Pair, outcome, reason, false); err != nil {
+		t.Fatalf("archive closed active pair: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "_archive", s.Pair, "CLOSED")); err != nil {
+		t.Fatalf("CLOSED sentinel missing after recovery: %v", err)
+	}
+}
+
+func TestCloseArchivedPairIsIdempotentWithSameParameters(t *testing.T) {
+	ck := newClock()
+	root, _ := initRoot(t, ck)
+	claude := testLedger(t, root, "claude", ck)
+	s := mustPair(t, claude, "topic")
+
+	if err := claude.Close(s.Pair, "abandon", "done", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := claude.Close(s.Pair, "abandon", "done", false); err != nil {
+		t.Fatalf("archived same-parameter close should be idempotent: %v", err)
+	}
+	if err := claude.Close(s.Pair, "abandon", "different", false); err == nil {
+		t.Fatal("archived close with a different reason must refuse")
+	}
+}
+
+func TestHeartbeatDoesNotRecreateArchivedPair(t *testing.T) {
+	ck := newClock()
+	root, _ := initRoot(t, ck)
+	claude := testLedger(t, root, "claude", ck)
+	codex := testLedger(t, root, "codex", ck)
+	s := mustPair(t, claude, "topic")
+	if _, err := codex.Join(s.Pair, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := claude.Close(s.Pair, "abandon", "done", false); err != nil {
+		t.Fatal(err)
+	}
+
+	codex.touchHeartbeat(s.Pair)
+	if _, err := os.Stat(codex.PairDir(s.Pair)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("heartbeat recreated active pair dir: %v", err)
+	}
+}
+
+func TestParticipantSessionClaimRejectsSameAuthorDifferentSession(t *testing.T) {
+	ck := newClock()
+	root, _ := initRoot(t, ck)
+	claude := testLedger(t, root, "claude", ck)
+	codex := testLedger(t, root, "codex", ck)
+	otherID, err := makeIdentity("codex", "another-codex-window")
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherCodex := NewLedger(root, otherID)
+	otherCodex.Now = ck.now
+	otherCodex.PollInterval = time.Millisecond
+
+	s := mustPair(t, claude, "topic")
+	if _, err := codex.Join(s.Pair, false); err != nil {
+		t.Fatal(err)
+	}
+	joined, err := claude.LoadSession(s.Pair)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := joined.ParticipantSessions["codex"]; got != codex.Identity.SessionKey {
+		t.Fatalf("codex participant session = %s, want %s", got, codex.Identity.SessionKey)
+	}
+	if _, err := otherCodex.Join(s.Pair, false); err == nil || !strings.Contains(err.Error(), "claimed") {
+		t.Fatalf("same-author second session join err = %v, want claimed refusal", err)
+	}
+	if _, err := otherCodex.CreateDraft(s.Pair, "note", nil, nil, false); err == nil || !strings.Contains(err.Error(), "claimed") {
+		t.Fatalf("same-author second session draft err = %v, want claimed refusal", err)
+	}
+}
+
+func TestHeartbeatAndReservationsAreSessionOwned(t *testing.T) {
+	ck := newClock()
+	root, _ := initRoot(t, ck)
+	claude := testLedger(t, root, "claude", ck)
+	codex := testLedger(t, root, "codex", ck)
+	s := mustPair(t, claude, "topic")
+	if _, err := codex.Join(s.Pair, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := codex.CreateDraft(s.Pair, "note", nil, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	heartbeat := filepath.Join(codex.PairDir(s.Pair), ".heartbeat", ownerName("codex", codex.Identity.SessionKey))
+	if _, err := os.Stat(heartbeat); err != nil {
+		t.Fatalf("session-owned heartbeat missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(codex.PairDir(s.Pair), ".heartbeat", "codex")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("author-only heartbeat should not exist: %v", err)
+	}
+	if got := codex.reservations(s.Pair, "codex", codex.Identity.SessionKey); len(got) != 1 || got[0] != 1 {
+		t.Fatalf("session reservations = %v, want [1]", got)
+	}
+	otherID, _ := makeIdentity("codex", "another-codex-window")
+	otherCodex := NewLedger(root, otherID)
+	if got := otherCodex.reservations(s.Pair, "codex", otherCodex.Identity.SessionKey); len(got) != 0 {
+		t.Fatalf("other session reservations = %v, want none", got)
+	}
+	raw, err := os.ReadFile(filepath.Join(codex.PairDir(s.Pair), ".seq", "001"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if owner, _, _ := strings.Cut(strings.TrimSpace(string(raw)), " "); owner != ownerToken("codex", codex.Identity.SessionKey) {
+		t.Fatalf("reservation owner = %q", owner)
 	}
 }
 

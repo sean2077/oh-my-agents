@@ -20,6 +20,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/sean2077/oh-my-agents/internal/atomicfile"
+	"github.com/sean2077/oh-my-agents/internal/session"
 )
 
 // Schema is the persisted document schema (docs/reference/schemas.md §6). The /2 bump
@@ -65,6 +68,7 @@ type Check struct {
 type State struct {
 	Schema      string  `json:"schema"`
 	ID          string  `json:"id"`
+	Revision    int64   `json:"revision"`
 	Phase       string  `json:"phase"`
 	Goal        string  `json:"goal"`
 	KeepPolicy  string  `json:"keep_policy"`
@@ -94,14 +98,26 @@ var idRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
 
 // Engine anchors ralph state under dir (.oma/state).
 type Engine struct {
-	Dir string
-	Now func() time.Time
+	Dir           string
+	Now           func() time.Time
+	SessionSuffix string
 }
 
 // NewEngine builds an Engine for the given state directory.
 func NewEngine(dir string) *Engine { return &Engine{Dir: dir, Now: time.Now} }
 
 func (e *Engine) path(id string) string { return filepath.Join(e.Dir, "ralph-"+id+".json") }
+
+func (e *Engine) scopedID(id string) (string, error) {
+	if strings.TrimSpace(id) == "" || e.SessionSuffix == "" {
+		return strings.TrimSpace(id), nil
+	}
+	return session.ScopeName(id, e.SessionSuffix)
+}
+
+func (e *Engine) matchesSession(id string) bool {
+	return e.SessionSuffix == "" || strings.HasSuffix(id, "-"+e.SessionSuffix)
+}
 
 // StartOpts configures a new loop. Zero values take documented defaults
 // (KeepPolicy→pass_only, MaxRounds→10, StallWindow→3, PlateauWindow→3).
@@ -128,6 +144,11 @@ func (e *Engine) Start(id string, opts StartOpts, dryRun bool) (*State, error) {
 	}
 	if id == "" {
 		id = e.Now().UTC().Format("20060102-150405")
+	}
+	var err error
+	id, err = e.scopedID(id)
+	if err != nil {
+		return nil, err
 	}
 	if !idRe.MatchString(id) {
 		return nil, fmt.Errorf("%w: id %q (want %s)", ErrRalph, id, idRe)
@@ -158,7 +179,15 @@ func (e *Engine) Start(id string, opts StartOpts, dryRun bool) (*State, error) {
 	if dryRun {
 		return s, nil
 	}
-	return s, e.save(s)
+	err = e.withInstanceLock(id, func() error {
+		if _, statErr := os.Stat(e.path(id)); statErr == nil {
+			return fmt.Errorf("%w: ralph %q already exists", ErrRalph, id)
+		} else if !errors.Is(statErr, os.ErrNotExist) {
+			return statErr
+		}
+		return e.save(s)
+	})
+	return s, err
 }
 
 // StatePath is the absolute state file for one id (dry-run reporting).
@@ -207,7 +236,11 @@ func (s *State) validate() error {
 // loop must exist.
 func (e *Engine) Resolve(id string) (*State, error) {
 	if id != "" {
-		return e.Load(id)
+		scoped, err := e.scopedID(id)
+		if err != nil {
+			return nil, err
+		}
+		return e.Load(scoped)
 	}
 	matches, err := filepath.Glob(filepath.Join(e.Dir, "ralph-*.json"))
 	if err != nil {
@@ -216,6 +249,9 @@ func (e *Engine) Resolve(id string) (*State, error) {
 	var active []*State
 	for _, m := range matches {
 		base := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(m), "ralph-"), ".json")
+		if !e.matchesSession(base) {
+			continue
+		}
 		s, err := e.Load(base)
 		if err != nil {
 			// A corrupt or foreign-major candidate must fail the omitted-id
@@ -255,30 +291,36 @@ type Verdict struct {
 // crossing max_rounds flips to exhausted. Under score_improvement an
 // exhausted loop still earns a receipt over the kept best.
 func (e *Engine) Next(id string, dryRun bool) (*State, *Verdict, error) {
-	s, err := e.Resolve(id)
+	var v *Verdict
+	s, err := e.withResolved(id, dryRun, func(s *State) error {
+		if s.Terminal() {
+			v = &Verdict{Phase: s.Phase, Round: s.Round, Continue: false, Reason: "loop is " + s.Phase}
+			return nil
+		}
+		s.Round++
+		if s.Round > s.MaxRounds {
+			s.Phase = PhaseExhausted
+			if s.KeepPolicy == KeepScoreImprovement && len(s.Checks) > 0 {
+				s.Receipt = ralphReceipt(s)
+			}
+			if err := e.saveUnless(s, dryRun); err != nil {
+				return err
+			}
+			v = &Verdict{Phase: s.Phase, Round: s.Round, Continue: false, Mutated: true,
+				Reason: fmt.Sprintf("exhausted: round %d exceeds max_rounds %d", s.Round, s.MaxRounds)}
+			return nil
+		}
+		if err := e.saveUnless(s, dryRun); err != nil {
+			return err
+		}
+		v = &Verdict{Phase: s.Phase, Round: s.Round, Continue: true, Mutated: true,
+			Reason: fmt.Sprintf("round %d of %d", s.Round, s.MaxRounds)}
+		return nil
+	})
 	if err != nil {
 		return nil, nil, err
 	}
-	if s.Terminal() {
-		return s, &Verdict{Phase: s.Phase, Round: s.Round, Continue: false, Reason: "loop is " + s.Phase}, nil
-	}
-	s.Round++
-	if s.Round > s.MaxRounds {
-		s.Phase = PhaseExhausted
-		if s.KeepPolicy == KeepScoreImprovement && len(s.Checks) > 0 {
-			s.Receipt = ralphReceipt(s)
-		}
-		if err := e.saveUnless(s, dryRun); err != nil {
-			return nil, nil, err
-		}
-		return s, &Verdict{Phase: s.Phase, Round: s.Round, Continue: false, Mutated: true,
-			Reason: fmt.Sprintf("exhausted: round %d exceeds max_rounds %d", s.Round, s.MaxRounds)}, nil
-	}
-	if err := e.saveUnless(s, dryRun); err != nil {
-		return nil, nil, err
-	}
-	return s, &Verdict{Phase: s.Phase, Round: s.Round, Continue: true, Mutated: true,
-		Reason: fmt.Sprintf("round %d of %d", s.Round, s.MaxRounds)}, nil
+	return s, v, nil
 }
 
 // RecordCheck stores one verifier result. Exit 0 → passed. Under pass_only a
@@ -287,68 +329,71 @@ func (e *Engine) Next(id string, dryRun bool) (*State, *Verdict, error) {
 // check must carry a finite --score; the loop keeps the strict-best score and
 // plateaus when no improvement lands within plateau_window rounds.
 func (e *Engine) RecordCheck(id string, verifierExit int, score *float64, note string, dryRun bool) (*State, *Verdict, error) {
-	s, err := e.Resolve(id)
+	var v *Verdict
+	s, err := e.withResolved(id, dryRun, func(s *State) error {
+		if s.Terminal() {
+			return fmt.Errorf("%w: loop %s is %s; check is not legal on a terminal loop", ErrRalph, s.ID, s.Phase)
+		}
+		// Score/policy validation is fail-closed: score_improvement demands a
+		// finite score on every check; pass_only forbids one (it would be inert).
+		switch s.KeepPolicy {
+		case KeepScoreImprovement:
+			if score == nil {
+				return fmt.Errorf("%w: keep-policy score_improvement requires --score on every check", ErrRalph)
+			}
+			if math.IsNaN(*score) || math.IsInf(*score, 0) {
+				return fmt.Errorf("%w: --score must be a finite number", ErrRalph)
+			}
+		default: // pass_only (and any legacy empty policy already normalized at Start)
+			if score != nil {
+				return fmt.Errorf("%w: --score is only valid under keep-policy score_improvement", ErrRalph)
+			}
+		}
+		s.Checks = append(s.Checks, Check{Round: s.Round, VerifierExit: verifierExit, Score: score, Note: note, At: e.Now().UTC()})
+		// keep-best: strict improvement only (no epsilon).
+		if s.KeepPolicy == KeepScoreImprovement && score != nil {
+			if s.BestScore == nil || *score > *s.BestScore {
+				best := *score
+				s.BestScore = &best
+				s.BestRound = s.Round
+			}
+		}
+		switch {
+		case verifierExit == 0:
+			s.Phase = PhasePassed
+			s.Receipt = ralphReceipt(s)
+		case s.KeepPolicy == KeepScoreImprovement:
+			if plateaued(s) {
+				s.Phase = PhasePlateaued
+				s.Receipt = ralphReceipt(s)
+			}
+		default: // pass_only
+			if e.stalled(s) {
+				s.Phase = PhaseStalled
+			}
+		}
+		if err := e.saveUnless(s, dryRun); err != nil {
+			return err
+		}
+		v = &Verdict{Phase: s.Phase, Round: s.Round, Continue: s.Phase == PhaseRunning, Mutated: true}
+		switch s.Phase {
+		case PhasePassed:
+			v.Reason = "verifier passed"
+		case PhasePlateaued:
+			v.Reason = fmt.Sprintf("plateaued: no score improvement over %d rounds (best %s at round %d) — change strategy", s.PlateauWindow, fmtScore(s.BestScore), s.BestRound)
+		case PhaseStalled:
+			v.Reason = fmt.Sprintf("stalled: %d consecutive failures with signature %q — change strategy", s.StallWindow, note)
+		default:
+			if s.KeepPolicy == KeepScoreImprovement {
+				v.Reason = fmt.Sprintf("score %s recorded (best %s at round %d)", fmtScore(score), fmtScore(s.BestScore), s.BestRound)
+			} else {
+				v.Reason = fmt.Sprintf("verifier exit %d recorded", verifierExit)
+			}
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, nil, err
-	}
-	if s.Terminal() {
-		return nil, nil, fmt.Errorf("%w: loop %s is %s; check is not legal on a terminal loop", ErrRalph, s.ID, s.Phase)
-	}
-	// Score/policy validation is fail-closed: score_improvement demands a
-	// finite score on every check; pass_only forbids one (it would be inert).
-	switch s.KeepPolicy {
-	case KeepScoreImprovement:
-		if score == nil {
-			return nil, nil, fmt.Errorf("%w: keep-policy score_improvement requires --score on every check", ErrRalph)
-		}
-		if math.IsNaN(*score) || math.IsInf(*score, 0) {
-			return nil, nil, fmt.Errorf("%w: --score must be a finite number", ErrRalph)
-		}
-	default: // pass_only (and any legacy empty policy already normalized at Start)
-		if score != nil {
-			return nil, nil, fmt.Errorf("%w: --score is only valid under keep-policy score_improvement", ErrRalph)
-		}
-	}
-	s.Checks = append(s.Checks, Check{Round: s.Round, VerifierExit: verifierExit, Score: score, Note: note, At: e.Now().UTC()})
-	// keep-best: strict improvement only (no epsilon).
-	if s.KeepPolicy == KeepScoreImprovement && score != nil {
-		if s.BestScore == nil || *score > *s.BestScore {
-			v := *score
-			s.BestScore = &v
-			s.BestRound = s.Round
-		}
-	}
-	switch {
-	case verifierExit == 0:
-		s.Phase = PhasePassed
-		s.Receipt = ralphReceipt(s)
-	case s.KeepPolicy == KeepScoreImprovement:
-		if plateaued(s) {
-			s.Phase = PhasePlateaued
-			s.Receipt = ralphReceipt(s)
-		}
-	default: // pass_only
-		if e.stalled(s) {
-			s.Phase = PhaseStalled
-		}
-	}
-	if err := e.saveUnless(s, dryRun); err != nil {
-		return nil, nil, err
-	}
-	v := &Verdict{Phase: s.Phase, Round: s.Round, Continue: s.Phase == PhaseRunning, Mutated: true}
-	switch s.Phase {
-	case PhasePassed:
-		v.Reason = "verifier passed"
-	case PhasePlateaued:
-		v.Reason = fmt.Sprintf("plateaued: no score improvement over %d rounds (best %s at round %d) — change strategy", s.PlateauWindow, fmtScore(s.BestScore), s.BestRound)
-	case PhaseStalled:
-		v.Reason = fmt.Sprintf("stalled: %d consecutive failures with signature %q — change strategy", s.StallWindow, note)
-	default:
-		if s.KeepPolicy == KeepScoreImprovement {
-			v.Reason = fmt.Sprintf("score %s recorded (best %s at round %d)", fmtScore(score), fmtScore(s.BestScore), s.BestRound)
-		} else {
-			v.Reason = fmt.Sprintf("verifier exit %d recorded", verifierExit)
-		}
 	}
 	return s, v, nil
 }
@@ -440,18 +485,16 @@ func fmtScore(p *float64) string {
 
 // Abort ends a running loop.
 func (e *Engine) Abort(id string, dryRun bool) (*State, error) {
-	s, err := e.Resolve(id)
-	if err != nil {
-		return nil, err
-	}
-	if s.Terminal() {
-		return nil, fmt.Errorf("%w: loop %s is already %s", ErrRalph, s.ID, s.Phase)
-	}
-	s.Phase = PhaseAborted
-	if dryRun {
-		return s, nil
-	}
-	return s, e.save(s)
+	return e.withResolved(id, dryRun, func(s *State) error {
+		if s.Terminal() {
+			return fmt.Errorf("%w: loop %s is already %s", ErrRalph, s.ID, s.Phase)
+		}
+		s.Phase = PhaseAborted
+		if dryRun {
+			return nil
+		}
+		return e.save(s)
+	})
 }
 
 // saveUnless persists except under --dry-run (the full validation and
@@ -466,6 +509,7 @@ func (e *Engine) saveUnless(s *State, dryRun bool) error {
 // save persists atomically with a single-generation .bak.
 func (e *Engine) save(s *State) error {
 	s.Updated = e.Now().UTC()
+	s.Revision++
 	raw, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
 		return err
@@ -474,16 +518,45 @@ func (e *Engine) save(s *State) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	if prev, err := os.ReadFile(path); err == nil {
-		if err := os.WriteFile(path+".bak", prev, 0o600); err != nil {
-			return fmt.Errorf("write state backup: %w", err)
-		}
+	if err := atomicfile.WriteWithBackup(path, append(raw, '\n'), 0o600); err != nil {
+		return fmt.Errorf("write ralph state: %w", err)
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, append(raw, '\n'), 0o600); err != nil {
+	return nil
+}
+
+func (e *Engine) withResolved(id string, dryRun bool, fn func(*State) error) (*State, error) {
+	s, err := e.Resolve(id)
+	if err != nil {
+		return nil, err
+	}
+	if dryRun {
+		return s, fn(s)
+	}
+	err = e.withInstanceLock(s.ID, func() error {
+		var err error
+		s, err = e.Load(s.ID)
+		if err != nil {
+			return err
+		}
+		return fn(s)
+	})
+	return s, err
+}
+
+func (e *Engine) withInstanceLock(id string, fn func() error) error {
+	lockRoot := filepath.Join(e.Dir, ".locks")
+	if err := os.MkdirAll(lockRoot, 0o700); err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	lock, err := atomicfile.AcquireLock(filepath.Join(lockRoot, "ralph-"+id+".lock"), 30*time.Second)
+	if err != nil {
+		if errors.Is(err, atomicfile.ErrLockHeld) {
+			return fmt.Errorf("%w: ralph %s is being mutated by another process", ErrRalph, id)
+		}
+		return err
+	}
+	defer func() { _ = lock.Release() }()
+	return fn()
 }
 
 // schemaMajor: strict digit-only parse (per-package copy by convention).

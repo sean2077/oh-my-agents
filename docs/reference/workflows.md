@@ -17,6 +17,9 @@ an explicit `--session <slug>`:
 - `oma interview start --id same` and
   `oma ralph start --id same` scope the ids before reading or
   writing, so two host sessions can reuse the same human id without colliding.
+- When `interview start` or `ralph start` omits `--id`, the engine generates
+  a timestamp logical id first, then appends the session suffix. Later omitted
+  `--id` commands resolve exactly one active instance in the current session.
 - `oma relay` uses the shared project `.oma/relay/` root and separates pairs by
   author-session binding files. It intentionally ignores workflow `--session`
   scoping because each pair workflow is itself a Codex-session + Claude-session
@@ -38,7 +41,7 @@ created ──start──▶ topology_pending ──(lock topology)──▶ int
 
 ### 1.2 Persistence (`<project root>/.oma/state/interview-<id>.json`, schema `oma-interview/1`)
 
-Fields: `id, phase, type(greenfield|brownfield), threshold, threshold_source, initial_idea, topology{status, components[{id,name,description,status,evidence[],clarity_scores{goal,constraints,criteria,context?}}], deferrals[], last_targeted_component_id}, rounds[{round, component, dimension, question, answer, scores, ambiguity}], ontology_snapshots[{round, entities[], stability_ratio, matching_reasoning}], challenge_modes_used[], current_ambiguity, gate_waiver?, spec_path, created, updated`. `gate_waiver` carries the early-exit warning record — the landing field for the state machine's `gate_waived(warning recorded)` transition.
+Fields: `id, revision, phase, type(greenfield|brownfield), threshold, threshold_source, initial_idea, topology{status, components[{id,name,description,status,evidence[],clarity_scores{goal,constraints,criteria,context?}}], deferrals[], last_targeted_component_id}, rounds[{round, component, dimension, question, answer, scores, ambiguity}], ontology_snapshots[{round, entities[], stability_ratio, matching_reasoning}], challenge_modes_used[], current_ambiguity, gate_waiver?, spec_path, created, updated`. `gate_waiver` carries the early-exit warning record — the landing field for the state machine's `gate_waived(warning recorded)` transition.
 
 ### 1.3 Command semantics
 
@@ -72,7 +75,7 @@ running ──plateau_window consecutive rounds with no strict score gain (score
 any state ──abort──▶ aborted
 ```
 
-Fields: `id, phase, goal, keep_policy(pass_only|score_improvement, default pass_only), max_rounds(default 10), round, checks[{round, verifier_exit, score?, note, at}], stall_window(default 3), plateau_window(default 3), best_round, best_score, created, updated`. Under score_improvement, `checks[].score` is required and finite, and `best_round`/`best_score` record the strict best; for the `receipt`, see schemas.md §6.
+Fields: `id, revision, phase, goal, keep_policy(pass_only|score_improvement, default pass_only), max_rounds(default 10), round, checks[{round, verifier_exit, score?, note, at}], stall_window(default 3), plateau_window(default 3), best_round, best_score, created, updated`. Under score_improvement, `checks[].score` is required and finite, and `best_round`/`best_score` record the strict best; for the `receipt`, see schemas.md §6.
 
 ### 2.2 Command semantics
 
@@ -85,6 +88,7 @@ Fields: `id, phase, goal, keep_policy(pass_only|score_improvement, default pass_
 
 - There is no `oma autopilot *` command and none may be added (a change requires reopening the spec and re-reviewing this document).
 - Persistent state uses the generic `oma state` plus default current-session scoping. New runs use logical keys `autopilot/phase`, `autopilot/goal`, and `autopilot/plan-path`; the CLI stores them under `autopilot-<session>/...`. Pass `--session <slug>` only to override the platform session boundary.
+- Compound autopilot phase transitions should use `oma state patch autopilot --set ...` with `--expected-revision` when a reader must not observe partially updated `goal`/`phase`/`plan-path`.
 - Resume discovery uses `oma state list autopilot --json` and must not guess across concurrent runs: if more than one non-`done` autopilot namespace remains in the current session scope, the agent asks which namespace to resume.
 - Skill-text skeleton: clarify (may invoke interview) → plan → implement → verify (may invoke ralph) → deliver; each step records state so an interrupted session can resume.
 - CC acceleration branch (explicitly marked): Plan mode / subagent parallel exploration is available; the Codex default path runs the pure-text flow plus `oma state`.
@@ -92,7 +96,7 @@ Fields: `id, phase, goal, keep_policy(pass_only|score_improvement, default pass_
 ## 4. pair-delivery — the paired delivery flow (built on relay v2)
 
 - Roles come from `session.json.roles` (lead/planner/implementer/reviewer can each be assigned to any participant, and one person may hold several; lead is required and unique, defaulting to the initiator).
-- Pair identity is independent of workflow `--session`: Codex and Claude Code each use their platform session identity (`CODEX_THREAD_ID` / `CLAUDE_CODE_SESSION_ID`) and bind to the same pair through `.oma/relay/_bindings/<author-session>.json`. Running two pair workflows in parallel means opening two Codex/Claude session pairs; each platform session resolves its own binding.
+- Pair identity is independent of workflow `--session`: Codex and Claude Code each use their platform session identity (`CODEX_THREAD_ID` / `CLAUDE_CODE_SESSION_ID`), claim one author slot in `session.json.participant_sessions`, and bind to the same pair through `.oma/relay/_bindings/<author-session>.json`. Running two pair workflows in parallel means opening two Codex/Claude session pairs; each platform session resolves its own binding.
 - Process gates (identical to this project's own delivery flow): plan (kind: plan) → review (kind: review, verdict approve/approve-with-changes/revise) → implement (recorded in touched_paths) → code review (kind: review) → kind: decision to close out.
 - Skill responsibility: translate the gates above into the sequence of relay command calls and the `prompt_for_next` writing conventions; the revise-loop cap and the @user escalation rule (line-leading `@user:` + `--status timed_out`).
 - Continuation responsibility: after publishing, or whenever the latest artifact is your own, do not start another relay round until the peer publishes, the pair becomes terminal, or the user explicitly tells you to stop. Trusted Stop hooks are the main Codex self-continuation path; held `oma relay wait` is the fallback when hook wiring/trust is unavailable, and any Codex harness wake-ups during that fallback are not completion.

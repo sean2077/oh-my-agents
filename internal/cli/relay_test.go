@@ -21,10 +21,16 @@ func runRelay(t *testing.T, args ...string) (int, string) {
 	return code, out.String()
 }
 
-func TestRelayCLIRoundTrip(t *testing.T) {
-	t.Setenv("OMA_RELAY_AUTHOR", "claude")
+func setManualRelayIdentity(t *testing.T, author, session string) {
+	t.Helper()
+	t.Setenv("OMA_RELAY_AUTHOR", author)
+	t.Setenv("OMA_RELAY_SESSION_ID", session)
 	t.Setenv("CLAUDE_CODE_SESSION_ID", "")
 	t.Setenv("CODEX_THREAD_ID", "")
+}
+
+func TestRelayCLIRoundTrip(t *testing.T) {
+	setManualRelayIdentity(t, "claude", "cli-roundtrip")
 	ledger := filepath.Join(t.TempDir(), "relay")
 
 	if code, out := runRelay(t, "relay", "init", "--ledger-root", ledger); code != ExitOK {
@@ -70,6 +76,7 @@ func TestRelayCLIRoundTrip(t *testing.T) {
 
 func TestRelayCLIIdentityFailure(t *testing.T) {
 	t.Setenv("OMA_RELAY_AUTHOR", "")
+	t.Setenv("OMA_RELAY_SESSION_ID", "")
 	t.Setenv("CLAUDE_CODE_SESSION_ID", "")
 	t.Setenv("CODEX_THREAD_ID", "")
 	ledger := filepath.Join(t.TempDir(), "relay")
@@ -79,9 +86,7 @@ func TestRelayCLIIdentityFailure(t *testing.T) {
 }
 
 func TestRelayCLIIgnoresWorkflowSessionFlag(t *testing.T) {
-	t.Setenv("OMA_RELAY_AUTHOR", "claude")
-	t.Setenv("CLAUDE_CODE_SESSION_ID", "")
-	t.Setenv("CODEX_THREAD_ID", "")
+	setManualRelayIdentity(t, "claude", "workflow-session-ignored")
 	t.Setenv("OMA_SESSION_ID", "")
 	ledger := filepath.Join(t.TempDir(), "relay")
 
@@ -92,6 +97,7 @@ func TestRelayCLIIgnoresWorkflowSessionFlag(t *testing.T) {
 
 func TestRelayCLIParallelPairsUseDistinctSessionPairs(t *testing.T) {
 	t.Setenv("OMA_RELAY_AUTHOR", "")
+	t.Setenv("OMA_RELAY_SESSION_ID", "")
 	t.Setenv("OMA_SESSION_ID", "")
 	ledger := filepath.Join(t.TempDir(), "relay")
 
@@ -158,9 +164,7 @@ func TestRelayCLIParallelPairsUseDistinctSessionPairs(t *testing.T) {
 }
 
 func TestRelayCLIDryRunPublishZeroWrites(t *testing.T) {
-	t.Setenv("OMA_RELAY_AUTHOR", "claude")
-	t.Setenv("CLAUDE_CODE_SESSION_ID", "")
-	t.Setenv("CODEX_THREAD_ID", "")
+	setManualRelayIdentity(t, "claude", "dry-run-publish")
 	ledger := filepath.Join(t.TempDir(), "relay")
 	runRelay(t, "relay", "init", "--ledger-root", ledger)
 	runRelay(t, "relay", "pair", "new", "dry-smoke", "--ledger-root", ledger)
@@ -181,9 +185,7 @@ func TestRelayCLIDryRunPublishZeroWrites(t *testing.T) {
 }
 
 func TestRelayPreflightCLI(t *testing.T) {
-	t.Setenv("OMA_RELAY_AUTHOR", "claude")
-	t.Setenv("CLAUDE_CODE_SESSION_ID", "")
-	t.Setenv("CODEX_THREAD_ID", "")
+	setManualRelayIdentity(t, "claude", "preflight")
 
 	// Initialized ledger: pass/warn but never fail → exit 0 or 1.
 	ledger := filepath.Join(t.TempDir(), "relay")
@@ -214,9 +216,7 @@ func TestRelayPreflightCLI(t *testing.T) {
 }
 
 func TestRelayStatuslineCLI(t *testing.T) {
-	t.Setenv("OMA_RELAY_AUTHOR", "claude")
-	t.Setenv("CLAUDE_CODE_SESSION_ID", "")
-	t.Setenv("CODEX_THREAD_ID", "")
+	setManualRelayIdentity(t, "claude", "statusline")
 
 	// Render path must never error into the status bar: uninitialized
 	// ledger (bad --ledger-root parent) degrades to a line, exit 0.
@@ -242,9 +242,7 @@ func TestRelayStatuslineCLI(t *testing.T) {
 // TestRelayCloseApproveGateMissExit4 pins R4: an unsatisfied approve quality
 // gate exits 4 (ErrGate → ExitGate), distinct from exit 3 for corrupt state.
 func TestRelayCloseApproveGateMissExit4(t *testing.T) {
-	t.Setenv("OMA_RELAY_AUTHOR", "claude")
-	t.Setenv("CLAUDE_CODE_SESSION_ID", "")
-	t.Setenv("CODEX_THREAD_ID", "")
+	setManualRelayIdentity(t, "claude", "close-gate")
 	ledger := filepath.Join(t.TempDir(), "relay")
 	if code, out := runRelay(t, "relay", "init", "--ledger-root", ledger); code != ExitOK {
 		t.Fatalf("init %d: %s", code, out)
@@ -263,9 +261,7 @@ func TestRelayCloseApproveGateMissExit4(t *testing.T) {
 }
 
 func TestRelayHookDispatchHiddenAndSilentWhenUnconfigured(t *testing.T) {
-	t.Setenv("OMA_RELAY_AUTHOR", "claude")
-	t.Setenv("CLAUDE_CODE_SESSION_ID", "")
-	t.Setenv("CODEX_THREAD_ID", "")
+	setManualRelayIdentity(t, "claude", "hook-hidden")
 	// The dispatcher must never error into the host even with no ledger.
 	dir := t.TempDir()
 	t.Chdir(dir)

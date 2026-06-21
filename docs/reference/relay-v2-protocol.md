@@ -29,8 +29,8 @@ Schema marker: `oma-relay/2`. This protocol inherits the **principles** of agent
 │   ├── NNN-<author>-<kind>.md.sha256
 │   ├── NNN-<author>-<kind>.md.ready
 │   ├── .draft/NNN-<author>-<kind>.md   # author-private draft (peer agrees not to read)
-│   ├── .seq/NNN                   # sequence reservation file (O_EXCL; author recorded in the file's first token)
-│   └── .heartbeat/<author>        # heartbeat file (mtime is liveness)
+│   ├── .seq/NNN                   # sequence reservation file (O_EXCL; author:session recorded in the first token)
+│   └── .heartbeat/<author>-<session> # heartbeat file (mtime is liveness)
 └── _archive/<pair-slug>/          # moved here wholesale after close
 ```
 
@@ -38,16 +38,17 @@ Permissions: directories 0700, files 0600 (checked by `oma doctor`).
 
 ## 4. Identity and Roles
 
-- author resolution priority: **platform signal** (`CLAUDE_CODE_SESSION_ID` → `claude`; `CODEX_THREAD_ID` → `codex`) > the `OMA_RELAY_AUTHOR` environment variable > resolution failure is rejected.
+- author resolution priority: **platform signal** (`CLAUDE_CODE_SESSION_ID` → `claude`; `CODEX_THREAD_ID` → `codex`) > the `OMA_RELAY_AUTHOR` environment variable > resolution failure is rejected. Manual `OMA_RELAY_AUTHOR` must be paired with `OMA_RELAY_SESSION_ID` or `OMA_SESSION_ID`.
 - Both platform signals present with no `OMA_RELAY_AUTHOR` to arbitrate → rejected (fail-closed, zero writes).
 - Relay identity is deliberately separate from workflow session scope. Workflow commands default to current-session state (`oma state` / `interview` / `ralph`); relay pairs are cross-session ledgers where each side keeps its own author-session binding. Parallel pair workflows are represented by different Codex/Claude platform session pairs, each bound to its own pair.
 - Participants are exactly 2; identical names on both sides are not allowed (claude+claude is rejected).
+- `session.json.participant_sessions` binds each participant author to one concrete session hash. The creator is claimed at `pair new`; the peer is claimed at `pair join` or single-active auto-adopt. A second same-author session is refused even if it knows the slug.
 - **Roles**: `session.json.roles` maps `lead / planner / implementer / reviewer` to participant names (one person may hold several roles). `lead` = the primary decision-maker, **required and unique**, defaulting to the bootstrap initiator; the remaining roles may be assigned to either participant. The relay mechanism does not enforce role behavior; the role fields are read and surfaced by skills such as the pair-delivery flow (lead semantics and the swap rules are in workflows.md §4).
 
 ## 4a. Pair Binding and Resolution
 
 - `oma relay pair new <topic>` first tries `YYYYMMDD-<topic>`; if that directory already exists, it atomically creates a `YYYYMMDD-<topic>-<rand>` variant. The topic remains a label, not the uniqueness primitive.
-- `oma relay pair join <slug>` (and the automatic-binding path of `pair ensure`) writes the binding file `.oma/relay/_bindings/<author-session>.json` (schema `oma-relay-binding/1`): `author`, the platform session-id hash, `pair`, `created`, `updated`.
+- `oma relay pair join <slug>` (and the automatic-binding path of `pair ensure`) claims `participant_sessions[author]` under the pair lock, then writes the binding file `.oma/relay/_bindings/<author-session>.json` (schema `oma-relay-binding/1`): `author`, the platform session-id hash, `pair`, `created`, `updated`.
 - **All pair-scoped commands** (draft/publish/wait/status/close/pair show) resolve their target pair in this order: an explicit `--pair <slug>` > the current author-session's binding file > exactly one active pair, which is adopted automatically and the binding written > otherwise **exit 3, zero writes**, listing the candidate pairs.
 - Active means `session.status == "active"`; `closing` is visible to status/show but is not auto-adopted and refuses new writes.
 - An unknown binding schema, a binding pointing at a nonexistent or already-terminal pair, or multiple active pairs that cannot be disambiguated → exit 3, zero writes.
@@ -57,15 +58,15 @@ Permissions: directories 0700, files 0600 (checked by `oma doctor`).
 
 - Filename `NNN-<author>-<kind>.md`, NNN a three-digit decimal (from 001, gaps allowed, read in filename order).
 - `kind ∈ plan | review | fix | note | question | decision | correction | addendum`.
-- frontmatter (YAML): `schema("oma-relay/4"), seq(int), author, peer, kind, status, created(ISO-8601), in_reply_to(int|null), prompt_for_next(string), touched_paths([string]), corrects(int|null)`. **A1/A2 fields**: a ready `kind:review` **must carry** `verdict(approve|approve-with-changes|revise)` + `review_target_seq` (≥1, the seq it adjudicates); **R5**: a ready `kind:review` must **also carry** a fenced `oma-review-evidence/1` block in its body + a frontmatter `evidence_hash` (its canonicalized sha256); `kind:decision` adds the completion receipt `receipt_id, reviewed_head_seq, reviewed_head_hash, quality_gate_seq, quality_gate_hash, quality_gate_evidence_hash, verified_at` (omitted for other kinds). The strict parser still rejects any unknown key; the session/sentinel remain `oma-relay/2`.
+- frontmatter (YAML): `schema("oma-relay/4"), seq(int), author, author_session, peer, kind, status, created(ISO-8601), in_reply_to(int|null), prompt_for_next(string), touched_paths([string]), corrects(int|null)`. `author` stays human-readable and drives filenames; `author_session` proves which concrete session created the draft/artifact. **A1/A2 fields**: a ready `kind:review` **must carry** `verdict(approve|approve-with-changes|revise)` + `review_target_seq` (≥1, the seq it adjudicates); **R5**: a ready `kind:review` must **also carry** a fenced `oma-review-evidence/1` block in its body + a frontmatter `evidence_hash` (its canonicalized sha256); `kind:decision` adds the completion receipt `receipt_id, reviewed_head_seq, reviewed_head_hash, quality_gate_seq, quality_gate_hash, quality_gate_evidence_hash, verified_at` (omitted for other kinds). The strict parser still rejects any unknown key; the session/sentinel remain `oma-relay/2`.
 - `status ∈ ready | closed | cancelled | failed | timed_out`; terminal states = closed/cancelled/failed; `timed_out` is a recoverable pause (used for `@user:` escalation).
 - **append-only**: a file carrying `.ready` is never modified; corrections go through a `kind: correction` + `corrects` pointing at the original seq.
 
 ## 6. Sequence Allocation and Contention (claim internalized)
 
-- Sequence reservation: create `NNN` under `.seq/` with **O_EXCL** (author and timestamp written into the file content), NNN = max(largest published seq, largest reservation in .seq) + 1.
+- Sequence reservation: create `NNN` under `.seq/` with **O_EXCL** (`author:session` and timestamp written into the file content), NNN = max(largest published seq, largest reservation in .seq) + 1.
 - Contention: O_EXCL failure → retry with NNN+1 (error after a cap of 10 attempts). Two concurrent drafts always get distinct seqs, with no possibility of overwrite.
-- The exclusive object is the bare `NNN`, not `NNN.<author>` — an author-suffixed filename would make O_EXCL exclusive only on the (seq, author) axis, letting two concurrent sides each take the same NNN. Author attribution moves into the file content, and cross-author exclusion is guaranteed by the bare `NNN` filename.
+- The exclusive object is the bare `NNN`, not `NNN.<author>` — an author-suffixed filename would make O_EXCL exclusive only on the (seq, author) axis, letting two concurrent sides each take the same NNN. Ownership moves into the file content as `author:session`, and cross-author exclusion is guaranteed by the bare `NNN` filename.
 - `oma relay draft` creates a draft = reserve a sequence + create a heartbeat file; the public command surface has no standalone `claim` (claim is an internal step of draft, see command-tree.md §relay). The draft and its `.seq` reservation **persist until** the publish transaction completes (the `.ready` lands) (§7).
 - Reservation expiry: once the draft heartbeat backing a sequence reservation is stale (§8), `oma doctor` may clean up the reservation and the draft; the resulting sequence gaps are legal.
 
@@ -81,7 +82,7 @@ publish steps (strict order): **render** the formal content from the draft → w
 
 ## 8. Heartbeat and Liveness (internal mechanism)
 
-- The heartbeat file `.heartbeat/<author>` is touched whenever **any** `oma relay` subcommand runs for that author (draft/publish/status/wait all refresh their own side).
+- The heartbeat file `.heartbeat/<author>-<session>` is touched whenever **any** `oma relay` subcommand runs for that author-session (draft/publish/status/wait all refresh their own side).
 - stale threshold: default 15 minutes, tunable via `OMA_RELAY_STALE_AFTER` (seconds).
 - `oma relay wait` exit codes: `0` a new artifact (path printed to stdout); `10` wait timeout (default 60 minutes, tunable via `--timeout`); `11` the peer has an unpublished draft / publish intent and its heartbeat is stale (crashed after declaring intent); `12` the pair is terminal; `3` an environment/protocol/fail-closed error (usage errors keep the global `2`, consistent with command-tree.md §1).
 - A participant that has just published, or whose latest artifact is already its own, must not start a new relay round until either a peer artifact arrives, the pair becomes terminal, or the user explicitly interrupts. With trusted host hooks, `Stop` is the primary self-continuation path: it wakes the stopped host after a peer artifact exists. `oma relay wait` remains the fallback when hook wiring/trust is unavailable or a foreground wait is explicitly requested.

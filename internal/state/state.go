@@ -208,6 +208,23 @@ func (s *Store) SetExpected(key, value, override string, dryRun bool, expectedRe
 	if err != nil {
 		return "", err
 	}
+	return s.PatchExpected(ns, map[string]string{field: value}, override, dryRun, expectedRevision)
+}
+
+// PatchExpected writes several fields in one namespace under a single lock,
+// revision bump, and optional CAS check.
+func (s *Store) PatchExpected(ns string, values map[string]string, override string, dryRun bool, expectedRevision *int64) (path string, err error) {
+	if !nsRe.MatchString(ns) {
+		return "", fmt.Errorf("%w: namespace %q (want lowercase letters, digits, dashes)", ErrState, ns)
+	}
+	if len(values) == 0 {
+		return "", fmt.Errorf("%w: patch requires at least one field", ErrState)
+	}
+	for field := range values {
+		if !fieldRe.MatchString(field) {
+			return "", fmt.Errorf("%w: field %q (want letters, digits, _-)", ErrState, field)
+		}
+	}
 	path, err = s.path(ns, override)
 	if err != nil {
 		return "", err
@@ -238,7 +255,9 @@ func (s *Store) SetExpected(key, value, override string, dryRun bool, expectedRe
 		}
 		f.Schema, f.Namespace = Schema, ns
 		f.Revision++
-		f.Data[field] = value
+		for field, value := range values {
+			f.Data[field] = value
+		}
 		f.Updated = s.Now().UTC().Format(time.RFC3339)
 		if err := writeAtomic(path, f); err != nil {
 			return err

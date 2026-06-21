@@ -57,6 +57,9 @@ func (l *Ledger) publishLocked(pairDir string, seq int, kind, draftPath string, 
 	if err := s.mutationError(); err != nil {
 		return "", err
 	}
+	if err := s.requireParticipantSession(l.Identity); err != nil {
+		return "", err
+	}
 	raw, err := os.ReadFile(draftPath)
 	if errors.Is(err, os.ErrNotExist) {
 		return "", fmt.Errorf("%w: draft %s does not exist (already published and cleaned, or never created)", ErrRelay, draftPath)
@@ -68,8 +71,8 @@ func (l *Ledger) publishLocked(pairDir string, seq int, kind, draftPath string, 
 	if err != nil {
 		return "", fmt.Errorf("draft %s: %w", filepath.Base(draftPath), err)
 	}
-	if fm.Seq != seq || fm.Author != l.Identity.Author || fm.Kind != kind {
-		return "", fmt.Errorf("%w: draft frontmatter (seq %d author %s kind %s) does not match its filename", ErrRelay, fm.Seq, fm.Author, fm.Kind)
+	if fm.Seq != seq || fm.Author != l.Identity.Author || fm.AuthorSession != l.Identity.SessionKey || fm.Kind != kind {
+		return "", fmt.Errorf("%w: draft frontmatter (seq %d author %s session %s kind %s) does not match this session and filename", ErrRelay, fm.Seq, fm.Author, fm.AuthorSession, fm.Kind)
 	}
 
 	// Fill from publish inputs (re-renders the durable intent).
@@ -210,7 +213,7 @@ func (l *Ledger) publishLocked(pairDir string, seq int, kind, draftPath string, 
 	}
 	seqMarker := filepath.Join(pairDir, ".seq", fmt.Sprintf("%03d", fm.Seq))
 	if raw, err := os.ReadFile(seqMarker); err == nil {
-		if owner, _, _ := strings.Cut(strings.TrimSpace(string(raw)), " "); owner == fm.Author {
+		if owner, _, _ := strings.Cut(strings.TrimSpace(string(raw)), " "); owner == ownerToken(fm.Author, fm.AuthorSession) {
 			if err := os.Remove(seqMarker); err != nil && !errors.Is(err, os.ErrNotExist) {
 				return "", err
 			}

@@ -195,7 +195,7 @@ func TestAppendOnlyFormalNeverOverwritten(t *testing.T) {
 	// A hand-crafted draft at the SAME seq with different content must
 	// fail closed, never overwrite the published artifact.
 	draftPath := filepath.Join(claude.PairDir(s.Pair), ".draft", filepath.Base(formal))
-	fm := &Frontmatter{Schema: ArtifactSchema, Seq: 1, Author: "claude", Peer: "codex", Kind: "plan",
+	fm := &Frontmatter{Schema: ArtifactSchema, Seq: 1, Author: "claude", AuthorSession: claude.Identity.SessionKey, Peer: "codex", Kind: "plan",
 		Status: "ready", Created: ck.now(), TouchedPaths: []string{}, PromptForNext: "different"}
 	if err := os.WriteFile(draftPath, Render(fm, "DIFFERENT body"), 0o600); err != nil {
 		t.Fatal(err)
@@ -249,6 +249,27 @@ func TestIdentityAmbiguityFailsClosed(t *testing.T) {
 	}
 	if _, err := ResolveIdentity(func(string) string { return "" }); err == nil {
 		t.Fatal("no signal must refuse")
+	}
+	if _, err := ResolveIdentity(func(k string) string {
+		if k == "OMA_RELAY_AUTHOR" {
+			return "codex"
+		}
+		return ""
+	}); err == nil || !strings.Contains(err.Error(), "OMA_RELAY_SESSION_ID") {
+		t.Fatalf("manual author without session: err = %v", err)
+	}
+	manual, err := ResolveIdentity(func(k string) string {
+		switch k {
+		case "OMA_RELAY_AUTHOR":
+			return "codex"
+		case "OMA_RELAY_SESSION_ID":
+			return "manual-window"
+		default:
+			return ""
+		}
+	})
+	if err != nil || manual.Author != "codex" || manual.SessionKey == id.SessionKey {
+		t.Fatalf("manual identity = %+v err=%v", manual, err)
 	}
 }
 

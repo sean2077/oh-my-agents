@@ -68,6 +68,16 @@ func TestScopeName(t *testing.T) {
 	}
 }
 
+func TestScopeNamePreservesEmptyName(t *testing.T) {
+	got, err := ScopeName("", "codex-abc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "" {
+		t.Fatalf("ScopeName empty = %q, want empty", got)
+	}
+}
+
 func TestScopeNameRequiresSuffix(t *testing.T) {
 	if _, err := ScopeName("autopilot", ""); err == nil {
 		t.Fatal("ScopeName must require a session suffix")

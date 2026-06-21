@@ -31,7 +31,7 @@ func ScopeName(name, suffix string) (string, error) {
 		return "", fmt.Errorf("session suffix is required")
 	}
 	if name == "" {
-		return suffix, nil
+		return "", nil
 	}
 	scoped := name + "-" + suffix
 	if len(scoped) > 64 {

@@ -69,6 +69,9 @@ func (l *Ledger) ResolvePair(explicit string, autoBind bool) (*Session, error) {
 		if s.Terminal() {
 			return nil, fmt.Errorf("%w: binding points at %s which is %s (rebind with `oma relay pair join <slug>`)", ErrRelay, b.Pair, s.Status)
 		}
+		if err := s.requireParticipantSession(l.Identity); err != nil {
+			return nil, err
+		}
 		return s, nil
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, err
@@ -93,20 +96,47 @@ func (l *Ledger) ResolvePair(explicit string, autoBind bool) (*Session, error) {
 		if s.Status != StatusActive {
 			continue
 		}
-		if _, perr := s.Peer(l.Identity.Author); perr == nil {
-			mine = append(mine, slug)
+		if _, perr := s.Peer(l.Identity.Author); perr != nil {
+			continue
 		}
+		if existing := s.ParticipantSessions[l.Identity.Author]; existing != "" && existing != l.Identity.SessionKey {
+			continue
+		}
+		mine = append(mine, slug)
 	}
 	switch len(mine) {
 	case 1:
+		if autoBind {
+			var claimed *Session
+			err := l.withPairLock(mine[0], func() error {
+				var err error
+				claimed, err = l.LoadSession(mine[0])
+				if err != nil {
+					return err
+				}
+				if err := claimed.mutationError(); err != nil {
+					return err
+				}
+				changed, err := claimed.claimParticipant(l.Identity)
+				if err != nil {
+					return err
+				}
+				if changed {
+					if err := l.saveSession(claimed); err != nil {
+						return err
+					}
+				}
+				if err := l.writeBinding(mine[0]); err != nil {
+					return err
+				}
+				l.touchHeartbeat(mine[0])
+				return nil
+			})
+			return claimed, err
+		}
 		s, err := l.LoadSession(mine[0])
 		if err != nil {
 			return nil, err
-		}
-		if autoBind {
-			if err := l.writeBinding(mine[0]); err != nil {
-				return nil, err
-			}
 		}
 		return s, nil
 	case 0:
@@ -119,25 +149,55 @@ func (l *Ledger) ResolvePair(explicit string, autoBind bool) (*Session, error) {
 
 // Join binds this author-session to an existing active pair.
 func (l *Ledger) Join(slug string, dryRun bool) (*Session, error) {
-	s, err := l.LoadSession(slug)
-	if err != nil {
-		return nil, err
-	}
-	if s.Terminal() {
-		return nil, fmt.Errorf("%w: pair %s is %s", ErrRelay, slug, s.Status)
-	}
-	if err := s.mutationError(); err != nil {
-		return nil, err
-	}
-	if _, err := s.Peer(l.Identity.Author); err != nil {
-		return nil, err
-	}
 	if dryRun {
+		s, err := l.LoadSession(slug)
+		if err != nil {
+			return nil, err
+		}
+		if s.Terminal() {
+			return nil, fmt.Errorf("%w: pair %s is %s", ErrRelay, slug, s.Status)
+		}
+		if err := s.mutationError(); err != nil {
+			return nil, err
+		}
+		if _, err := s.Peer(l.Identity.Author); err != nil {
+			return nil, err
+		}
+		if existing := s.ParticipantSessions[l.Identity.Author]; existing != "" && existing != l.Identity.SessionKey {
+			return nil, fmt.Errorf("%w: participant %s of %s is claimed by another session", ErrRelay, l.Identity.Author, slug)
+		}
 		return s, nil
 	}
-	if err := l.writeBinding(slug); err != nil {
-		return nil, err
-	}
-	l.touchHeartbeat(slug)
-	return s, nil
+	var s *Session
+	err := l.withPairLock(slug, func() error {
+		var err error
+		s, err = l.LoadSession(slug)
+		if err != nil {
+			return err
+		}
+		if s.Terminal() {
+			return fmt.Errorf("%w: pair %s is %s", ErrRelay, slug, s.Status)
+		}
+		if err := s.mutationError(); err != nil {
+			return err
+		}
+		if _, err := s.Peer(l.Identity.Author); err != nil {
+			return err
+		}
+		changed, err := s.claimParticipant(l.Identity)
+		if err != nil {
+			return err
+		}
+		if changed {
+			if err := l.saveSession(s); err != nil {
+				return err
+			}
+		}
+		if err := l.writeBinding(slug); err != nil {
+			return err
+		}
+		l.touchHeartbeat(slug)
+		return nil
+	})
+	return s, err
 }

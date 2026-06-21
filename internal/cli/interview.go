@@ -14,7 +14,13 @@ func interviewEngine() (*interview.Engine, error) {
 	if root == "" {
 		return nil, fmt.Errorf("not inside a git checkout (interview state lives in <root>/.oma/state)")
 	}
-	return interview.NewEngine(filepath.Join(root, ".oma", "state")), nil
+	suffix, err := workflowScope().Suffix()
+	if err != nil {
+		return nil, err
+	}
+	eng := interview.NewEngine(filepath.Join(root, ".oma", "state"))
+	eng.SessionSuffix = suffix
+	return eng, nil
 }
 
 func newInterviewCmd() *cobra.Command {
@@ -40,10 +46,6 @@ func newInterviewStartCmd() *cobra.Command {
 		Short: "Initialize an interview (threshold: --threshold > --depth > config > default 0.20)",
 		Args:  cobra.NoArgs,
 		RunE: run(func(cmd *cobra.Command, _ []string) error {
-			scopedID, err := scopeWorkflowID(id)
-			if err != nil {
-				return err
-			}
 			cfg, err := loadConfig()
 			if err != nil {
 				return err
@@ -62,7 +64,7 @@ func newInterviewStartCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			s, err := eng.Start(scopedID, typ, cfg.Interview.Threshold, cfg.Interview.ThresholdSource, idea, resume, DryRun())
+			s, err := eng.Start(id, typ, cfg.Interview.Threshold, cfg.Interview.ThresholdSource, idea, resume, DryRun())
 			if err != nil {
 				return err
 			}
@@ -92,10 +94,6 @@ func newInterviewScoreCmd() *cobra.Command {
 		Short: "Apply one agent-evaluated round (round 0 locks the topology)",
 		Args:  cobra.NoArgs,
 		RunE: run(func(cmd *cobra.Command, _ []string) error {
-			scopedID, err := scopeWorkflowID(id)
-			if err != nil {
-				return err
-			}
 			eng, err := interviewEngine()
 			if err != nil {
 				return err
@@ -104,7 +102,7 @@ func newInterviewScoreCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			st, rep, err := eng.Score(scopedID, in, DryRun())
+			st, rep, err := eng.Score(id, in, DryRun())
 			if err != nil {
 				return err
 			}
@@ -142,15 +140,11 @@ func newInterviewGateCmd() *cobra.Command {
 		Short: "Judge ambiguity ≤ threshold (exit 0 pass, 4 fail); --waive records an early exit",
 		Args:  cobra.NoArgs,
 		RunE: run(func(cmd *cobra.Command, _ []string) error {
-			scopedID, err := scopeWorkflowID(id)
-			if err != nil {
-				return err
-			}
 			eng, err := interviewEngine()
 			if err != nil {
 				return err
 			}
-			st, res, err := eng.Gate(scopedID, waive, reason, DryRun())
+			st, res, err := eng.Gate(id, waive, reason, DryRun())
 			if err != nil {
 				return err
 			}
@@ -190,15 +184,11 @@ func newInterviewCrystallizeCmd() *cobra.Command {
 		Short: "Record the written spec path (gate_passed|gate_waived → crystallized)",
 		Args:  cobra.NoArgs,
 		RunE: run(func(cmd *cobra.Command, _ []string) error {
-			scopedID, err := scopeWorkflowID(id)
-			if err != nil {
-				return err
-			}
 			eng, err := interviewEngine()
 			if err != nil {
 				return err
 			}
-			s, err := eng.Crystallize(scopedID, spec, DryRun())
+			s, err := eng.Crystallize(id, spec, DryRun())
 			if err != nil {
 				return err
 			}
@@ -222,15 +212,11 @@ func newInterviewCompleteCmd() *cobra.Command {
 		Short: "Close a crystallized interview",
 		Args:  cobra.NoArgs,
 		RunE: run(func(cmd *cobra.Command, _ []string) error {
-			scopedID, err := scopeWorkflowID(id)
-			if err != nil {
-				return err
-			}
 			eng, err := interviewEngine()
 			if err != nil {
 				return err
 			}
-			s, err := eng.Complete(scopedID, DryRun())
+			s, err := eng.Complete(id, DryRun())
 			if err != nil {
 				return err
 			}
@@ -252,15 +238,11 @@ func newInterviewAbortCmd() *cobra.Command {
 		Short: "Abort a non-terminal interview",
 		Args:  cobra.NoArgs,
 		RunE: run(func(cmd *cobra.Command, _ []string) error {
-			scopedID, err := scopeWorkflowID(id)
-			if err != nil {
-				return err
-			}
 			eng, err := interviewEngine()
 			if err != nil {
 				return err
 			}
-			s, err := eng.Abort(scopedID, DryRun())
+			s, err := eng.Abort(id, DryRun())
 			if err != nil {
 				return err
 			}
@@ -283,15 +265,11 @@ func newInterviewStatusCmd() *cobra.Command {
 		Short: "Show interview state (read-only)",
 		Args:  cobra.NoArgs,
 		RunE: run(func(cmd *cobra.Command, _ []string) error {
-			scopedID, err := scopeWorkflowID(id)
-			if err != nil {
-				return err
-			}
 			eng, err := interviewEngine()
 			if err != nil {
 				return err
 			}
-			s, err := eng.Resolve(scopedID)
+			s, err := eng.Resolve(id)
 			if err != nil {
 				return err
 			}

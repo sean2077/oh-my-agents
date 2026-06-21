@@ -24,16 +24,20 @@ const (
 
 // Session is the pair metadata document (docs/reference/schemas.md §4).
 type Session struct {
-	Schema       string            `json:"schema"`
-	Pair         string            `json:"pair"`
-	Project      string            `json:"project"`
-	Participants []string          `json:"participants"`
-	Roles        map[string]string `json:"roles"`
-	Status       string            `json:"status"`
-	Created      time.Time         `json:"created"`
-	Closed       *time.Time        `json:"closed"`
-	Outcome      *string           `json:"outcome"`
-	Reason       *string           `json:"reason"`
+	Schema       string   `json:"schema"`
+	Pair         string   `json:"pair"`
+	Project      string   `json:"project"`
+	Participants []string `json:"participants"`
+	// ParticipantSessions claims each author slot for one concrete platform
+	// session hash. A peer may be unclaimed until `pair join`, but a claimed
+	// author cannot be reused by another same-author session.
+	ParticipantSessions map[string]string `json:"participant_sessions"`
+	Roles               map[string]string `json:"roles"`
+	Status              string            `json:"status"`
+	Created             time.Time         `json:"created"`
+	Closed              *time.Time        `json:"closed"`
+	Outcome             *string           `json:"outcome"`
+	Reason              *string           `json:"reason"`
 }
 
 var (
@@ -87,6 +91,17 @@ func (s *Session) Validate() error {
 		}
 		isParticipant[p] = true
 	}
+	if s.ParticipantSessions == nil {
+		return fmt.Errorf("%w: participant_sessions is required", ErrRelay)
+	}
+	for author, sessionKey := range s.ParticipantSessions {
+		if !isParticipant[author] {
+			return fmt.Errorf("%w: participant_sessions names non-participant %q", ErrRelay, author)
+		}
+		if !sessionKeyRe.MatchString(sessionKey) {
+			return fmt.Errorf("%w: participant_sessions[%s] %q invalid", ErrRelay, author, sessionKey)
+		}
+	}
 	lead, ok := s.Roles["lead"]
 	if !ok || lead == "" {
 		return fmt.Errorf("%w: roles.lead is required (primary decision-maker, docs/reference/workflows.md §4.1)", ErrRelay)
@@ -117,6 +132,44 @@ func (s *Session) Peer(author string) (string, error) {
 	default:
 		return "", fmt.Errorf("%w: %s is not a participant of %s (%v)", ErrRelay, author, s.Pair, s.Participants)
 	}
+}
+
+func (s *Session) participantSession(author string) (string, bool) {
+	if s.ParticipantSessions == nil {
+		return "", false
+	}
+	key, ok := s.ParticipantSessions[author]
+	return key, ok
+}
+
+func (s *Session) claimParticipant(id Identity) (bool, error) {
+	if _, err := s.Peer(id.Author); err != nil {
+		return false, err
+	}
+	if s.ParticipantSessions == nil {
+		s.ParticipantSessions = map[string]string{}
+	}
+	if existing := s.ParticipantSessions[id.Author]; existing != "" {
+		if existing != id.SessionKey {
+			return false, fmt.Errorf("%w: participant %s of %s is claimed by session %s, not %s", ErrRelay, id.Author, s.Pair, existing, id.SessionKey)
+		}
+		return false, nil
+	}
+	s.ParticipantSessions[id.Author] = id.SessionKey
+	return true, nil
+}
+
+func (s *Session) requireParticipantSession(id Identity) error {
+	if _, err := s.Peer(id.Author); err != nil {
+		return err
+	}
+	if existing := s.ParticipantSessions[id.Author]; existing != id.SessionKey {
+		if existing == "" {
+			return fmt.Errorf("%w: participant %s has not joined %s with this session; run `oma relay pair join %s`", ErrRelay, id.Author, s.Pair, s.Pair)
+		}
+		return fmt.Errorf("%w: participant %s of %s is claimed by session %s, not %s", ErrRelay, id.Author, s.Pair, existing, id.SessionKey)
+	}
+	return nil
 }
 
 // PairDir is the directory of one pair.
@@ -215,9 +268,12 @@ func (l *Ledger) NewPair(topic, peer, project string, dryRun bool) (*Session, er
 		Pair:         slug,
 		Project:      project,
 		Participants: []string{author, peer},
-		Roles:        map[string]string{"lead": author, "planner": author, "implementer": author, "reviewer": peer},
-		Status:       StatusActive,
-		Created:      now,
+		ParticipantSessions: map[string]string{
+			author: l.Identity.SessionKey,
+		},
+		Roles:   map[string]string{"lead": author, "planner": author, "implementer": author, "reviewer": peer},
+		Status:  StatusActive,
+		Created: now,
 	}
 	if err := s.Validate(); err != nil {
 		return nil, err
@@ -306,6 +362,9 @@ func (l *Ledger) SetLead(slug, name string, dryRun bool) (*Session, error) {
 		if err := s.mutationError(); err != nil {
 			return nil, err
 		}
+		if err := s.requireParticipantSession(l.Identity); err != nil {
+			return nil, err
+		}
 		if _, err := s.Peer(name); err != nil {
 			return nil, fmt.Errorf("%w: lead %q is not a participant of %s (%v)", ErrRelay, name, slug, s.Participants)
 		}
@@ -320,6 +379,9 @@ func (l *Ledger) SetLead(slug, name string, dryRun bool) (*Session, error) {
 			return err
 		}
 		if err := s.mutationError(); err != nil {
+			return err
+		}
+		if err := s.requireParticipantSession(l.Identity); err != nil {
 			return err
 		}
 		if _, err := s.Peer(name); err != nil {
@@ -348,26 +410,50 @@ func (l *Ledger) Close(slug, outcome, reason string, dryRun bool) error {
 	if dryRun {
 		s, err := l.LoadSession(slug)
 		if err != nil {
+			if errors.Is(err, ErrPairNotFound) {
+				return l.closeArchivedResult(slug, outcome, reason)
+			}
 			return err
 		}
-		if err := s.mutationError(); err != nil {
-			return err
+		switch s.Status {
+		case StatusActive, StatusClosing:
+			if err := s.requireParticipantSession(l.Identity); err != nil {
+				return err
+			}
+			if outcome == "approve" {
+				return l.verifyApproveClose(slug)
+			}
+			return nil
+		case StatusClosed:
+			return closeParamsMatch(s, outcome, reason)
+		default:
+			if err := s.mutationError(); err != nil {
+				return err
+			}
+			return fmt.Errorf("%w: pair %s has unsupported close state %q", ErrRelay, s.Pair, s.Status)
 		}
-		if outcome == "approve" {
-			return l.verifyApproveClose(slug)
-		}
-		return nil
 	}
 	return l.withPairLock(slug, func() error {
-		s, err := l.LoadSession(slug)
-		if err != nil {
-			return err
-		}
-		if err := s.mutationError(); err != nil {
-			return err
-		}
 		archive := filepath.Join(l.Root, "_archive")
 		dest := filepath.Join(archive, slug)
+		s, err := l.LoadSession(slug)
+		if err != nil {
+			if errors.Is(err, ErrPairNotFound) {
+				return l.closeArchivedResult(slug, outcome, reason)
+			}
+			return err
+		}
+		switch s.Status {
+		case StatusActive, StatusClosing, StatusClosed:
+			if err := s.requireParticipantSession(l.Identity); err != nil {
+				return err
+			}
+		default:
+			if err := s.mutationError(); err != nil {
+				return err
+			}
+			return fmt.Errorf("%w: pair %s has unsupported close state %q", ErrRelay, s.Pair, s.Status)
+		}
 		if _, err := os.Stat(dest); err == nil {
 			return fmt.Errorf("%w: archive already holds %s; resolve manually", ErrRelay, slug)
 		} else if !errors.Is(err, os.ErrNotExist) {
@@ -377,45 +463,81 @@ func (l *Ledger) Close(slug, outcome, reason string, dryRun bool) error {
 			return err
 		}
 
-		s.Status = StatusClosing
-		if err := l.saveSession(s); err != nil {
-			return err
-		}
-		committed := false
+		wasActive := s.Status == StatusActive
 		closedPath := filepath.Join(l.PairDir(slug), "CLOSED")
-		defer func() {
-			if !committed {
-				_ = os.Remove(closedPath)
-				s.Status = StatusActive
-				s.Closed, s.Outcome, s.Reason = nil, nil, nil
-				_ = l.saveSession(s)
-			}
-		}()
-
-		// A2 quality gate: `approve` is fail-closed unless the lead's
-		// latest kind:decision carries a valid completion receipt. This
-		// re-check runs while holding the pair mutation lock.
-		if outcome == "approve" {
-			if err := l.verifyApproveClose(slug); err != nil {
+		if s.Status == StatusActive {
+			s.Status = StatusClosing
+			if err := l.saveSession(s); err != nil {
 				return err
 			}
 		}
 
-		now := l.Now().UTC()
-		s.Status = StatusClosed
-		s.Closed = &now
-		s.Outcome = &outcome
-		s.Reason = &reason
-		if err := l.saveSession(s); err != nil {
-			return err
+		// A2 quality gate: `approve` is fail-closed unless the lead's
+		// latest kind:decision carries a valid completion receipt. This
+		// re-check runs while holding the pair mutation lock.
+		if s.Status != StatusClosed && outcome == "approve" {
+			if err := l.verifyApproveClose(slug); err != nil {
+				if wasActive {
+					s.Status = StatusActive
+					s.Closed, s.Outcome, s.Reason = nil, nil, nil
+					_ = l.saveSession(s)
+				}
+				return err
+			}
 		}
-		if err := writeFileAtomic(closedPath, []byte(now.Format(time.RFC3339)+"\n"), 0o600); err != nil {
+
+		if s.Status == StatusClosed {
+			if err := closeParamsMatch(s, outcome, reason); err != nil {
+				return err
+			}
+		} else {
+			now := l.Now().UTC()
+			s.Status = StatusClosed
+			s.Closed = &now
+			s.Outcome = &outcome
+			s.Reason = &reason
+			if err := l.saveSession(s); err != nil {
+				return err
+			}
+		}
+		closedAt := l.Now().UTC()
+		if s.Closed != nil {
+			closedAt = *s.Closed
+		}
+		if err := writeFileAtomic(closedPath, []byte(closedAt.Format(time.RFC3339)+"\n"), 0o600); err != nil {
 			return err
 		}
 		if err := os.Rename(l.PairDir(slug), dest); err != nil {
 			return err
 		}
-		committed = true
 		return nil
 	})
+}
+
+func (l *Ledger) closeArchivedResult(slug, outcome, reason string) error {
+	s, _, err := l.loadArchivedSession(slug)
+	if err != nil {
+		return err
+	}
+	if s.Status != StatusClosed {
+		return fmt.Errorf("%w: archived pair %s is %s, not closed", ErrRelay, slug, s.Status)
+	}
+	if err := s.requireParticipantSession(l.Identity); err != nil {
+		return err
+	}
+	return closeParamsMatch(s, outcome, reason)
+}
+
+func closeParamsMatch(s *Session, outcome, reason string) error {
+	if s.Outcome == nil || *s.Outcome != outcome {
+		got := "<nil>"
+		if s.Outcome != nil {
+			got = *s.Outcome
+		}
+		return fmt.Errorf("%w: pair %s already closed with outcome %s, not %s", ErrRelay, s.Pair, got, outcome)
+	}
+	if s.Reason == nil || *s.Reason != reason {
+		return fmt.Errorf("%w: pair %s already closed with a different reason", ErrRelay, s.Pair)
+	}
+	return nil
 }
