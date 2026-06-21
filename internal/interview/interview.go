@@ -131,20 +131,21 @@ func NewEngine(dir string) *Engine { return &Engine{Dir: dir, Now: time.Now} }
 func (e *Engine) path(id string) string { return filepath.Join(e.Dir, "interview-"+id+".json") }
 
 func (e *Engine) scopedID(id string) (string, error) {
-	if strings.TrimSpace(id) == "" || e.SessionSuffix == "" {
+	if e.SessionSuffix == "" {
 		return strings.TrimSpace(id), nil
 	}
-	return session.ScopeName(id, e.SessionSuffix)
+	return session.ScopeName(strings.TrimSpace(id), e.SessionSuffix)
 }
 
 func (e *Engine) matchesSession(id string) bool {
-	return e.SessionSuffix == "" || strings.HasSuffix(id, "-"+e.SessionSuffix)
+	return e.SessionSuffix == "" || session.MatchesScope(id, e.SessionSuffix)
 }
 
 // Start initializes a new interview (phase topology_pending). An existing
 // id is refused unless resume=true, which loads and returns it untouched.
 func (e *Engine) Start(id, typ string, threshold float64, source, idea string, resume, dryRun bool) (*State, error) {
-	if id == "" {
+	id = strings.TrimSpace(id)
+	if id == "" && e.SessionSuffix == "" {
 		id = e.Now().UTC().Format("20060102-150405")
 	}
 	var err error
@@ -219,10 +220,12 @@ func (e *Engine) Load(id string) (*State, error) {
 	return &s, nil
 }
 
-// Resolve picks the instance for an omitted --id: exactly one
-// non-terminal interview must exist (ambiguity is refused, listing ids).
+// Resolve picks the target instance. With a session suffix, omitted --id means
+// the session's default interview. Without a session suffix, the legacy engine
+// fallback still requires exactly one non-terminal interview.
 func (e *Engine) Resolve(id string) (*State, error) {
-	if id != "" {
+	id = strings.TrimSpace(id)
+	if id != "" || e.SessionSuffix != "" {
 		scoped, err := e.scopedID(id)
 		if err != nil {
 			return nil, err

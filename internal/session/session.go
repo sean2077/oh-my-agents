@@ -11,6 +11,10 @@ import (
 
 var slugRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
 
+// ScopeSeparator is reserved as the unambiguous boundary between a logical
+// workflow name and the session suffix.
+const ScopeSeparator = "--s-"
+
 // Resolve returns a path-safe session suffix. The default session value is
 // "current"; workflow state always has a session boundary.
 func Resolve(value string, getenv func(string) string) (string, error) {
@@ -23,21 +27,36 @@ func Resolve(value string, getenv func(string) string) (string, error) {
 	}
 }
 
-// ScopeName appends the session suffix to a workflow namespace or id.
+// ScopeName applies the session suffix to a workflow namespace or id. An empty
+// name resolves to the session suffix itself, which is the default workflow
+// instance for that session.
 func ScopeName(name, suffix string) (string, error) {
 	name = strings.TrimSpace(name)
 	suffix = strings.TrimSpace(suffix)
 	if suffix == "" {
 		return "", fmt.Errorf("session suffix is required")
 	}
-	if name == "" {
-		return "", nil
+	if strings.Contains(name, ScopeSeparator) {
+		return "", fmt.Errorf("workflow name %q contains reserved session separator %q", name, ScopeSeparator)
 	}
-	scoped := name + "-" + suffix
+	if strings.Contains(suffix, ScopeSeparator) {
+		return "", fmt.Errorf("session suffix %q contains reserved session separator %q", suffix, ScopeSeparator)
+	}
+	if name == "" {
+		return suffix, nil
+	}
+	scoped := name + ScopeSeparator + suffix
 	if len(scoped) > 64 {
 		return "", fmt.Errorf("session-scoped name %q is too long (max 64)", scoped)
 	}
 	return scoped, nil
+}
+
+// MatchesScope reports whether a scoped name belongs to suffix.
+func MatchesScope(name, suffix string) bool {
+	name = strings.TrimSpace(name)
+	suffix = strings.TrimSpace(suffix)
+	return suffix != "" && (name == suffix || strings.HasSuffix(name, ScopeSeparator+suffix))
 }
 
 func current(getenv func(string) string) (string, error) {
@@ -61,7 +80,7 @@ func current(getenv func(string) string) (string, error) {
 func explicit(raw string) string {
 	raw = strings.ToLower(strings.TrimSpace(raw))
 	raw = strings.ReplaceAll(raw, "_", "-")
-	if slugRe.MatchString(raw) {
+	if slugRe.MatchString(raw) && !strings.Contains(raw, ScopeSeparator) {
 		return raw
 	}
 	return hashSlug("session", raw)

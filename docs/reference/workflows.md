@@ -13,13 +13,18 @@ if the host has no platform session signal, set `OMA_SESSION_ID=<slug>` or pass
 an explicit `--session <slug>`:
 
 - `oma state set autopilot/phase <phase>` stores
-  `autopilot-<session>/phase` in the shared project `.oma/state/`.
+  `autopilot--s-<session>/phase` in the shared project `.oma/state/`.
 - `oma interview start --id same` and
   `oma ralph start --id same` scope the ids before reading or
   writing, so two host sessions can reuse the same human id without colliding.
-- When `interview start` or `ralph start` omits `--id`, the engine generates
-  a timestamp logical id first, then appends the session suffix. Later omitted
-  `--id` commands resolve exactly one active instance in the current session.
+- When `interview start` or `ralph start` omits `--id`, it uses the current
+  session suffix itself as that workflow type's default instance id. Later
+  omitted `--id` commands address that same default instance directly.
+- Explicit `--id` is the advanced multi-instance mode inside one session; later
+  commands for those instances must keep passing the same explicit `--id`.
+- The `--s-` token is reserved as the workflow/session boundary in generated
+  state names. Explicit workflow ids containing it are refused; explicit
+  session slugs containing it are hashed before scoping.
 - `oma relay` uses the shared project `.oma/relay/` root and separates pairs by
   author-session binding files. It intentionally ignores workflow `--session`
   scoping because each pair workflow is itself a Codex-session + Claude-session
@@ -75,19 +80,19 @@ running ──plateau_window consecutive rounds with no strict score gain (score
 any state ──abort──▶ aborted
 ```
 
-Fields: `id, revision, phase, goal, keep_policy(pass_only|score_improvement, default pass_only), max_rounds(default 10), round, checks[{round, verifier_exit, score?, note, at}], stall_window(default 3), plateau_window(default 3), best_round, best_score, created, updated`. Under score_improvement, `checks[].score` is required and finite, and `best_round`/`best_score` record the strict best; for the `receipt`, see schemas.md §6.
+Fields: `id, revision, session, project_root, worktree_root, branch, base_commit, phase, goal, keep_policy(pass_only|score_improvement, default pass_only), max_rounds(default 10), round, checks[{round, verifier_exit, score?, note, at}], stall_window(default 3), plateau_window(default 3), best_round, best_score, created, updated`. `project_root` is the shared `.oma` owner and `worktree_root` is the checkout where the loop started; later commands refuse from another worktree unless `--allow-worktree-change` is passed intentionally. Under score_improvement, `checks[].score` is required and finite, and `best_round`/`best_score` record the strict best; for the `receipt`, see schemas.md §6.
 
 ### 2.2 Command semantics
 
 - `start --goal <text> [--keep-policy pass_only|score_improvement] [--max-rounds N] [--stall-window N] [--plateau-window N]`: initializes; `goal` is required (the anchor for stop-judgment semantics). keep-policy defaults to pass_only.
-- `next`: round+1; emits continue|stop with the reason (stop on passed/exhausted/stalled/plateaued, exit code 4).
-- `check --verifier-exit <code> [--note] [--score <float>]`: records one verification result; exit 0 → passed. `--note` should carry the failure signature (e.g. the test name); the CLI judges `stalled` from the note string (stall_window consecutive identical notes, pass_only). `--score` is **required and finite** under score_improvement (omitting it is refused; passing `--score` under pass_only is also refused); plateau_window consecutive rounds with no strict gain → plateaued.
-- `status`: current round, history, and stop state.
+- `next [--allow-worktree-change]`: round+1; emits continue|stop with the reason (stop on passed/exhausted/stalled/plateaued, exit code 4).
+- `check --verifier-exit <code> [--note] [--score <float>] [--allow-worktree-change]`: records one verification result; exit 0 → passed. `--note` should carry the failure signature (e.g. the test name); the CLI judges `stalled` from the note string (stall_window consecutive identical notes, pass_only). `--score` is **required and finite** under score_improvement (omitting it is refused; passing `--score` under pass_only is also refused); plateau_window consecutive rounds with no strict gain → plateaued.
+- `status [--allow-worktree-change]`: current round, history, and stop state.
 
 ## 3. autopilot — a pure-markdown workflow (no dedicated command surface)
 
 - There is no `oma autopilot *` command and none may be added (a change requires reopening the spec and re-reviewing this document).
-- Persistent state uses the generic `oma state` plus default current-session scoping. New runs use logical keys `autopilot/phase`, `autopilot/goal`, and `autopilot/plan-path`; the CLI stores them under `autopilot-<session>/...`. Pass `--session <slug>` only to override the platform session boundary.
+- Persistent state uses the generic `oma state` plus default current-session scoping. New runs use logical keys `autopilot/phase`, `autopilot/goal`, and `autopilot/plan-path`; the CLI stores them under `autopilot--s-<session>/...`. Pass `--session <slug>` only to override the platform session boundary.
 - Compound autopilot phase transitions should use `oma state patch autopilot --set ...` with `--expected-revision` when a reader must not observe partially updated `goal`/`phase`/`plan-path`.
 - Resume discovery uses `oma state list autopilot --json` and must not guess across concurrent runs: if more than one non-`done` autopilot namespace remains in the current session scope, the agent asks which namespace to resume.
 - Skill-text skeleton: clarify (may invoke interview) → plan → implement → verify (may invoke ralph) → deliver; each step records state so an interrupted session can resume.

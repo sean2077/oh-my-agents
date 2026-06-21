@@ -1,11 +1,15 @@
 package interview
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -64,7 +68,7 @@ func TestSessionScopedDefaultIDAndOmittedResolve(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first.ID != "20260611-120000-sess-a" {
+	if first.ID != "sess-a" {
 		t.Fatalf("default scoped id = %q", first.ID)
 	}
 	if _, err := e2.Start("feature", "greenfield", 0.20, "test", "idea", false, false); err != nil {
@@ -79,6 +83,110 @@ func TestSessionScopedDefaultIDAndOmittedResolve(t *testing.T) {
 	}
 	if _, err := e1.Resolve("feature"); err == nil {
 		t.Fatal("explicit logical id must stay inside the current session")
+	}
+}
+
+func TestConcurrentProcessScoresDoNotLoseRounds(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "state")
+	e := NewEngine(dir)
+	e.SessionSuffix = "same"
+	e.Now = func() time.Time { return time.Date(2026, 6, 11, 12, 0, 0, 0, time.UTC) }
+	if _, err := e.Start("case", "greenfield", 0.20, "test", "idea", false, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := e.Score("case", topologyInput("a"), false); err != nil {
+		t.Fatal(err)
+	}
+
+	start := filepath.Join(t.TempDir(), "start")
+	const workers = 8
+	type child struct {
+		cmd *exec.Cmd
+		out *bytes.Buffer
+	}
+	children := make([]child, 0, workers)
+	for round := 1; round <= workers; round++ {
+		cmd := exec.Command(os.Args[0], "-test.run=^TestInterviewScoreHelperProcess$")
+		cmd.Env = append(os.Environ(),
+			"OMA_INTERVIEW_HELPER=1",
+			"OMA_INTERVIEW_DIR="+dir,
+			"OMA_INTERVIEW_START="+start,
+			"OMA_INTERVIEW_ROUND="+strconv.Itoa(round),
+		)
+		out := &bytes.Buffer{}
+		cmd.Stdout = out
+		cmd.Stderr = out
+		if err := cmd.Start(); err != nil {
+			t.Fatalf("start helper round %02d: %v", round, err)
+		}
+		children = append(children, child{cmd: cmd, out: out})
+	}
+	if err := os.WriteFile(start, []byte("go\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for i, child := range children {
+		if err := child.cmd.Wait(); err != nil {
+			t.Fatalf("helper %02d: %v\n%s", i+1, err, child.out.String())
+		}
+	}
+
+	got, err := e.Load("case--s-same")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Rounds) != workers {
+		t.Fatalf("rounds = %d, want %d: %+v", len(got.Rounds), workers, got.Rounds)
+	}
+	if got.Revision != int64(2+workers) {
+		t.Fatalf("revision = %d, want %d", got.Revision, 2+workers)
+	}
+	for i, round := range got.Rounds {
+		if round.Round != i+1 {
+			t.Fatalf("round[%d] = %d, want %d", i, round.Round, i+1)
+		}
+	}
+}
+
+func TestInterviewScoreHelperProcess(t *testing.T) {
+	if os.Getenv("OMA_INTERVIEW_HELPER") != "1" {
+		return
+	}
+	waitForFile := func(path string) {
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			if _, err := os.Stat(path); err == nil {
+				return
+			} else if !errors.Is(err, os.ErrNotExist) {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(2)
+			}
+			if time.Now().After(deadline) {
+				fmt.Fprintln(os.Stderr, "timed out waiting for start file")
+				os.Exit(2)
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+	round, err := strconv.Atoi(os.Getenv("OMA_INTERVIEW_ROUND"))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	waitForFile(os.Getenv("OMA_INTERVIEW_START"))
+	e := NewEngine(os.Getenv("OMA_INTERVIEW_DIR"))
+	e.SessionSuffix = "same"
+	in := scoresInput(round, map[string]map[string]float64{
+		"a": {"goal": 0.5, "constraints": 0.5, "criteria": 0.5},
+	})
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		if _, _, err := e.Score("case", in, false); err == nil {
+			os.Exit(0)
+		} else if !strings.Contains(err.Error(), "replays and skips are refused") || time.Now().After(deadline) {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 }
 

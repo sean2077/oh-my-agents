@@ -83,8 +83,8 @@ func TestWorkflowCLIDryRunSnapshot(t *testing.T) {
 	if got := treeFingerprint(t, stateDir); got != before {
 		t.Fatal("--dry-run interview gate wrote state")
 	}
-	if _, err := os.Stat(filepath.Join(stateDir, "interview-t1-dryrun.json.bak")); err == nil {
-		raw, _ := os.ReadFile(filepath.Join(stateDir, "interview-t1-dryrun.json.bak"))
+	if _, err := os.Stat(filepath.Join(stateDir, "interview-t1--s-dryrun.json.bak")); err == nil {
+		raw, _ := os.ReadFile(filepath.Join(stateDir, "interview-t1--s-dryrun.json.bak"))
 		// a .bak from the earlier REAL score command is fine; the dry-run
 		// must not have refreshed it — covered by the fingerprint above.
 		_ = raw
@@ -123,8 +123,10 @@ func TestWorkflowCLIDryRunSnapshot(t *testing.T) {
 	}
 }
 
-func TestWorkflowCLIOmittedIDFailsClosedOnCorruptState(t *testing.T) {
-	// review 060 blocker 2 at the CLI layer.
+func TestWorkflowCLIOmittedIDFailsClosedOnCorruptDefaultState(t *testing.T) {
+	// Omitted --id now targets the current session's default instance
+	// directly. A corrupt default file must fail closed instead of falling
+	// back to another explicit instance.
 	t.Setenv("OMA_SESSION_ID", "corrupt")
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, ".git"), 0o700); err != nil {
@@ -135,18 +137,18 @@ func TestWorkflowCLIOmittedIDFailsClosedOnCorruptState(t *testing.T) {
 		t.Fatalf("start exit %d: %s", code, out)
 	}
 	stateDir := filepath.Join(dir, ".oma", "state")
-	if err := os.WriteFile(filepath.Join(stateDir, "interview-bad-corrupt.json"), []byte(`{"schema":"oma-interview/9","id":"bad-corrupt"}`), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(stateDir, "interview-corrupt.json"), []byte(`{"schema":"oma-interview/9","id":"corrupt"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if code, out := runOma(t, "interview", "status"); code != ExitState || !strings.Contains(out, `schema "oma-interview/9"`) {
-		t.Fatalf("omitted-id with corrupt sibling: exit %d out=%s", code, out)
+		t.Fatalf("omitted-id with corrupt default: exit %d out=%s", code, out)
 	}
 	if code, _ := runOma(t, "interview", "status", "--id", "good"); code != ExitOK {
 		t.Fatal("explicit good id must still work")
 	}
 }
 
-func TestWorkflowCLIOmittedIDResolvesSingleScopedInstance(t *testing.T) {
+func TestWorkflowCLIOmittedIDUsesSessionDefaultInstance(t *testing.T) {
 	t.Setenv("OMA_SESSION_ID", "defaultid")
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, ".git"), 0o700); err != nil {
@@ -154,7 +156,7 @@ func TestWorkflowCLIOmittedIDResolvesSingleScopedInstance(t *testing.T) {
 	}
 	t.Chdir(dir)
 
-	if code, out := runOma(t, "interview", "start", "--id", "feature-a"); code != ExitOK {
+	if code, out := runOma(t, "interview", "start"); code != ExitOK {
 		t.Fatalf("interview start exit %d: %s", code, out)
 	}
 	topo := filepath.Join(dir, "topo.json")
@@ -164,15 +166,27 @@ func TestWorkflowCLIOmittedIDResolvesSingleScopedInstance(t *testing.T) {
 	if code, out := runOma(t, "interview", "score", "--input", topo); code != ExitOK {
 		t.Fatalf("omitted-id interview score exit %d: %s", code, out)
 	}
-	if code, out := runOma(t, "interview", "status"); code != ExitOK || !strings.Contains(out, "feature-a-defaultid") {
+	if code, out := runOma(t, "interview", "status"); code != ExitOK || !strings.Contains(out, "defaultid") {
 		t.Fatalf("omitted-id interview status exit %d: %s", code, out)
 	}
+	if code, out := runOma(t, "interview", "start", "--id", "feature-a"); code != ExitOK {
+		t.Fatalf("explicit interview start exit %d: %s", code, out)
+	}
+	if code, out := runOma(t, "interview", "status"); code != ExitOK || strings.Contains(out, "feature-a--s-defaultid") {
+		t.Fatalf("omitted-id must stay on default interview, exit %d: %s", code, out)
+	}
 
-	if code, out := runOma(t, "ralph", "start", "--id", "loop", "--goal", "keep going"); code != ExitOK {
+	if code, out := runOma(t, "ralph", "start", "--goal", "keep going"); code != ExitOK {
 		t.Fatalf("ralph start exit %d: %s", code, out)
 	}
 	if code, out := runOma(t, "ralph", "next"); code != ExitOK || !strings.Contains(out, "round=1") {
 		t.Fatalf("omitted-id ralph next exit %d: %s", code, out)
+	}
+	if code, out := runOma(t, "ralph", "start", "--id", "loop", "--goal", "explicit loop"); code != ExitOK {
+		t.Fatalf("explicit ralph start exit %d: %s", code, out)
+	}
+	if code, out := runOma(t, "ralph", "status"); code != ExitOK || strings.Contains(out, "loop--s-defaultid") {
+		t.Fatalf("omitted-id must stay on default ralph loop, exit %d: %s", code, out)
 	}
 }
 
@@ -263,5 +277,47 @@ func TestWorkflowStateUsesProjectRootAndSessionScope(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(wt, ".oma")); !os.IsNotExist(err) {
 			t.Fatalf("linked worktree .oma should not be used: %s err=%v", wt, err)
 		}
+	}
+}
+
+func TestRalphBindsDefaultLoopToStartingWorktree(t *testing.T) {
+	t.Setenv("CLAUDE_CODE_SESSION_ID", "")
+	main := t.TempDir()
+	for _, name := range []string{"one", "two"} {
+		gitdir := filepath.Join(main, ".git", "worktrees", name)
+		if err := os.MkdirAll(gitdir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(gitdir, "commondir"), []byte("../..\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	worktree := func(name string) string {
+		t.Helper()
+		wt := t.TempDir()
+		gitdir := filepath.Join(main, ".git", "worktrees", name)
+		if err := os.WriteFile(filepath.Join(wt, ".git"), []byte("gitdir: "+gitdir+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return wt
+	}
+	wt1 := worktree("one")
+	wt2 := worktree("two")
+
+	t.Setenv("CODEX_THREAD_ID", "same-thread")
+	t.Chdir(wt1)
+	if code, out := runOma(t, "ralph", "start", "--goal", "verify this worktree"); code != ExitOK {
+		t.Fatalf("ralph start exit %d: %s", code, out)
+	}
+	if code, out := runOma(t, "ralph", "status"); code != ExitOK {
+		t.Fatalf("same-worktree status exit %d: %s", code, out)
+	}
+
+	t.Chdir(wt2)
+	if code, out := runOma(t, "ralph", "status"); code != ExitState || !strings.Contains(out, "bound to worktree") {
+		t.Fatalf("cross-worktree status exit %d out=%s", code, out)
+	}
+	if code, out := runOma(t, "ralph", "status", "--allow-worktree-change"); code != ExitOK {
+		t.Fatalf("allow cross-worktree status exit %d: %s", code, out)
 	}
 }

@@ -59,7 +59,7 @@ func (s Scope) FilterEntries(entries []state.Entry) ([]state.Entry, error) {
 	}
 	out := make([]state.Entry, 0, len(entries))
 	for _, ent := range entries {
-		if ent.Namespace == suffix || strings.HasSuffix(ent.Namespace, "-"+suffix) {
+		if session.MatchesScope(ent.Namespace, suffix) {
 			out = append(out, ent)
 		}
 	}

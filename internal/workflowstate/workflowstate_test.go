@@ -9,10 +9,10 @@ import (
 func TestScopeIDAndStateKey(t *testing.T) {
 	scope := Scope{Session: "release"}
 
-	if got, err := scope.ID("same"); err != nil || got != "same-release" {
+	if got, err := scope.ID("same"); err != nil || got != "same--s-release" {
 		t.Fatalf("ID = %q err=%v", got, err)
 	}
-	if got, err := scope.StateKey("autopilot/phase"); err != nil || got != "autopilot-release/phase" {
+	if got, err := scope.StateKey("autopilot/phase"); err != nil || got != "autopilot--s-release/phase" {
 		t.Fatalf("StateKey = %q err=%v", got, err)
 	}
 }
@@ -32,7 +32,7 @@ func TestScopeCurrentUsesPlatformSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != "ralph-codex-34bdc44fd758" {
+	if got != "ralph--s-codex-34bdc44fd758" {
 		t.Fatalf("ID = %q", got)
 	}
 }
@@ -51,7 +51,7 @@ func TestScopeDefaultUsesCurrent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != "autopilot-default/phase" {
+	if got != "autopilot--s-default/phase" {
 		t.Fatalf("StateKey = %q", got)
 	}
 }
@@ -59,8 +59,8 @@ func TestScopeDefaultUsesCurrent(t *testing.T) {
 func TestFilterEntriesBySessionSuffix(t *testing.T) {
 	scope := Scope{Session: "codex-abc"}
 	entries := []state.Entry{
-		{Namespace: "autopilot-codex-abc"},
-		{Namespace: "autopilot-extra-codex-abc"},
+		{Namespace: "autopilot--s-codex-abc"},
+		{Namespace: "autopilot-extra--s-codex-abc"},
 		{Namespace: "autopilot-claude-def"},
 	}
 
@@ -68,7 +68,7 @@ func TestFilterEntriesBySessionSuffix(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 2 || got[0].Namespace != "autopilot-codex-abc" || got[1].Namespace != "autopilot-extra-codex-abc" {
+	if len(got) != 2 || got[0].Namespace != "autopilot--s-codex-abc" || got[1].Namespace != "autopilot-extra--s-codex-abc" {
 		t.Fatalf("FilterEntries = %+v", got)
 	}
 }

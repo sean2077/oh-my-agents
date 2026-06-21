@@ -16,7 +16,7 @@ You iterate on a goal until a verifier proves it done, with the stop judgment so
 oma ralph start --goal "<what done means>" --max-rounds 10 --stall-window 3 --id <slug>
 ```
 
-`--goal` is required and should be verifiable ("go test ./... passes", not "make it better"). The default current workflow session isolates loops inside the shared project `.oma/state/`; `--id` names the loop within that session and may be omitted when one loop is enough. Inspect state after an interruption with `oma ralph status --json`, or `oma ralph status --id <slug> --json` when you supplied an id; resume the loop by continuing the `next → work → check` cycle below.
+`--goal` is required and should be verifiable ("go test ./... passes", not "make it better"). The default current workflow session isolates loops inside the shared project `.oma/state/`; omitting `--id` uses that session's default loop, while `--id` creates an explicit loop that must keep using the same id on later commands. Ralph records the worktree where the loop starts and refuses later commands from another worktree unless you intentionally pass `--allow-worktree-change`. Inspect state after an interruption with `oma ralph status --json`, or `oma ralph status --id <slug> --json` when you supplied an id; resume the loop by continuing the `next → work → check` cycle below.
 
 ## Each round
 

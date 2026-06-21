@@ -38,7 +38,7 @@ oma state list [namespace-prefix] [--json]
 ```
 
 - The default file is `<project root>/.oma/state/<namespace>.json`, with keys of the form `<namespace>/<field>` (e.g. `autopilot/phase`); `--file` overrides the whole file path. A linked git worktree resolves `<project root>` back to the primary checkout, so one repository has one `.oma`.
-- By default, `state get/set autopilot/phase` and `state patch autopilot --set phase=...` are stored under the current session namespace (`autopilot-<session>/...`); `oma state list autopilot` lists only the current session's autopilot namespaces. `--session <slug>` switches to an explicit scope.
+- By default, `state get/set autopilot/phase` and `state patch autopilot --set phase=...` are stored under the current session namespace (`autopilot--s-<session>/...`); `oma state list autopilot` lists only the current session's autopilot namespaces. `--session <slug>` switches to an explicit scope.
 - `get --json` includes the namespace file revision; `set --expected-revision <n>` and `patch --expected-revision <n>` fail closed when another writer has advanced the file first.
 - `list` scans the project `.oma/state/*.json`, optionally filtering by namespace prefix, and validates every matching file with the same fail-closed schema/namespace checks as `get`.
 - Writes: namespace-level cross-process lock, unique same-directory tmp+rename, single-generation `.bak`, mode 0600, and monotonic revision increments. Concurrent writers serialize instead of overwriting each other's fields.
@@ -67,13 +67,15 @@ oma interview abort [--id <id>]
 oma interview status [--id <id>] [--json]
 
 oma ralph start --goal <text> [--max-rounds N] [--stall-window N] [--id <id>]
-oma ralph next [--id <id>] [--json]
-oma ralph check --verifier-exit <code> [--note <text>] [--id <id>] [--json]
-oma ralph abort [--id <id>]
-oma ralph status [--id <id>] [--json]
+oma ralph next [--id <id>] [--allow-worktree-change] [--json]
+oma ralph check --verifier-exit <code> [--note <text>] [--id <id>] [--allow-worktree-change] [--json]
+oma ralph abort [--id <id>] [--allow-worktree-change]
+oma ralph status [--id <id>] [--allow-worktree-change] [--json]
 ```
 
-- State lands in `<project root>/.oma/state/interview-<id>.json` / `.oma/state/ralph-<id>.json`. The engine scopes logical ids before reading or writing (`--id same` becomes `same-<session>`). For `start`, omitted `--id` first generates a timestamp logical id and then appends the session suffix; for read/mutate commands, omitted `--id` resolves the current session's single active instance. `--session <slug>` switches to an explicit scope.
+- State lands in `<project root>/.oma/state/interview-<id>.json` / `.oma/state/ralph-<id>.json`. The engine scopes explicit logical ids before reading or writing (`--id same` becomes `same--s-<session>`). For `start`, omitted `--id` uses the session suffix itself as the workflow type's default instance id; later omitted read/mutate commands address that same default instance directly. Explicit `--id` is the advanced multi-instance path and must be repeated on later commands for that instance. `--session <slug>` switches to an explicit scope.
+- The `--s-` token is reserved as the workflow/session boundary in generated state names; explicit workflow ids and session slugs containing it are refused or hashed before use.
+- Ralph records the starting session/project/worktree metadata. Later `next`/`check`/`abort`/`status` refuse when run from a different worktree for the same project/session, unless `--allow-worktree-change` is passed intentionally.
 - The verdict output of `gate`/`next` must contain: the verdict, the numbers it rests on, and the suggested next step (both machine-readable and human-readable forms).
 - **No `oma autopilot *` surface** (autopilot is pure markdown, using general `oma state`; changing this requires reopening the spec).
 - **ralph start ambiguity gate (advisory)**: if `--goal` is too vague (≤15 words and lacking a file/issue/symbol/test-runner anchor), a suggestion is printed to stderr (clarify with deep-interview first, or plan with ralplan) — it does **not** block startup.

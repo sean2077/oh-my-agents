@@ -2,24 +2,52 @@ package cli
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 
+	"github.com/sean2077/oh-my-agents/internal/projectroot"
 	"github.com/sean2077/oh-my-agents/internal/ralph"
 	"github.com/spf13/cobra"
 )
 
 func ralphEngine() (*ralph.Engine, error) {
-	root := findProjectRoot()
-	if root == "" {
+	info, err := currentProjectInfo()
+	if err != nil {
 		return nil, fmt.Errorf("not inside a git checkout (ralph state lives in <root>/.oma/state)")
 	}
 	suffix, err := workflowScope().Suffix()
 	if err != nil {
 		return nil, err
 	}
-	eng := ralph.NewEngine(filepath.Join(root, ".oma", "state"))
+	eng := ralph.NewEngine(filepath.Join(info.ProjectRoot, ".oma", "state"))
 	eng.SessionSuffix = suffix
+	eng.ProjectRoot = info.ProjectRoot
+	eng.WorktreeRoot = info.WorktreeRoot
+	eng.Branch, eng.BaseCommit = gitWorktreeIdentity(info.WorktreeRoot)
 	return eng, nil
+}
+
+func currentProjectInfo() (projectroot.Info, error) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return projectroot.Info{}, err
+	}
+	return projectroot.Resolve(dir)
+}
+
+func gitWorktreeIdentity(root string) (branch, commit string) {
+	if root == "" {
+		return "", ""
+	}
+	if out, err := exec.Command("git", "-C", root, "branch", "--show-current").Output(); err == nil {
+		branch = strings.TrimSpace(string(out))
+	}
+	if out, err := exec.Command("git", "-C", root, "rev-parse", "HEAD").Output(); err == nil {
+		commit = strings.TrimSpace(string(out))
+	}
+	return branch, commit
 }
 
 func newRalphCmd() *cobra.Command {
@@ -59,7 +87,7 @@ func newRalphStartCmd() *cobra.Command {
 		}),
 	}
 	cmd.Flags().StringVar(&goal, "goal", "", "what done means for this loop")
-	cmd.Flags().StringVar(&id, "id", "", "instance id (default: timestamp)")
+	cmd.Flags().StringVar(&id, "id", "", "instance id (default: current session's default ralph loop)")
 	cmd.Flags().StringVar(&keepPolicy, "keep-policy", "pass_only", "pass_only | score_improvement")
 	cmd.Flags().IntVar(&maxRounds, "max-rounds", 10, "exhaustion bound")
 	cmd.Flags().IntVar(&stallWindow, "stall-window", 3, "consecutive same-signature failures before stalled (pass_only)")
@@ -71,6 +99,7 @@ func newRalphStartCmd() *cobra.Command {
 func newRalphNextCmd() *cobra.Command {
 	var id string
 	var asJSON bool
+	var allowWorktreeChange bool
 	cmd := &cobra.Command{
 		Use:   "next",
 		Short: "Advance one round; stop verdicts (passed/exhausted/stalled/plateaued) exit 4",
@@ -80,6 +109,7 @@ func newRalphNextCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			eng.AllowWorktreeChange = allowWorktreeChange
 			st, v, err := eng.Next(id, DryRun())
 			if err != nil {
 				return err
@@ -100,8 +130,9 @@ func newRalphNextCmd() *cobra.Command {
 			return nil
 		}),
 	}
-	cmd.Flags().StringVar(&id, "id", "", "instance id")
+	cmd.Flags().StringVar(&id, "id", "", "instance id (default: current session's default ralph loop)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable output")
+	cmd.Flags().BoolVar(&allowWorktreeChange, "allow-worktree-change", false, "allow access when the loop was started from another worktree")
 	return cmd
 }
 
@@ -110,6 +141,7 @@ func newRalphCheckCmd() *cobra.Command {
 	var verifierExit int
 	var score float64
 	var asJSON bool
+	var allowWorktreeChange bool
 	cmd := &cobra.Command{
 		Use:   "check",
 		Short: "Record a verifier result the AGENT ran (oma never executes verifiers)",
@@ -119,6 +151,7 @@ func newRalphCheckCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			eng.AllowWorktreeChange = allowWorktreeChange
 			// A nil score means "not provided"; --score 0 is a real value, so
 			// distinguish via Changed (RecordCheck enforces policy/score rules).
 			var scorePtr *float64
@@ -145,17 +178,19 @@ func newRalphCheckCmd() *cobra.Command {
 			return nil
 		}),
 	}
-	cmd.Flags().StringVar(&id, "id", "", "instance id")
+	cmd.Flags().StringVar(&id, "id", "", "instance id (default: current session's default ralph loop)")
 	cmd.Flags().IntVar(&verifierExit, "verifier-exit", -1, "exit code of the verifier the agent ran")
 	cmd.Flags().Float64Var(&score, "score", 0, "evaluator score (required under keep-policy score_improvement)")
 	cmd.Flags().StringVar(&note, "note", "", "failure signature (stall detection compares these)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable output")
+	cmd.Flags().BoolVar(&allowWorktreeChange, "allow-worktree-change", false, "allow access when the loop was started from another worktree")
 	_ = cmd.MarkFlagRequired("verifier-exit")
 	return cmd
 }
 
 func newRalphAbortCmd() *cobra.Command {
 	var id string
+	var allowWorktreeChange bool
 	cmd := &cobra.Command{
 		Use:   "abort",
 		Short: "Abort a running loop",
@@ -165,6 +200,7 @@ func newRalphAbortCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			eng.AllowWorktreeChange = allowWorktreeChange
 			s, err := eng.Abort(id, DryRun())
 			if err != nil {
 				return err
@@ -176,13 +212,15 @@ func newRalphAbortCmd() *cobra.Command {
 			return nil
 		}),
 	}
-	cmd.Flags().StringVar(&id, "id", "", "instance id")
+	cmd.Flags().StringVar(&id, "id", "", "instance id (default: current session's default ralph loop)")
+	cmd.Flags().BoolVar(&allowWorktreeChange, "allow-worktree-change", false, "allow access when the loop was started from another worktree")
 	return cmd
 }
 
 func newRalphStatusCmd() *cobra.Command {
 	var id string
 	var asJSON bool
+	var allowWorktreeChange bool
 	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "Show loop state (read-only)",
@@ -192,6 +230,7 @@ func newRalphStatusCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			eng.AllowWorktreeChange = allowWorktreeChange
 			s, err := eng.Resolve(id)
 			if err != nil {
 				return err
@@ -204,8 +243,9 @@ func newRalphStatusCmd() *cobra.Command {
 			return nil
 		}),
 	}
-	cmd.Flags().StringVar(&id, "id", "", "instance id")
+	cmd.Flags().StringVar(&id, "id", "", "instance id (default: current session's default ralph loop)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable output")
+	cmd.Flags().BoolVar(&allowWorktreeChange, "allow-worktree-change", false, "allow access when the loop was started from another worktree")
 	return cmd
 }
 

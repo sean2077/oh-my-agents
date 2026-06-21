@@ -56,7 +56,7 @@ func TestSessionScopedDefaultIDAndOmittedResolve(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first.ID != "20260611-120000-sess-a" {
+	if first.ID != "sess-a" {
 		t.Fatalf("default scoped id = %q", first.ID)
 	}
 	if _, err := e2.Start("feature", StartOpts{Goal: "other"}, false); err != nil {
@@ -82,7 +82,7 @@ func TestConcurrentProcessChecksDoNotLoseRecords(t *testing.T) {
 	if _, err := e.Start("loop", StartOpts{Goal: "record every check", MaxRounds: 64}, false); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := e.Next("", false); err != nil {
+	if _, _, err := e.Next("loop", false); err != nil {
 		t.Fatal(err)
 	}
 
@@ -118,7 +118,7 @@ func TestConcurrentProcessChecksDoNotLoseRecords(t *testing.T) {
 		}
 	}
 
-	got, err := e.Load("loop-same")
+	got, err := e.Load("loop--s-same")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +163,7 @@ func TestRalphCheckHelperProcess(t *testing.T) {
 	waitForFile(os.Getenv("OMA_RALPH_START"))
 	e := NewEngine(os.Getenv("OMA_RALPH_DIR"))
 	e.SessionSuffix = "same"
-	if _, _, err := e.RecordCheck("", 1, nil, os.Getenv("OMA_RALPH_NOTE"), false); err != nil {
+	if _, _, err := e.RecordCheck("loop", 1, nil, os.Getenv("OMA_RALPH_NOTE"), false); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}

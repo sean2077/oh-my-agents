@@ -66,16 +66,21 @@ type Check struct {
 
 // State is the oma-ralph/2 document.
 type State struct {
-	Schema      string  `json:"schema"`
-	ID          string  `json:"id"`
-	Revision    int64   `json:"revision"`
-	Phase       string  `json:"phase"`
-	Goal        string  `json:"goal"`
-	KeepPolicy  string  `json:"keep_policy"`
-	MaxRounds   int     `json:"max_rounds"`
-	Round       int     `json:"round"`
-	Checks      []Check `json:"checks"`
-	StallWindow int     `json:"stall_window"`
+	Schema       string  `json:"schema"`
+	ID           string  `json:"id"`
+	Revision     int64   `json:"revision"`
+	Session      string  `json:"session,omitempty"`
+	ProjectRoot  string  `json:"project_root,omitempty"`
+	WorktreeRoot string  `json:"worktree_root,omitempty"`
+	Branch       string  `json:"branch,omitempty"`
+	BaseCommit   string  `json:"base_commit,omitempty"`
+	Phase        string  `json:"phase"`
+	Goal         string  `json:"goal"`
+	KeepPolicy   string  `json:"keep_policy"`
+	MaxRounds    int     `json:"max_rounds"`
+	Round        int     `json:"round"`
+	Checks       []Check `json:"checks"`
+	StallWindow  int     `json:"stall_window"`
 	// PlateauWindow/BestRound/BestScore drive score_improvement keep-best and
 	// the plateau stop. BestRound is 0 until the first scored check.
 	PlateauWindow int       `json:"plateau_window"`
@@ -98,9 +103,14 @@ var idRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
 
 // Engine anchors ralph state under dir (.oma/state).
 type Engine struct {
-	Dir           string
-	Now           func() time.Time
-	SessionSuffix string
+	Dir                 string
+	Now                 func() time.Time
+	SessionSuffix       string
+	ProjectRoot         string
+	WorktreeRoot        string
+	Branch              string
+	BaseCommit          string
+	AllowWorktreeChange bool
 }
 
 // NewEngine builds an Engine for the given state directory.
@@ -109,14 +119,14 @@ func NewEngine(dir string) *Engine { return &Engine{Dir: dir, Now: time.Now} }
 func (e *Engine) path(id string) string { return filepath.Join(e.Dir, "ralph-"+id+".json") }
 
 func (e *Engine) scopedID(id string) (string, error) {
-	if strings.TrimSpace(id) == "" || e.SessionSuffix == "" {
+	if e.SessionSuffix == "" {
 		return strings.TrimSpace(id), nil
 	}
-	return session.ScopeName(id, e.SessionSuffix)
+	return session.ScopeName(strings.TrimSpace(id), e.SessionSuffix)
 }
 
 func (e *Engine) matchesSession(id string) bool {
-	return e.SessionSuffix == "" || strings.HasSuffix(id, "-"+e.SessionSuffix)
+	return e.SessionSuffix == "" || session.MatchesScope(id, e.SessionSuffix)
 }
 
 // StartOpts configures a new loop. Zero values take documented defaults
@@ -142,7 +152,8 @@ func (e *Engine) Start(id string, opts StartOpts, dryRun bool) (*State, error) {
 	if keep != KeepPassOnly && keep != KeepScoreImprovement {
 		return nil, fmt.Errorf("%w: keep-policy %q must be %s or %s", ErrRalph, keep, KeepPassOnly, KeepScoreImprovement)
 	}
-	if id == "" {
+	id = strings.TrimSpace(id)
+	if id == "" && e.SessionSuffix == "" {
 		id = e.Now().UTC().Format("20060102-150405")
 	}
 	var err error
@@ -171,8 +182,13 @@ func (e *Engine) Start(id string, opts StartOpts, dryRun bool) (*State, error) {
 	now := e.Now().UTC()
 	s := &State{
 		Schema: Schema, ID: id, Phase: PhaseRunning, Goal: opts.Goal,
-		KeepPolicy: keep,
-		MaxRounds:  maxRounds, StallWindow: stallWindow, PlateauWindow: plateauWindow,
+		Session:      e.SessionSuffix,
+		ProjectRoot:  e.ProjectRoot,
+		WorktreeRoot: e.WorktreeRoot,
+		Branch:       e.Branch,
+		BaseCommit:   e.BaseCommit,
+		KeepPolicy:   keep,
+		MaxRounds:    maxRounds, StallWindow: stallWindow, PlateauWindow: plateauWindow,
 		Checks:  []Check{},
 		Created: now, Updated: now,
 	}
@@ -218,6 +234,31 @@ func (e *Engine) Load(id string) (*State, error) {
 	return &s, nil
 }
 
+func (e *Engine) loadResolved(id string) (*State, error) {
+	s, err := e.Load(id)
+	if err != nil {
+		return nil, err
+	}
+	if err := e.checkWorktreeBinding(s); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+func (e *Engine) checkWorktreeBinding(s *State) error {
+	if e.AllowWorktreeChange || e.WorktreeRoot == "" || s.WorktreeRoot == "" {
+		return nil
+	}
+	if s.ProjectRoot != "" && e.ProjectRoot != "" && filepath.Clean(s.ProjectRoot) != filepath.Clean(e.ProjectRoot) {
+		return fmt.Errorf("%w: loop %s belongs to project %s; current project is %s", ErrRalph, s.ID, s.ProjectRoot, e.ProjectRoot)
+	}
+	if filepath.Clean(s.WorktreeRoot) != filepath.Clean(e.WorktreeRoot) {
+		return fmt.Errorf("%w: loop %s is bound to worktree %s; current worktree is %s (pass --allow-worktree-change to inspect or intentionally continue)",
+			ErrRalph, s.ID, s.WorktreeRoot, e.WorktreeRoot)
+	}
+	return nil
+}
+
 // validate enforces the /2 keep-policy contract on LOADED persisted state, so a
 // hand-written or corrupt file cannot bypass the fail-closed rules Start applies
 // to new loops (codex gate-2 must-fix): an unknown keep_policy must not fall
@@ -232,15 +273,17 @@ func (s *State) validate() error {
 	return nil
 }
 
-// Resolve picks the instance for an omitted --id: exactly one running
-// loop must exist.
+// Resolve picks the target loop. With a session suffix, omitted --id means the
+// session's default loop. Without a session suffix, the legacy engine fallback
+// still requires exactly one running loop.
 func (e *Engine) Resolve(id string) (*State, error) {
-	if id != "" {
+	id = strings.TrimSpace(id)
+	if id != "" || e.SessionSuffix != "" {
 		scoped, err := e.scopedID(id)
 		if err != nil {
 			return nil, err
 		}
-		return e.Load(scoped)
+		return e.loadResolved(scoped)
 	}
 	matches, err := filepath.Glob(filepath.Join(e.Dir, "ralph-*.json"))
 	if err != nil {
@@ -252,7 +295,7 @@ func (e *Engine) Resolve(id string) (*State, error) {
 		if !e.matchesSession(base) {
 			continue
 		}
-		s, err := e.Load(base)
+		s, err := e.loadResolved(base)
 		if err != nil {
 			// A corrupt or foreign-major candidate must fail the omitted-id
 			// resolution closed (review 060 blocker 2).
@@ -536,6 +579,9 @@ func (e *Engine) withResolved(id string, dryRun bool, fn func(*State) error) (*S
 		var err error
 		s, err = e.Load(s.ID)
 		if err != nil {
+			return err
+		}
+		if err := e.checkWorktreeBinding(s); err != nil {
 			return err
 		}
 		return fn(s)

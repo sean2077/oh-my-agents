@@ -80,7 +80,7 @@ func newInterviewStartCmd() *cobra.Command {
 	cmd.Flags().Float64Var(&threshold, "threshold", 0, "ambiguity gate threshold in [0,1] (beats --depth)")
 	cmd.Flags().StringVar(&depth, "depth", "", "quick|standard|deep (0.30/0.20/0.10)")
 	cmd.Flags().StringVar(&typ, "type", "greenfield", "greenfield|brownfield (brownfield adds the context dimension)")
-	cmd.Flags().StringVar(&id, "id", "", "instance id (default: timestamp)")
+	cmd.Flags().StringVar(&id, "id", "", "instance id (default: current session's default interview)")
 	cmd.Flags().StringVar(&idea, "idea", "", "the initial idea (prompt-safe summary)")
 	cmd.Flags().BoolVar(&resume, "resume", false, "show an existing interview instead of refusing")
 	return cmd
@@ -126,7 +126,7 @@ func newInterviewScoreCmd() *cobra.Command {
 		}),
 	}
 	cmd.Flags().StringVar(&input, "input", "", "scores JSON file (oma-interview-scores/1)")
-	cmd.Flags().StringVar(&id, "id", "", "instance id (default: the single active interview)")
+	cmd.Flags().StringVar(&id, "id", "", "instance id (default: current session's default interview)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable output")
 	_ = cmd.MarkFlagRequired("input")
 	return cmd
@@ -170,7 +170,7 @@ func newInterviewGateCmd() *cobra.Command {
 			return nil
 		}),
 	}
-	cmd.Flags().StringVar(&id, "id", "", "instance id")
+	cmd.Flags().StringVar(&id, "id", "", "instance id (default: current session's default interview)")
 	cmd.Flags().BoolVar(&waive, "waive", false, "record an early exit (interviewing → gate_waived) with a warning")
 	cmd.Flags().StringVar(&reason, "reason", "", "waiver reason (required with --waive)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable output")
@@ -199,7 +199,7 @@ func newInterviewCrystallizeCmd() *cobra.Command {
 			return nil
 		}),
 	}
-	cmd.Flags().StringVar(&id, "id", "", "instance id")
+	cmd.Flags().StringVar(&id, "id", "", "instance id (default: current session's default interview)")
 	cmd.Flags().StringVar(&spec, "spec", "", "path of the crystallized spec file")
 	_ = cmd.MarkFlagRequired("spec")
 	return cmd
@@ -227,7 +227,7 @@ func newInterviewCompleteCmd() *cobra.Command {
 			return nil
 		}),
 	}
-	cmd.Flags().StringVar(&id, "id", "", "instance id")
+	cmd.Flags().StringVar(&id, "id", "", "instance id (default: current session's default interview)")
 	return cmd
 }
 
@@ -253,7 +253,7 @@ func newInterviewAbortCmd() *cobra.Command {
 			return nil
 		}),
 	}
-	cmd.Flags().StringVar(&id, "id", "", "instance id")
+	cmd.Flags().StringVar(&id, "id", "", "instance id (default: current session's default interview)")
 	return cmd
 }
 
@@ -281,7 +281,7 @@ func newInterviewStatusCmd() *cobra.Command {
 			return nil
 		}),
 	}
-	cmd.Flags().StringVar(&id, "id", "", "instance id")
+	cmd.Flags().StringVar(&id, "id", "", "instance id (default: current session's default interview)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable output")
 	return cmd
 }

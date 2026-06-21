@@ -11,7 +11,7 @@ You drive a task from vague request to delivered result through five phases, per
 
 Autopilot state uses the CLI's default current workflow session scope. For a
 normal run, use `oma state` with the logical namespace `autopilot`; the CLI
-stores it as `autopilot-<session>` in the shared project `.oma/state/`. If
+stores it as `autopilot--s-<session>` in the shared project `.oma/state/`. If
 `current` cannot resolve a platform session, set `OMA_SESSION_ID=<slug>` or pass
 an explicit `--session <slug>`.
 
@@ -19,6 +19,7 @@ an explicit `--session <slug>`.
 oma state set autopilot/phase <clarify|plan|implement|verify|deliver|done>
 oma state set autopilot/goal "<one-line goal>"
 oma state set autopilot/plan-path <path>
+oma state set autopilot/worktree-root "<git worktree root>"
 ```
 
 On EVERY session start, probe for an in-flight run — and note that `oma state get` on a missing key exits 3 by design (fail-closed), which here just means "no run yet":
@@ -27,8 +28,8 @@ On EVERY session start, probe for an in-flight run — and note that `oma state 
 oma state get autopilot/phase
 ```
 
-- **Missing key (exit 3) or `done`** → no active run in that session. For a new authorized task, initialize before any work: `oma state set autopilot/goal "<one-line goal>"`, then `oma state set autopilot/phase clarify`.
-- **Any other value** → resume from that phase. `autopilot/goal` must exist (read it); `autopilot/plan-path` may be absent until either `clarify` records a spec or `plan` produces the file, and must exist from `implement` onward. It always points at the file holding the actionable plan (the spec's plan section is fine, as long as the plan is written there).
+- **Missing key (exit 3) or `done`** → no active run in that session. For a new authorized task, initialize before any work: record `autopilot/worktree-root` from the current `git rev-parse --show-toplevel`, set `oma state set autopilot/goal "<one-line goal>"`, then `oma state set autopilot/phase clarify`.
+- **Any other value** → resume from that phase. `autopilot/goal` must exist (read it); `autopilot/worktree-root` must match the current `git rev-parse --show-toplevel` unless the user explicitly authorizes rebinding/continuing from another worktree; `autopilot/plan-path` may be absent until either `clarify` records a spec or `plan` produces the file, and must exist from `implement` onward. It always points at the file holding the actionable plan (the spec's plan section is fine, as long as the plan is written there).
 - **A key the current phase depends on is missing** (e.g. phase `implement` but no `plan-path`) → that is recoverable corrupt workflow state: tell the user what is inconsistent and how to repair it (re-set the key or restart the phase); never restart from scratch silently.
 
 If no explicit namespace is known on resume, discover candidates with:
