@@ -35,22 +35,27 @@ var (
 
 const stateLockTimeout = 30 * time.Second
 
-// File is one namespace's on-disk document.
+// File is one namespace's on-disk document. WorktreeRoot/ProjectRoot are the
+// optional mechanical worktree binding (BindWorktree/CheckWorktree); they are
+// minor-additive and preserved across ordinary set/patch writes.
 type File struct {
-	Schema    string            `json:"schema"`
-	Namespace string            `json:"namespace"`
-	Revision  int64             `json:"revision"`
-	Data      map[string]string `json:"data"`
-	Updated   string            `json:"updated"`
+	Schema       string            `json:"schema"`
+	Namespace    string            `json:"namespace"`
+	Revision     int64             `json:"revision"`
+	WorktreeRoot string            `json:"worktree_root,omitempty"`
+	ProjectRoot  string            `json:"project_root,omitempty"`
+	Data         map[string]string `json:"data"`
+	Updated      string            `json:"updated"`
 }
 
 // Entry is one validated state namespace returned by List.
 type Entry struct {
-	Namespace string            `json:"namespace"`
-	Revision  int64             `json:"revision"`
-	Data      map[string]string `json:"data"`
-	Updated   string            `json:"updated"`
-	Path      string            `json:"path"`
+	Namespace    string            `json:"namespace"`
+	Revision     int64             `json:"revision"`
+	WorktreeRoot string            `json:"worktree_root,omitempty"`
+	Data         map[string]string `json:"data"`
+	Updated      string            `json:"updated"`
+	Path         string            `json:"path"`
 }
 
 // Store resolves and mutates state files for one project.
@@ -171,7 +176,7 @@ func (s *Store) List(prefix string) ([]Entry, error) {
 		for k, v := range f.Data {
 			data[k] = v
 		}
-		out = append(out, Entry{Namespace: f.Namespace, Revision: f.Revision, Data: data, Updated: f.Updated, Path: path})
+		out = append(out, Entry{Namespace: f.Namespace, Revision: f.Revision, WorktreeRoot: f.WorktreeRoot, Data: data, Updated: f.Updated, Path: path})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Namespace < out[j].Namespace })
 	return out, nil
@@ -283,6 +288,63 @@ func withStateLock(path string, fn func() error) error {
 		return fmt.Errorf("%w: %v", ErrState, err)
 	}
 	return err
+}
+
+// BindWorktree records the project/worktree roots for a namespace so a later
+// CheckWorktree can refuse mutating it from a different checkout. It is the
+// reusable mechanical equivalent of the ralph worktree binding for any
+// workflow (e.g. autopilot) that drives its state through `oma state`.
+// Re-binding the same namespace just refreshes the roots (idempotent).
+func (s *Store) BindWorktree(ns, override, projectRoot, worktreeRoot string, dryRun bool) (string, error) {
+	if !nsRe.MatchString(ns) {
+		return "", fmt.Errorf("%w: namespace %q (want lowercase letters, digits, dashes)", ErrState, ns)
+	}
+	path, err := s.path(ns, override)
+	if err != nil {
+		return "", err
+	}
+	if _, err := load(path, ns); err != nil {
+		return "", err
+	}
+	if dryRun {
+		return path, nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return "", fmt.Errorf("%w: %v", ErrState, err)
+	}
+	return path, withStateLock(path, func() error {
+		f, err := load(path, ns)
+		if err != nil {
+			return err
+		}
+		f.Schema, f.Namespace = Schema, ns
+		f.Revision++
+		f.ProjectRoot = projectRoot
+		f.WorktreeRoot = worktreeRoot
+		f.Updated = s.Now().UTC().Format(time.RFC3339)
+		return writeAtomic(path, f)
+	})
+}
+
+// CheckWorktree fails closed when the namespace is bound to a worktree other
+// than worktreeRoot. An unbound namespace (no recorded worktree) passes, so
+// the check is a no-op until BindWorktree has run.
+func (s *Store) CheckWorktree(ns, override, worktreeRoot string) error {
+	if !nsRe.MatchString(ns) {
+		return fmt.Errorf("%w: namespace %q (want lowercase letters, digits, dashes)", ErrState, ns)
+	}
+	path, err := s.path(ns, override)
+	if err != nil {
+		return err
+	}
+	f, err := load(path, ns)
+	if err != nil {
+		return err
+	}
+	if f.WorktreeRoot != "" && f.WorktreeRoot != worktreeRoot {
+		return fmt.Errorf("%w: namespace %q is bound to worktree %s, not %s (pass --allow-worktree-change to override)", ErrState, ns, f.WorktreeRoot, worktreeRoot)
+	}
+	return nil
 }
 
 // schemaMajor mirrors the strict parser used elsewhere (digits only, >= 1).

@@ -15,7 +15,67 @@ func newStateCmd() *cobra.Command {
 		Use:   "state",
 		Short: "Get/set generic project-level workflow state",
 	}
-	cmd.AddCommand(newStateGetCmd(), newStateSetCmd(), newStatePatchCmd(), newStateListCmd())
+	cmd.AddCommand(newStateGetCmd(), newStateSetCmd(), newStatePatchCmd(), newStateListCmd(),
+		newStateBindWorktreeCmd(), newStateCheckWorktreeCmd())
+	return cmd
+}
+
+func newStateBindWorktreeCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "bind-worktree <namespace>",
+		Short: "Bind a state namespace to the current git worktree (mechanical guard)",
+		Args:  cobra.ExactArgs(1),
+		RunE: run(func(cmd *cobra.Command, args []string) error {
+			ns, err := workflowScope().ID(args[0])
+			if err != nil {
+				return Errf(ExitState, "%v", err)
+			}
+			info, err := currentProjectInfo()
+			if err != nil {
+				return Errf(ExitState, "not inside a git checkout (state lives in <root>/.oma/state)")
+			}
+			path, err := state.New(info.ProjectRoot).BindWorktree(ns, "", info.ProjectRoot, info.WorktreeRoot, DryRun())
+			if err != nil {
+				return Errf(ExitState, "%v", err)
+			}
+			prefix := ""
+			if DryRun() {
+				prefix = "[dry-run] "
+			}
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%sbound %s to worktree %s\n", prefix, path, info.WorktreeRoot)
+			return nil
+		}),
+	}
+	return cmd
+}
+
+func newStateCheckWorktreeCmd() *cobra.Command {
+	var allow bool
+	cmd := &cobra.Command{
+		Use:   "check-worktree <namespace>",
+		Short: "Fail unless a state namespace is bound to the current worktree",
+		Args:  cobra.ExactArgs(1),
+		RunE: run(func(cmd *cobra.Command, args []string) error {
+			ns, err := workflowScope().ID(args[0])
+			if err != nil {
+				return Errf(ExitState, "%v", err)
+			}
+			info, err := currentProjectInfo()
+			if err != nil {
+				return Errf(ExitState, "not inside a git checkout (state lives in <root>/.oma/state)")
+			}
+			if allow {
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "worktree check skipped (--allow-worktree-change)")
+				return nil
+			}
+			if err := state.New(info.ProjectRoot).CheckWorktree(ns, "", info.WorktreeRoot); err != nil {
+				return Errf(ExitState, "%v", err)
+			}
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "ok: %s is on its bound worktree\n", ns)
+			return nil
+		}),
+	}
+	cmd.Flags().BoolVar(&allow, "allow-worktree-change", false, "skip the worktree-binding check")
 	return cmd
 }
 

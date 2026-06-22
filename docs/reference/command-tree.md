@@ -35,11 +35,14 @@ oma state get <key> [--file <path>] [--json]
 oma state set <key> <value> [--file <path>] [--expected-revision <n>]
 oma state patch <namespace> --set <field=value>... [--file <path>] [--expected-revision <n>]
 oma state list [namespace-prefix] [--json]
+oma state bind-worktree <namespace>
+oma state check-worktree <namespace> [--allow-worktree-change]
 ```
 
 - The default file is `<project root>/.oma/state/<namespace>.json`, with keys of the form `<namespace>/<field>` (e.g. `autopilot/phase`); `--file` overrides the whole file path. A linked git worktree resolves `<project root>` back to the primary checkout, so one repository has one `.oma`.
 - By default, `state get/set autopilot/phase` and `state patch autopilot --set phase=...` are stored under the current session namespace (`autopilot--s-<session>/...`); `oma state list autopilot` lists only the current session's autopilot namespaces. `--session <slug>` switches to an explicit scope.
 - `get --json` includes the namespace file revision; `set --expected-revision <n>` and `patch --expected-revision <n>` fail closed when another writer has advanced the file first.
+- `bind-worktree <namespace>` records the current git worktree on the namespace; `check-worktree <namespace>` then exits 3 if invoked from a different worktree (a reusable mechanical guard for workflows like autopilot that drive state through `oma state`). `--allow-worktree-change` skips the check; an unbound namespace passes.
 - `list` scans the project `.oma/state/*.json`, optionally filtering by namespace prefix, and validates every matching file with the same fail-closed schema/namespace checks as `get`.
 - Writes: namespace-level cross-process lock, unique same-directory tmp+rename, single-generation `.bak`, mode 0600, and monotonic revision increments. Concurrent writers serialize instead of overwriting each other's fields.
 - A value is always stored as a string; structured data is serialized by the caller (keeping state semantics minimal).
