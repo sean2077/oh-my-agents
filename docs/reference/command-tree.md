@@ -78,6 +78,7 @@ oma ralph check --verifier-exit <code> [--note <text>] [--id <id>] [--json]
 oma ralph abort [--id <id>]
 oma ralph status [--id <id>] [--allow-worktree-change] [--json]
 oma ralph rebind-worktree [--id <id>]
+oma workflow list [--all-sessions] [--json]
 ```
 
 - State lands in `<project root>/.oma/state/interview-<id>.json` / `.oma/state/ralph-<id>.json`. The engine scopes explicit logical ids before reading or writing (`--id same` becomes `same--s-<session>`). For `start`, omitted `--id` uses the session suffix itself as the workflow type's default instance id; later omitted read/mutate commands address that same default instance directly. Explicit `--id` is the advanced multi-instance path and must be repeated on later commands for that instance. `--session <slug>` switches to an explicit scope.
@@ -86,6 +87,7 @@ oma ralph rebind-worktree [--id <id>]
 - The verdict output of `gate`/`next` must contain: the verdict, the numbers it rests on, and the suggested next step (both machine-readable and human-readable forms).
 - **No `oma autopilot *` surface** (autopilot is pure markdown, using general `oma state`; changing this requires reopening the spec).
 - **ralph start ambiguity gate (advisory)**: if `--goal` is too vague (≤15 words and lacking a file/issue/symbol/test-runner anchor), a suggestion is printed to stderr (clarify with deep-interview first, or plan with ralplan) — it does **not** block startup.
+- `oma workflow list` is a read-only project view: it lists every workflow instance under `.oma/state` (session, workflow type, id, phase, worktree, revision). It defaults to the current session; `--all-sessions` is the project-admin view and does not change the per-session isolation model.
 - The migration entry points the state machine requires are present: interview carries `crystallize` (gate_passed|gate_waived → crystallized, recording the spec path), `complete`, `abort`, and `gate --waive` (an early exit recording a caution, corresponding to the gate_waived state); ralph carries `abort`. Topology lock (topology_pending → interviewing) is carried by the round-0 input of `score` (schemas.md §5) rather than a standalone command.
 
 ## 6. `oma relay` — pair ledger (protocol in relay-v2-protocol.md)

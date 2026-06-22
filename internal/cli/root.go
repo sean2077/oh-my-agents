@@ -72,7 +72,7 @@ func newRootCmd() *cobra.Command {
 	}
 	root.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "report exact paths that would change, write nothing")
 	root.PersistentFlags().StringVar(&workflowSession, "session", defaultWorkflowSession, "scope workflow state to a session slug, or 'current' for the platform session")
-	root.AddCommand(newVersionCmd(), newAssetCmd(), newConfigCmd(), newStateCmd(), newDoctorCmd(), newRelayCmd(), newInterviewCmd(), newRalphCmd(), newSelfUpdateCmd())
+	root.AddCommand(newVersionCmd(), newAssetCmd(), newConfigCmd(), newStateCmd(), newDoctorCmd(), newRelayCmd(), newInterviewCmd(), newRalphCmd(), newWorkflowCmd(), newSelfUpdateCmd())
 	return root
 }
 
