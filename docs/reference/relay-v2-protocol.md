@@ -30,7 +30,8 @@ Schema marker: `oma-relay/2`. This protocol inherits the **principles** of agent
 │   ├── NNN-<author>-<kind>.md.ready
 │   ├── .draft/NNN-<author>-<kind>.md   # author-private draft (peer agrees not to read)
 │   ├── .seq/NNN                   # sequence reservation file (O_EXCL; author:session recorded in the first token)
-│   └── .heartbeat/<author>-<session> # heartbeat file (mtime is liveness)
+│   ├── .heartbeat/<author>-<session> # heartbeat file (mtime is liveness)
+│   └── .cursor/<author>-<session> # reader-private consumed-peer-seq (publication-order delivery)
 └── _archive/<pair-slug>/          # moved here wholesale after close
 ```
 
@@ -87,6 +88,7 @@ publish steps (strict order): **render** the formal content from the draft → w
 - `oma relay wait` exit codes: `0` a new artifact (path printed to stdout); `10` wait timeout (default 60 minutes, tunable via `--timeout`); `11` the peer has an unpublished draft / publish intent and its heartbeat is stale (crashed after declaring intent); `12` the pair is terminal; `3` an environment/protocol/fail-closed error (usage errors keep the global `2`, consistent with command-tree.md §1).
 - A participant that has just published, or whose latest artifact is already its own, must not start a new relay round until either a peer artifact arrives, the pair becomes terminal, or the user explicitly interrupts. With trusted host hooks, `Stop` is the primary self-continuation path: it wakes the stopped host after a peer artifact exists. `oma relay wait` remains the fallback when hook wiring/trust is unavailable or a foreground wait is explicitly requested.
 - **Draft lifecycle**: the convention is that an agent calls `oma relay draft` only **after finishing its work, just before publishing**. Long silence during the work period is expressed by the `wait` timeout (exit 10), **not** by a stale heartbeat; the strict meaning of exit 11 = the peer crashed **after** creating the draft / publish intent. Creating a draft early is an unsupported path (any future keepalive would require reopening the review of this document).
+- **publication order, not seq order, decides delivery**: `wait` (and the `Stop` hook) deliver the lowest READY peer artifact whose seq exceeds the reader's per-reader consumption cursor `.cursor/<author>-<session>`, which advances when the reader next publishes (its own turn). Keying off what the reader has consumed — rather than the reader's own latest seq — means a peer artifact that reserved a lower seq but published *after* the reader's own is still delivered, not skipped. `wait` itself is pure-read and idempotent: it re-delivers the same unconsumed artifact until the reader takes a turn.
 - **ready takes priority over stale**: `wait` checks for a new `.ready` artifact before it looks at stale draft state — when a publish transaction is killed after the `.ready` is written but before the draft is cleaned up, the waiter gets exit 0; a `.seq`/draft residue with a matching `.ready` already present is a cleanup warning (flagged by `status --json`, handled by `oma doctor relay --clean-stale`), **not** an exit 11 condition.
 - Diagnostics: `oma relay status --json` exposes `last_heartbeat`, the stale determination, and pending draft sequences — awareness of the peer's draft comes **only from the `.seq/` reservation files**, never from reading the peer's `.draft/` content.
 

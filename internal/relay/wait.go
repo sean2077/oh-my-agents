@@ -154,8 +154,15 @@ func (l *Ledger) archivedResult(dir, peer string) (*WaitResult, error) {
 	return &WaitResult{Code: WaitTerminal, Reason: "pair archived"}, nil
 }
 
-// newPeerArtifact returns the newest READY artifact authored by peer
-// with seq greater than our own latest published seq, within pairDir.
+// newPeerArtifact returns the LOWEST READY artifact authored by peer whose seq
+// is greater than this reader's consumption cursor, within pairDir. Keying off
+// the cursor (what THIS reader has consumed) rather than the reader's own
+// latest published seq is what fixes out-of-order publication loss: a peer
+// artifact with a lower seq than the reader's own, but published after it, is
+// still delivered instead of being silently skipped. Delivering the lowest
+// such seq keeps delivery in order; the cursor advances when the reader takes
+// its own turn (see advanceCursorToLatestPeer), so re-running wait before then
+// re-delivers the same unconsumed artifact (idempotent).
 func (l *Ledger) newPeerArtifact(pairDir, peer string) (string, bool, error) {
 	names, err := publishedArtifacts(pairDir, true)
 	if err != nil {
@@ -164,22 +171,18 @@ func (l *Ledger) newPeerArtifact(pairDir, peer string) (string, bool, error) {
 		}
 		return "", false, err
 	}
-	myLatest, best := 0, ""
-	bestSeq := 0
+	cursor := l.readCursor(pairDir)
+	best, bestSeq := "", 0
 	for _, name := range names {
-		seq, author, _, _ := ParseArtifactName(name)
-		switch author {
-		case l.Identity.Author:
-			if seq > myLatest {
-				myLatest = seq
-			}
-		case peer:
-			if seq > bestSeq {
-				bestSeq, best = seq, name
-			}
+		seq, author, _, ok := ParseArtifactName(name)
+		if !ok || author != peer || seq <= cursor {
+			continue
+		}
+		if best == "" || seq < bestSeq {
+			best, bestSeq = name, seq
 		}
 	}
-	if best != "" && bestSeq > myLatest {
+	if best != "" {
 		return filepath.Join(pairDir, best), true, nil
 	}
 	return "", false, nil

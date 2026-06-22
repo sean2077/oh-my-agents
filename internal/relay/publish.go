@@ -219,6 +219,10 @@ func (l *Ledger) publishLocked(pairDir string, seq int, kind, draftPath string, 
 			}
 		}
 	}
+	// The reader has taken its turn: record that it has consumed the peer's
+	// artifacts up to the latest ready seq, so wait/status stop treating them
+	// as new. Best-effort, under the pair lock the caller already holds.
+	l.advanceCursorToLatestPeer(pairDir)
 	return formal, nil
 }
 

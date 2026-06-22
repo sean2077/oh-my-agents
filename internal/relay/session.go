@@ -311,7 +311,7 @@ func (l *Ledger) NewPair(topic, peer, project string, dryRun bool) (*Session, er
 }
 
 func (l *Ledger) initPairDir(s *Session) error {
-	for _, sub := range []string{".draft", ".seq", ".heartbeat"} {
+	for _, sub := range []string{".draft", ".seq", ".heartbeat", ".cursor"} {
 		if err := os.Mkdir(filepath.Join(l.PairDir(s.Pair), sub), 0o700); err != nil {
 			return err
 		}
