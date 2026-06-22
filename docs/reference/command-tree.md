@@ -104,7 +104,7 @@ oma relay draft --kind <kind> [--in-reply-to <seq>] [--corrects <seq>] [--pair <
 oma relay publish <draft> --body-file <f> --prompt-file <f> [--touched <path>]... [--status <s>] [--verdict <v>] [--review-target <seq>] [--pair <slug>]
 oma relay wait [--timeout <sec>] [--pair <slug>] [--json]
 oma relay status [--last N] [--pair <slug>] [--json]
-oma relay close --outcome <approve|reject|abandon> --reason <text> [--pair <slug>]
+oma relay close --outcome <approve|reject|abandon> --reason <text> [--pair <slug>] [--allow-worktree-change]
 ```
 
 - `preflight` exit codes = `0` all-pass / `1` has warnings / `3` fail-stop (environment/state, per the §1 convention; `2` is not used — `2` remains cobra usage error); a legacy `.shared/` at the project root is only a warning, and only an explicit `--ledger-root` pointing at a v1 tree fails. `statusline` is the render command; the hidden dispatcher `hook <event>` is machine-invoked (not counted in the public group, not used in refcheck examples).

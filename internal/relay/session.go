@@ -34,10 +34,29 @@ type Session struct {
 	ParticipantSessions map[string]string `json:"participant_sessions"`
 	Roles               map[string]string `json:"roles"`
 	Status              string            `json:"status"`
-	Created             time.Time         `json:"created"`
-	Closed              *time.Time        `json:"closed"`
-	Outcome             *string           `json:"outcome"`
-	Reason              *string           `json:"reason"`
+	// WorktreeRoot/Branch/BaseCommit bind the pair to the creator's checkout
+	// (minor-additive, optional). They let close refuse an approval driven
+	// from a different worktree than the one the work was done in.
+	WorktreeRoot string     `json:"worktree_root,omitempty"`
+	Branch       string     `json:"branch,omitempty"`
+	BaseCommit   string     `json:"base_commit,omitempty"`
+	Created      time.Time  `json:"created"`
+	Closed       *time.Time `json:"closed"`
+	Outcome      *string    `json:"outcome"`
+	Reason       *string    `json:"reason"`
+}
+
+// checkWorktreeBinding refuses a mutation when the pair is bound to one
+// worktree and the caller is in another. It is a no-op when the binding or the
+// caller's git context is absent, or when the caller passed --allow-worktree-change.
+func (s *Session) checkWorktreeBinding(git GitContext) error {
+	if git.AllowWorktreeChange || s.WorktreeRoot == "" || git.WorktreeRoot == "" {
+		return nil
+	}
+	if s.WorktreeRoot != git.WorktreeRoot {
+		return fmt.Errorf("%w: pair %s is bound to worktree %s but you are in %s (pass --allow-worktree-change to act from here)", ErrRelay, s.Pair, s.WorktreeRoot, git.WorktreeRoot)
+	}
+	return nil
 }
 
 var (
@@ -270,9 +289,12 @@ func (l *Ledger) NewPair(topic, peer, project string, dryRun bool) (*Session, er
 		ParticipantSessions: map[string]string{
 			author: l.Identity.SessionKey,
 		},
-		Roles:   map[string]string{"lead": author, "planner": author, "implementer": author, "reviewer": peer},
-		Status:  StatusActive,
-		Created: now,
+		Roles:        map[string]string{"lead": author, "planner": author, "implementer": author, "reviewer": peer},
+		Status:       StatusActive,
+		WorktreeRoot: l.GitContext.WorktreeRoot,
+		Branch:       l.GitContext.Branch,
+		BaseCommit:   l.GitContext.HeadCommit,
+		Created:      now,
 	}
 	if err := s.Validate(); err != nil {
 		return nil, err
@@ -416,6 +438,9 @@ func (l *Ledger) Close(slug, outcome, reason string, dryRun bool) error {
 			if err := s.requireParticipantSession(l.Identity); err != nil {
 				return err
 			}
+			if err := s.checkWorktreeBinding(l.GitContext); err != nil {
+				return err
+			}
 			if outcome == "approve" {
 				return l.verifyApproveClose(slug)
 			}
@@ -442,6 +467,9 @@ func (l *Ledger) Close(slug, outcome, reason string, dryRun bool) error {
 		switch s.Status {
 		case StatusActive, StatusClosing, StatusClosed:
 			if err := s.requireParticipantSession(l.Identity); err != nil {
+				return err
+			}
+			if err := s.checkWorktreeBinding(l.GitContext); err != nil {
 				return err
 			}
 		default:

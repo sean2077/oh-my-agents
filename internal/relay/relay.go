@@ -54,6 +54,18 @@ type Ledger struct {
 	Getenv       func(string) string
 	StepHook     func(step string) error
 	PollInterval time.Duration // wait poll cadence; tests shrink it
+	GitContext   GitContext    // optional checkout identity injected by the CLI
+}
+
+// GitContext is the optional checkout identity the CLI injects so a pair can be
+// bound to a concrete worktree/branch/commit and refuse mutation from a
+// different checkout. The zero value means "no git binding" (tests, non-git
+// contexts): the binding fields stay empty and the worktree check is a no-op.
+type GitContext struct {
+	WorktreeRoot        string
+	Branch              string
+	HeadCommit          string
+	AllowWorktreeChange bool
 }
 
 // NewLedger builds a Ledger for the given root and identity.

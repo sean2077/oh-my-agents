@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -135,6 +136,7 @@ func newRelayPairCmd(rootFlag *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			l.GitContext = relayGitContext(false)
 			s, err := l.NewPair(args[0], newPeer, projectName(), DryRun())
 			if err != nil {
 				return err
@@ -456,6 +458,7 @@ func newRelayStatusCmd(rootFlag *string) *cobra.Command {
 
 func newRelayCloseCmd(rootFlag *string) *cobra.Command {
 	var outcome, reason, pairSlug string
+	var allowWorktreeChange bool
 	cmd := &cobra.Command{
 		Use:   "close",
 		Short: "End the pair (writes terminal state, archives the directory)",
@@ -465,6 +468,7 @@ func newRelayCloseCmd(rootFlag *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			l.GitContext = relayGitContext(allowWorktreeChange)
 			s, err := l.ResolvePair(pairSlug, false)
 			if err != nil {
 				return err
@@ -483,9 +487,29 @@ func newRelayCloseCmd(rootFlag *string) *cobra.Command {
 	cmd.Flags().StringVar(&outcome, "outcome", "", "approve|reject|abandon")
 	cmd.Flags().StringVar(&reason, "reason", "", "what concluded")
 	cmd.Flags().StringVar(&pairSlug, "pair", "", "pair slug (default: resolved binding)")
+	cmd.Flags().BoolVar(&allowWorktreeChange, "allow-worktree-change", false, "close even if the pair is bound to a different worktree")
 	_ = cmd.MarkFlagRequired("outcome")
 	_ = cmd.MarkFlagRequired("reason")
 	return cmd
+}
+
+// relayGitContext computes the optional checkout identity used to bind a pair
+// at creation and to refuse mutating it from a different worktree. It is empty
+// outside a git project (the binding is then simply absent).
+func relayGitContext(allowWorktreeChange bool) relay.GitContext {
+	gc := relay.GitContext{AllowWorktreeChange: allowWorktreeChange}
+	info, err := currentProjectInfo()
+	if err != nil || info.WorktreeRoot == "" {
+		return gc
+	}
+	gc.WorktreeRoot = info.WorktreeRoot
+	if out, err := exec.Command("git", "-C", info.WorktreeRoot, "branch", "--show-current").Output(); err == nil {
+		gc.Branch = strings.TrimSpace(string(out))
+	}
+	if out, err := exec.Command("git", "-C", info.WorktreeRoot, "rev-parse", "HEAD").Output(); err == nil {
+		gc.HeadCommit = strings.TrimSpace(string(out))
+	}
+	return gc
 }
 
 // projectName labels session.json.project from the shared project root.
