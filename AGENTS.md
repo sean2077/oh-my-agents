@@ -37,12 +37,13 @@ Do these in order; each step points at the README for options and detail.
    auto-continue; without it, foreground `oma relay wait` is the fallback. Field-level
    reference: [`docs/reference/relay-v2-protocol.md`](docs/reference/relay-v2-protocol.md) §12.4.
 
-4. **Identity / session env** — workflow state and the relay are session-scoped and
-   fail closed when no session can be resolved (no silent project-global fallback):
-   - `OMA_SESSION_ID` — explicit session slug (wins over platform detection);
-   - otherwise `CLAUDE_CODE_SESSION_ID` (Claude) or `CODEX_THREAD_ID` (Codex) is used;
-   - to drive the relay as a manual author: `OMA_RELAY_AUTHOR` (`claude`|`codex`) plus a
-     session id.
+4. **Identity / session env** — two *separate* concerns, each fail-closed when
+   unresolved (no silent project-global fallback):
+   - *Workflow-state scope* (interview/ralph/autopilot/state): `OMA_SESSION_ID`
+     (explicit slug, wins) else `CLAUDE_CODE_SESSION_ID` (Claude) / `CODEX_THREAD_ID` (Codex).
+   - *Relay identity* (independent of the above): `OMA_RELAY_AUTHOR` (`claude`|`codex`),
+     paired with `OMA_RELAY_SESSION_ID` (or `OMA_SESSION_ID` as fallback) — a bare
+     `OMA_RELAY_AUTHOR` with no session is refused.
 
 5. **Verify**: `oma doctor` (install diagnostics), and `oma doctor budget --agent claude
    --profile core4` (resident-token gate).
