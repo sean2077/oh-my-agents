@@ -4,6 +4,15 @@
 >
 > Section heading format: `## vX.Y.Z - YYYY-MM-DD` (CI matches the tag by exact prefix; a tag with no matching section fails the release, fail-closed).
 
+## v0.8.2 - 2026-06-22
+
+This is a repo-workflow patch release. It adds an opt-in content-length guard for agent instruction files and tightens the root agent onboarding notes, without changing shipped CLI behavior or workflow schemas.
+
+- **Agent content-length guard**: add an optional repo-local `pre-commit` hook, enabled with `make hooks`, that warns when staged `SKILL.md` / `AGENTS.md` bodies exceed the default 120 non-blank-line budget.
+- **CRLF-safe hook counting**: normalize CRLF input before frontmatter and blank-line checks, so blank CRLF body lines do not inflate the content budget count or trigger false block-mode failures.
+- **Agent onboarding docs**: add a root `AGENTS.md` entry point for installing oma, wiring local hooks/statusline, setting relay identity, and following the repo's pair-delivery workflow.
+- **Relay identity docs**: name `OMA_RELAY_SESSION_ID` explicitly and separate relay author/session identity from workflow-state session scope.
+
 ## v0.8.1 - 2026-06-22
 
 This is a release-hygiene patch after v0.8.0 exposed CI-only failures on GitHub's current runners. It does not change the CLI behavior or shipped workflow schemas.
