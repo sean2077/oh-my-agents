@@ -145,7 +145,7 @@ jobs:
 
   package:
     name: Package release assets
-    needs: [test, lint, vuln]
+    needs: [test, lint, vuln, scripts, install-smoke]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
