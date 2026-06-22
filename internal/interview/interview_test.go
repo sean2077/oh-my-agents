@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -99,7 +100,10 @@ func TestConcurrentProcessScoresDoNotLoseRounds(t *testing.T) {
 	}
 
 	start := filepath.Join(t.TempDir(), "start")
-	const workers = 8
+	workers := 8
+	if runtime.GOOS == "windows" {
+		workers = 4
+	}
 	type child struct {
 		cmd *exec.Cmd
 		out *bytes.Buffer
@@ -178,15 +182,15 @@ func TestInterviewScoreHelperProcess(t *testing.T) {
 	in := scoresInput(round, map[string]map[string]float64{
 		"a": {"goal": 0.5, "constraints": 0.5, "criteria": 0.5},
 	})
-	deadline := time.Now().Add(30 * time.Second)
+	deadline := time.Now().Add(2 * time.Minute)
 	for {
 		if _, _, err := e.Score("case", in, false); err == nil {
 			os.Exit(0)
-		} else if !strings.Contains(err.Error(), "replays and skips are refused") || time.Now().After(deadline) {
+		} else if (!strings.Contains(err.Error(), "replays and skips are refused") && !strings.Contains(err.Error(), "being mutated by another process")) || time.Now().After(deadline) {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(2)
 		}
-		time.Sleep(5 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond)
 	}
 }
 

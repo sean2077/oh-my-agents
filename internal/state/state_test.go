@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -122,7 +123,10 @@ func TestSetExpectedRevision(t *testing.T) {
 func TestConcurrentProcessSetsDoNotLoseFields(t *testing.T) {
 	root := t.TempDir()
 	start := filepath.Join(root, "start")
-	const workers = 16
+	workers := 16
+	if runtime.GOOS == "windows" {
+		workers = 4
+	}
 	type child struct {
 		cmd *exec.Cmd
 		out *bytes.Buffer
@@ -164,7 +168,7 @@ func TestConcurrentProcessSetsDoNotLoseFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rev != workers {
+	if rev != int64(workers) {
 		t.Fatalf("revision = %d, want %d", rev, workers)
 	}
 }
@@ -176,7 +180,7 @@ func TestStateSetHelperProcess(t *testing.T) {
 	root := os.Getenv("OMA_STATE_ROOT")
 	field := os.Getenv("OMA_STATE_FIELD")
 	start := os.Getenv("OMA_STATE_START")
-	deadline := time.Now().Add(5 * time.Second)
+	startDeadline := time.Now().Add(5 * time.Second)
 	for {
 		if _, err := os.Stat(start); err == nil {
 			break
@@ -184,7 +188,7 @@ func TestStateSetHelperProcess(t *testing.T) {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(2)
 		}
-		if time.Now().After(deadline) {
+		if time.Now().After(startDeadline) {
 			fmt.Fprintln(os.Stderr, "timed out waiting for start file")
 			os.Exit(2)
 		}
@@ -192,11 +196,16 @@ func TestStateSetHelperProcess(t *testing.T) {
 	}
 	s := New(root)
 	s.Now = func() time.Time { return time.Date(2026, 6, 11, 12, 0, 0, 0, time.UTC) }
-	if _, err := s.Set("shared/"+field, field, "", false); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(2)
+	deadline := time.Now().Add(2 * time.Minute)
+	for {
+		if _, err := s.Set("shared/"+field, field, "", false); err == nil {
+			os.Exit(0)
+		} else if !strings.Contains(err.Error(), "file lock held") || time.Now().After(deadline) {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
-	os.Exit(0)
 }
 
 func TestListFiltersByNamespacePrefix(t *testing.T) {

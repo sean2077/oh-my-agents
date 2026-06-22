@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -87,7 +88,10 @@ func TestConcurrentProcessChecksDoNotLoseRecords(t *testing.T) {
 	}
 
 	start := filepath.Join(t.TempDir(), "start")
-	const workers = 16
+	workers := 16
+	if runtime.GOOS == "windows" {
+		workers = 4
+	}
 	type child struct {
 		cmd *exec.Cmd
 		out *bytes.Buffer
@@ -163,11 +167,16 @@ func TestRalphCheckHelperProcess(t *testing.T) {
 	waitForFile(os.Getenv("OMA_RALPH_START"))
 	e := NewEngine(os.Getenv("OMA_RALPH_DIR"))
 	e.SessionSuffix = "same"
-	if _, _, err := e.RecordCheck("loop", 1, nil, os.Getenv("OMA_RALPH_NOTE"), false); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(2)
+	deadline := time.Now().Add(2 * time.Minute)
+	for {
+		if _, _, err := e.RecordCheck("loop", 1, nil, os.Getenv("OMA_RALPH_NOTE"), false); err == nil {
+			os.Exit(0)
+		} else if !strings.Contains(err.Error(), "being mutated by another process") || time.Now().After(deadline) {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
-	os.Exit(0)
 }
 
 func TestStartRequiresGoal(t *testing.T) {

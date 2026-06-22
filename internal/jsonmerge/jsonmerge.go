@@ -65,7 +65,7 @@ func knownKeys(v any) map[string]bool {
 }
 
 func collectKeys(t reflect.Type, out map[string]bool) {
-	for t != nil && t.Kind() == reflect.Ptr {
+	for t != nil && t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	if t == nil || t.Kind() != reflect.Struct {
