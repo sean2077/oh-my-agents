@@ -1,0 +1,30 @@
+# Sample predictions for ARM A (plain agent, NO oma — no skills installed).
+# Format: <case-id><TAB><predicted-skill>   ("none" = the arm picked no skill).
+# Illustrative sample data, NOT a measured run.
+#
+# With no skills resident, arm A can never *trigger* a skill, so every pick is
+# "none". This pins the baseline: triggering recall is 0 (it misses every case
+# that should have used a skill) and its false-trigger rate is 0 (it cannot
+# false-trigger what it does not have). The interesting question A answers is the
+# workflow-adherence one (does the bare agent follow the workflow without the
+# skill?) — that part is human-judged, see eval/README.md.
+c01	none
+c02	none
+c03	none
+c04	none
+c05	none
+c06	none
+c07	none
+c08	none
+c09	none
+c10	none
+c11	none
+c12	none
+c13	none
+c14	none
+c15	none
+c16	none
+c17	none
+c18	none
+c19	none
+c20	none

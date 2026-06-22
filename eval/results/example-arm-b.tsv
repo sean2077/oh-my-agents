@@ -1,0 +1,30 @@
+# Sample predictions for ARM B (OMC-style: ~40 skills ALWAYS resident).
+# Format: <case-id><TAB><predicted-skill>   ("none" = the arm picked no skill).
+# Illustrative sample data, NOT a measured run.
+#
+# The §1.1 thesis being probed: a large always-resident skill surface dilutes
+# attention and supplies distractors, so the agent "occasionally latches onto
+# the wrong one". This sample models that failure mode — more wrong-skill picks
+# on near-misses (c12/c13/c15) and more false-triggers on decoys (c18/c19/c20)
+# than the on-demand arm C — to show the metric that should separate B from C.
+# Replace with real observations to get real numbers.
+c01	deep-interview
+c02	ralph
+c03	trace
+c04	analyze
+c05	autopilot
+c06	pair-delivery
+c07	ai-slop-cleaner
+c08	best-practice-research
+c09	research-mission
+c10	ultraqa
+c11	skillify
+c12	analyze
+c13	trace
+c14	deep-interview
+c15	ultraqa
+c16	none
+c17	none
+c18	ralph
+c19	skillify
+c20	analyze

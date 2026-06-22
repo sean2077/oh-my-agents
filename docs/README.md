@@ -3,7 +3,8 @@
 Start here:
 
 - **[design-philosophy.md](design-philosophy.md)** — the *why*: context scarcity (accuracy first, cost second), the mechanical-vs-judgment split, and the constraints that follow.
-- **[architecture.md](architecture.md)** — the *how*: the asset / projection model, the relay ledger, and the repository layout.
+- **[architecture.md](architecture.md)** — the *how*: the four layers, the asset / projection model, the relay ledger, and the repository layout.
+- **[tutorial.md](tutorial.md)** — an end-to-end walkthrough: install → core4 → deep-interview → autopilot → ralph → pair-delivery → resume → upgrade / migrate / uninstall.
 - **[skill-authoring.md](skill-authoring.md)** — how to write small, trigger-accurate skills that agents actually follow.
 - **[porting-to-new-harness.md](porting-to-new-harness.md)** — how to map oma skills to another harness without changing skill bodies or user-owned files.
 
@@ -17,4 +18,6 @@ Authoritative reference — the spec the implementation follows:
 - **[reference/security-contract.md](reference/security-contract.md)** — the fail-closed security model.
 - **[reference/config.md](reference/config.md)** — the configuration layer.
 
-See also **[../CONTRIBUTING.md](../CONTRIBUTING.md)** for the delivery process and **[examples/](examples/)** for working snippets.
+Project policies (repo root): **[../STABILITY.md](../STABILITY.md)** (compatibility contract), **[../SECURITY.md](../SECURITY.md)** (vulnerability reporting), **[../CONTRIBUTING.md](../CONTRIBUTING.md)** (delivery process).
+
+See also **[examples/](examples/)** for working snippets and **[history/](history/)** for superseded design notes.

@@ -52,7 +52,21 @@ Install the latest released `oma` into `~/.local/bin`:
 curl -fsSL https://raw.githubusercontent.com/sean2077/oh-my-agents/main/scripts/install.sh | bash
 ```
 
-By default the installer downloads the prebuilt binary for the **latest GitHub release**, verifies its SHA-256 against the release `checksums.txt` (the same fail-closed contract `self-update` uses), writes `oma` to `${OMA_INSTALL_BIN_DIR:-$HOME/.local/bin}`, and prints a PATH hint if that directory is not already on `PATH` — no Go toolchain required. Useful overrides: `OMA_INSTALL_VERSION=v0.1.0` pins a tag, `OMA_INSTALL_BIN_DIR=/some/bin` changes the destination, and `OMA_INSTALL_FROM_SOURCE=1` forces a source build. If no prebuilt binary matches your platform (or no release can be resolved), the installer falls back to a source build (needs `git` + `go`). On Windows, run the same command from Git Bash; it installs `oma.exe`, and Git Bash can invoke it as `oma` once that directory is on `PATH`.
+This downloads the prebuilt binary for the **latest GitHub release**, verifies its SHA-256 against the release `checksums.txt`, atomically installs `oma` into `${OMA_INSTALL_BIN_DIR:-$HOME/.local/bin}`, and asserts the installed binary's version — the same fail-closed contract `self-update` uses, no Go toolchain required. It is **fail-closed**: if it cannot resolve a release, match a prebuilt asset, verify the checksum, or confirm the version, it stops with an actionable error — it never silently builds from source or from the unreleased `main` branch.
+
+Useful overrides: `OMA_INSTALL_VERSION=vX.Y.Z` pins a specific release, `OMA_INSTALL_BIN_DIR=/some/bin` changes the destination, and `OMA_INSTALL_FROM_SOURCE=1` opts into a source build (needs `git` + `go`). On Windows, run the same command from Git Bash (it installs `oma.exe`, callable as `oma` once the directory is on `PATH`), or use the native PowerShell installer:
+
+```powershell
+irm https://raw.githubusercontent.com/sean2077/oh-my-agents/main/scripts/install.ps1 | iex
+oma version
+```
+
+For a reproducible, supply-chain-pinned install, fetch the installer **at a release tag** (so the script itself is immutable, not the moving `main`) and pin the version to match:
+
+```bash
+OMA_VERSION=v0.9.0   # a tag from the releases page
+curl -fsSL "https://raw.githubusercontent.com/sean2077/oh-my-agents/${OMA_VERSION}/scripts/install.sh" | OMA_INSTALL_VERSION="$OMA_VERSION" bash
+```
 
 You can also install from a checkout. This is the preferred self-build path:
 it stamps `oma version` with `git describe`, the short git commit, and
@@ -169,6 +183,8 @@ oma asset list --installed
 oma doctor budget --agent claude --profile core4
 ```
 
+For a full walkthrough — install → deep-interview → autopilot → ralph → pair-delivery → failure/resume → upgrade, migrate, and cleanup — see **[docs/tutorial.md](docs/tutorial.md)**.
+
 ## Command surface
 
 `oma` is organized into a few command groups (full reference: [`docs/reference/command-tree.md`](docs/reference/command-tree.md)):
@@ -211,9 +227,15 @@ gofmt -l .              # must be empty
 go vet ./...
 ```
 
-CI runs the test matrix, `gofmt`/`vet`/`build`, and `golangci-lint` on every push and PR. The release workflow cross-compiles six platforms with a checksums manifest and a tag-version gate.
+CI runs the 3-platform test matrix with `-race`, `gofmt`/`vet`/`build`, `golangci-lint`, and `govulncheck` on every push and PR. Releases call the **same** pipeline as a hard gate, then promote the exact built-and-verified artifacts (no rebuild) with a checksums manifest, a tag-version gate, a build-provenance attestation, and an SBOM. The compatibility contract is [`STABILITY.md`](STABILITY.md).
 
 This project is itself built through its own `pair-delivery` workflow: every slice is cross-reviewed by a second agent over the `oma relay` ledger before it lands. The skill that describes that process is the one we used to build it.
+
+## Project policies
+
+- **[STABILITY.md](STABILITY.md)** — what is frozen across releases (the compatibility contract).
+- **[SECURITY.md](SECURITY.md)** — supported versions and private vulnerability reporting.
+- **[CONTRIBUTING.md](CONTRIBUTING.md)** — the cross-reviewed delivery process oma is built with.
 
 ## License
 

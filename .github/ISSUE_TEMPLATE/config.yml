@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability (private)
+    url: https://github.com/sean2077/oh-my-agents/security/advisories/new
+    about: Do not file a public issue for a vulnerability — use GitHub's private advisory form (see SECURITY.md).
+  - name: Stability & compatibility contract
+    url: https://github.com/sean2077/oh-my-agents/blob/main/STABILITY.md
+    about: What oma promises across releases — read before filing a compatibility regression.

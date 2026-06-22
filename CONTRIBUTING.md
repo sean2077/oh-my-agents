@@ -27,7 +27,7 @@ gofmt -l .             # must print nothing
 go vet ./...
 ```
 
-CI runs the test matrix, `gofmt` / `vet` / `build`, and `golangci-lint` on every push and PR. The release workflow cross-compiles six platforms with a checksums manifest and a tag-version gate.
+CI runs the 3-platform test matrix with `-race`, `gofmt` / `vet` / `build`, `golangci-lint`, and `govulncheck` on every push and PR, as a reusable pipeline. A release calls that **same** pipeline as a hard gate before publishing.
 
 Optionally enable the repo git hooks once with `make hooks` (`git config core.hooksPath scripts/hooks`). The `pre-commit` hook is a dev aid — not part of shipped `oma` — that warns when a staged `SKILL.md`/`AGENTS.md` body exceeds the content budget (default 120 non-blank lines after the frontmatter), to keep agent content lean. It rides git, so it fires identically for Codex, Claude Code, and humans. Tune with `OMA_CONTENT_BUDGET_LINES=<n>`, or set `OMA_CONTENT_BUDGET_BLOCK=1` to fail the commit instead of warning.
 
@@ -36,14 +36,15 @@ Optionally enable the repo git hooks once with `make hooks` (`git config core.ho
 Releases are changelog-first and tag-triggered:
 
 1. Update [`CHANGELOG.md`](CHANGELOG.md) with a section headed `## vX.Y.Z - YYYY-MM-DD`; the GitHub Release body is extracted from that section.
-2. Run the local gate: `gofmt -l .`, `go vet ./...`, `go test ./...`, and `make release VERSION=vX.Y.Z`.
+2. Run the local gate: `gofmt -l .`, `go vet ./...`, `go test -race ./...`, `govulncheck ./...`, and `make release VERSION=vX.Y.Z`.
 3. Commit the changelog and related release changes, then create an annotated `vX.Y.Z` tag.
-4. Push the branch and tag. The release workflow verifies the changelog section, rebuilds assets, checks the version stamp and checksums, then creates or updates the GitHub Release.
+4. Push the branch and tag. The release workflow runs the full gated pipeline, then **promotes the exact artifacts it built and verified** (no rebuild) — re-checking the version stamp and checksums, attaching a build-provenance attestation and an SBOM, and uploading without `--clobber` — before creating or updating the GitHub Release.
 
 ### The quality gates
 
 Beyond `go test`, CI enforces:
 
+- **`-race` + `govulncheck`** — the 3-platform test matrix runs under the race detector, and the module is scanned for known vulnerabilities;
 - **refcheck** — every `oma …` reference in a shipped skill resolves to a real command;
 - **`oma doctor budget`** — the resident-token footprint of the core skill set stays under threshold;
 - **conformance fixtures** — projected assets carry no host-unsupported references on their default path;

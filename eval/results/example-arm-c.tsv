@@ -1,0 +1,27 @@
+# Sample predictions for ARM C (oma on-demand resident surface).
+# Format: <case-id><TAB><predicted-skill>   ("none" = the arm picked no skill).
+# This is illustrative sample data, NOT a measured live-agent run. Replace it
+# with real observations to produce real numbers (see eval/README.md).
+#
+# It deliberately contains ONE wrong-skill pick (c12) and ONE false-trigger
+# (c20) so `bash eval/run.sh` demonstrates how the scorer surfaces both.
+c01	deep-interview
+c02	ralph
+c03	trace
+c04	analyze
+c05	autopilot
+c06	pair-delivery
+c07	ai-slop-cleaner
+c08	best-practice-research
+c09	research-mission
+c10	ultraqa
+c11	skillify
+c12	analyze
+c13	analyze
+c14	deep-interview
+c15	ralph
+c16	none
+c17	none
+c18	none
+c19	none
+c20	analyze

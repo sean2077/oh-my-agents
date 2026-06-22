@@ -22,6 +22,8 @@ Both legs point the same way: **the default state of the system should be empty.
 
 This is oma's spine. It decides **where every piece of logic lives.**
 
+> **Probabilistic intelligence on the outside, a deterministic kernel on the inside.** The model supplies judgment; the binary supplies every invariant that can be counted, hashed, or verified.
+
 - **Mechanical** (countable / verifiable / persistable): sequence numbers, ambiguity math, threshold gates, stall / score-plateau detection, atomic writes, integrity checks, receipt hashes … → the **Go binary**. Deterministic, tested, fail-closed, computed once, and **never resident in context.**
 - **Judgment** (the non-mechanical reasoning): which question to ask, which implementation to change, how to design an evaluator command, whether a piece of evidence actually holds … → **markdown skills.** The only thing the model genuinely needs to reason about.
 
@@ -48,7 +50,9 @@ oma places assets canonically under `~/.agents/` and projects them by symlink on
 
 ### 3.4 Terminal-state design + fail-closed
 
-Build to the final shape in one step; no migration layers. Unknown input is rejected. This keeps the binary small and honest.
+Build each feature to its final shape in one step — no "thin version first," and **no long-lived migration layers**: the binary does not carry dual-read/dual-write code to interpret old and new formats at once. An unknown schema major is rejected, not guessed at. Crossing a major instead ships a single, explicit, audited `oma doctor` migration — dry-run by default, backed up, idempotent, and fail-closed on conflict (a *terminal-state* mechanism, not a permanent compatibility shim; see [`reference/schemas.md`](reference/schemas.md) §1).
+
+Fail-closed only earns its keep if every refusal is *actionable*. A fail-closed stop names the check that triggered it and pairs a one-line reason with a one-line suggested fix (`hint:`), so "refuse" never decays into "obscure" (the error convention is in [`reference/command-tree.md`](reference/command-tree.md) §1). Anything repairable mechanically is offered as a plan you run — never a host change oma makes for you.
 
 ## 4. How the philosophy stays honest
 
@@ -67,6 +71,9 @@ These costs are paid deliberately. The fastest way to see them is by contrast: *
 ## 6. Non-goals (what oma is deliberately not)
 
 - Not an always-on framework.
-- Not a Claude Code plugin.
+- Not a Claude Code plugin (a plugin is a host-specific concept, at odds with neutrality).
 - Not a host-config manager.
 - Not a place for mechanical logic to live in prompts.
+- Not a model router, an MCP server, or a cloud agent-orchestration platform.
+- Not a prompt marketplace or a generic multi-agent chat / middleware layer.
+- Not an autonomy framework that lets an agent do anything — it is the narrow, recoverable, auditable *local work protocol* a coding agent runs against.

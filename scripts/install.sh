@@ -1,22 +1,29 @@
 #!/usr/bin/env bash
-# Install oma. By default this downloads the prebuilt binary for the latest
-# GitHub release and verifies its SHA-256 against the release checksums.txt
-# (docs/reference/security-contract.md §5 — the same asset/checksum contract self-update
-# consumes). It falls back to a source build (git + go) when no prebuilt binary
-# matches the platform, when no release can be resolved, or when
-# OMA_INSTALL_FROM_SOURCE=1. A checksum mismatch is a hard, fail-closed error —
-# never a silent downgrade to source.
+# Install oma. By default this downloads the prebuilt binary for a GitHub
+# release and verifies BOTH its SHA-256 against the release checksums.txt AND
+# the installed binary's reported version against the requested release
+# (docs/reference/security-contract.md §5 — the same asset/checksum contract
+# self-update consumes). This prebuilt path is the only default.
 #
-# On Windows, run from Git Bash; the default binary name is oma.exe.
+# The installer is FAIL-CLOSED: if it cannot resolve a release, find a matching
+# prebuilt asset, verify the checksum, or confirm the installed version, it
+# stops with an actionable error. It NEVER silently downgrades to a source
+# build or to the unreleased 'main' branch. A source build happens only when
+# you opt in with OMA_INSTALL_FROM_SOURCE=1, and even then it builds the newest
+# released tag (not main) unless you override the ref.
+#
+# On Windows, run from Git Bash (installs oma.exe), or use scripts/install.ps1
+# from PowerShell.
 #
 # Overrides:
 #   OMA_INSTALL_REPO=sean2077/oh-my-agents   owner/name slug
 #   OMA_INSTALL_VERSION=latest               'latest' or a tag like v0.1.0
 #   OMA_INSTALL_BIN_DIR=$HOME/.local/bin     install directory
 #   OMA_INSTALL_BIN_NAME=oma[.exe]           installed binary name
-#   OMA_INSTALL_FROM_SOURCE=0                 set 1 to force a source build
+#   OMA_INSTALL_FROM_SOURCE=0                 set 1 to opt into a source build
 #   OMA_INSTALL_REF                           source-build git ref (default: the
-#                                             pinned version, else main)
+#                                             pinned tag, else the newest
+#                                             release, else main)
 set -euo pipefail
 
 REPO="${OMA_INSTALL_REPO:-sean2077/oh-my-agents}"
@@ -37,15 +44,6 @@ case "$(uname -m 2>/dev/null || true)" in
   aarch64|arm64) ARCH="arm64" ;;
   *)             ARCH="" ;;
 esac
-
-# Source-build ref: explicit override wins, else the pinned tag, else main.
-if [ -n "${OMA_INSTALL_REF:-}" ]; then
-  REF="$OMA_INSTALL_REF"
-elif [ "$VERSION" != "latest" ]; then
-  REF="$VERSION"
-else
-  REF="main"
-fi
 
 # Make BIN_DIR absolute.
 case "$BIN_DIR" in
@@ -86,9 +84,20 @@ install_atomic() {
   mv "$tmpbin" "$BIN_DIR/$BIN_NAME"
   tmpbin=""
   echo "installed $BIN_DIR/$BIN_NAME"
-  if "$BIN_DIR/$BIN_NAME" version >/dev/null 2>&1; then
-    echo "  $("$BIN_DIR/$BIN_NAME" version 2>/dev/null | head -1)"
-  fi
+}
+
+# Assert the freshly installed binary reports exactly the version we intended
+# to install. Closes the gap where a stale, wrong, or partially written asset
+# could land without anyone noticing — the install-time analogue of
+# self-update's post-replace self-check. Uses the --json surface and parses
+# without jq to keep the installer dependency-free.
+verify_installed_version() {
+  local want="$1" got
+  got="$("$BIN_DIR/$BIN_NAME" version --json 2>/dev/null \
+    | sed -nE 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' | head -n1)"
+  [ -n "$got" ] || err "installed binary did not report a version (wanted $want)"
+  [ "$got" = "$want" ] || err "version mismatch: installed binary reports '$got', expected '$want'"
+  log "version verified: $got"
 }
 
 path_note() {
@@ -100,38 +109,6 @@ path_note() {
       echo "  export PATH=\"$BIN_DIR:\$PATH\""
       ;;
   esac
-}
-
-build_from_source() {
-  log "building oma from source (ref: $REF)"
-  need git
-  need go
-  git -c advice.detachedHead=false clone --quiet --depth 1 --branch "$REF" "https://github.com/$REPO.git" "$tmpdir/src"
-  local commit source_version
-  commit="$(git -C "$tmpdir/src" rev-parse --short HEAD 2>/dev/null || echo none)"
-  if [ "$VERSION" != "latest" ]; then
-    source_version="$VERSION"
-  elif [ "$REF" != "main" ]; then
-    source_version="$REF"
-  else
-    source_version="$(git -C "$tmpdir/src" describe --tags --exact-match 2>/dev/null || true)"
-    if [ -z "$source_version" ]; then
-      source_version="$(git -C "$tmpdir/src" describe --tags --abbrev=0 2>/dev/null || true)"
-    fi
-    if [ -z "$source_version" ]; then
-      source_version="$REF"
-    fi
-  fi
-  (
-    cd "$tmpdir/src"
-    go build -trimpath \
-      -ldflags "-s -w \
-        -X github.com/sean2077/oh-my-agents/internal/version.Version=$source_version \
-        -X github.com/sean2077/oh-my-agents/internal/version.Commit=$commit" \
-      -o "$tmpdir/built" ./cmd/oma
-  )
-  install_atomic "$tmpdir/built"
-  path_note
 }
 
 tag_from_release_url() {
@@ -180,27 +157,71 @@ resolve_latest_tag() {
   return 1
 }
 
+# Which git ref an opt-in source build should use. We prefer a real released
+# tag over 'main' so a source build still tracks a release by default; 'main'
+# is only ever a last resort, and only on an explicit source build.
+resolve_source_ref() {
+  if [ -n "${OMA_INSTALL_REF:-}" ]; then
+    printf '%s\n' "$OMA_INSTALL_REF"
+    return 0
+  fi
+  if [ "$VERSION" != "latest" ]; then
+    printf '%s\n' "$VERSION"
+    return 0
+  fi
+  local tag
+  tag="$(resolve_latest_tag || true)"
+  if [ -n "$tag" ]; then
+    printf '%s\n' "$tag"
+    return 0
+  fi
+  printf 'main\n'
+}
+
+build_from_source() {
+  need git
+  need go
+  local ref commit source_version
+  ref="$(resolve_source_ref)"
+  if [ "$ref" = "main" ]; then
+    log "WARNING: building from the unreleased 'main' branch — no pinned tag and no release could be resolved."
+  fi
+  log "building oma from source (ref: $ref)"
+  git -c advice.detachedHead=false clone --quiet --depth 1 --branch "$ref" "https://github.com/$REPO.git" "$tmpdir/src"
+  commit="$(git -C "$tmpdir/src" rev-parse --short HEAD 2>/dev/null || echo none)"
+  if [ "$ref" != "main" ]; then
+    source_version="$ref"
+  else
+    source_version="$(git -C "$tmpdir/src" describe --tags --always 2>/dev/null || echo main)"
+  fi
+  (
+    cd "$tmpdir/src"
+    go build -trimpath \
+      -ldflags "-s -w \
+        -X github.com/sean2077/oh-my-agents/internal/version.Version=$source_version \
+        -X github.com/sean2077/oh-my-agents/internal/version.Commit=$commit" \
+      -o "$tmpdir/built" ./cmd/oma
+  )
+  install_atomic "$tmpdir/built"
+  verify_installed_version "$source_version"
+  path_note
+}
+
 install_from_release() {
   need curl
   local tag="$VERSION"
   if [ "$tag" = "latest" ]; then
     tag="$(resolve_latest_tag || true)"
-    if [ -z "$tag" ]; then
-      log "could not resolve the latest release for $REPO; falling back to source"
-      return 1
-    fi
-    REF="$tag"
+    [ -n "$tag" ] || err "could not resolve the latest release for $REPO. Check your network, pin OMA_INSTALL_VERSION=vX.Y.Z, or set OMA_INSTALL_FROM_SOURCE=1 to build from source."
   fi
 
   local asset="oma_${tag}_${OS}_${ARCH}${EXT}"
   local base="https://github.com/$REPO/releases/download/$tag"
   log "downloading $asset ($tag)"
-  if ! curl -fsSL -o "$tmpdir/$asset" "$base/$asset"; then
-    log "no prebuilt asset $asset for $tag; falling back to source"
-    return 1
-  fi
+  curl -fsSL -o "$tmpdir/$asset" "$base/$asset" \
+    || err "no prebuilt asset $asset for $tag — this platform has no published binary. Set OMA_INSTALL_FROM_SOURCE=1 to build $tag from source (needs git + go)."
 
-  # From here a binary exists, so integrity is mandatory and fail-closed.
+  # A binary now exists, so integrity is mandatory and fail-closed.
   curl -fsSL -o "$tmpdir/checksums.txt" "$base/checksums.txt" \
     || err "release $tag has no checksums.txt (unverifiable)"
   local want got
@@ -211,8 +232,8 @@ install_from_release() {
   log "checksum ok"
 
   install_atomic "$tmpdir/$asset"
+  verify_installed_version "$tag"
   path_note
-  return 0
 }
 
 # --- main ---
@@ -221,12 +242,11 @@ if [ "$FROM_SOURCE" = "1" ]; then
   exit 0
 fi
 
+# Default path: a verified prebuilt release binary, or a fail-closed stop. We
+# never silently fall back to a source build or to the 'main' branch — that is
+# an explicit opt-in (OMA_INSTALL_FROM_SOURCE=1).
 if [ -z "$OS" ] || [ -z "$ARCH" ]; then
-  log "no prebuilt binary for $(uname -s 2>/dev/null || echo unknown)/$(uname -m 2>/dev/null || echo unknown); building from source"
-  build_from_source
-  exit 0
+  err "no prebuilt binary for $(uname -s 2>/dev/null || echo unknown)/$(uname -m 2>/dev/null || echo unknown). Set OMA_INSTALL_FROM_SOURCE=1 to build from source (needs git + go)."
 fi
 
-if ! install_from_release; then
-  build_from_source
-fi
+install_from_release

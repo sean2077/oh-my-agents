@@ -1,0 +1,201 @@
+name: Build
+
+# Reusable build/test/package pipeline, called by both ci.yml (every push to
+# main + every PR) and release.yml (tags). This is the single source of the
+# quality gate: a release runs the SAME jobs CI runs, and the binaries a
+# release publishes are the exact artifacts this workflow built and verified
+# once — never rebuilt in the publish step (build-once, promote-same-artifacts).
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Version stamp for the built binaries ("vX.Y.Z" for releases, "dev" for CI).
+        required: false
+        type: string
+        default: dev
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Go test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: gofmt
+        shell: bash
+        run: |
+          out="$(gofmt -l .)"
+          if [ -n "$out" ]; then
+            echo "files need gofmt:" >&2
+            echo "$out" >&2
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      # Race detector is mandatory: the relay ledger, state, interview and
+      # ralph engines all rest on cross-process / goroutine locking and atomic
+      # writes. A data race here is a correctness bug, so CI must surface it.
+      - name: Test (race)
+        run: go test -race ./...
+
+      - name: Build
+        run: go build ./...
+
+  lint:
+    name: golangci-lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12.2
+
+  vuln:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # @latest is intentional for the scanner tool: it pairs with the live
+      # vulnerability database, which is the moving part — not this binary.
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: govulncheck
+        run: govulncheck ./...
+
+  scripts:
+    name: Script checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: shellcheck installers and release scripts
+        run: shellcheck scripts/install.sh scripts/build-release.sh scripts/extract-changelog.sh
+
+      # Static half of the install.ps1 validation bar: pwsh ships on the runner,
+      # so syntax-gate the PowerShell installer here. The end-to-end smoke half
+      # runs on the windows leg below.
+      - name: Parse-check install.ps1
+        shell: pwsh
+        run: |
+          $errs = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile("$PWD/scripts/install.ps1", [ref]$null, [ref]$errs)
+          if ($errs) { $errs | ForEach-Object { Write-Error $_.Message }; exit 1 }
+          Write-Host 'install.ps1 parses clean'
+
+  install-smoke:
+    name: install.ps1 smoke (windows)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # End-to-end proof of the native installer's download -> checksum ->
+      # version-assert path on real Windows. Pinned to an existing released tag
+      # so the smoke is deterministic against that release's published assets.
+      - name: Smoke-install a released oma.exe
+        shell: pwsh
+        env:
+          OMA_INSTALL_BIN_DIR: ${{ runner.temp }}\oma-smoke
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ./scripts/install.ps1 -Version v0.8.1
+          $exe = Join-Path $env:OMA_INSTALL_BIN_DIR 'oma.exe'
+          $got = (& $exe version --json | ConvertFrom-Json).version
+          if ($got -ne 'v0.8.1') { Write-Error "smoke: installed version '$got', want v0.8.1"; exit 1 }
+          Write-Host "install.ps1 smoke OK: $got"
+
+  package:
+    name: Package release assets
+    needs: [test, lint, vuln]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # The input reaches the script only through an env var, never
+      # interpolated into the shell: a tag name may carry shell metacharacters.
+      - name: Build assets
+        env:
+          VERSION: ${{ inputs.version }}
+        run: scripts/build-release.sh "$VERSION"
+
+      # The binary must report exactly the version it was stamped with, or
+      # self-update's version comparison breaks (plan B11).
+      - name: Verify version stamp matches input
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          binary="dist/oma_${VERSION}_linux_amd64"
+          got="$("$binary" version --json | jq -r '.version')"
+          if [ "$got" != "$VERSION" ]; then
+            echo "version stamp mismatch: got '$got' want '$VERSION' (check -ldflags -X in scripts/build-release.sh)" >&2
+            exit 1
+          fi
+          echo "version stamp OK: $got"
+
+      - name: Verify checksums manifest
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          cd dist
+          sha256sum --check checksums.txt
+          count="$(find . -maxdepth 1 -name "oma_${VERSION}_*" -type f | wc -l)"
+          if [ "$count" -ne 6 ]; then
+            echo "expected 6 platform binaries, found $count" >&2
+            exit 1
+          fi
+
+      # The single set of built+verified artifacts. The release publish job
+      # downloads exactly these and never recompiles (build-once, promote-same).
+      - name: Upload release-dist artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-dist
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7

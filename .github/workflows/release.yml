@@ -1,79 +1,80 @@
 name: Release Assets
 
+# A tag triggers the FULL build pipeline (3-platform test+race, lint,
+# govulncheck, package) as a hard gate; only if every job passes does the
+# publish job run. Publish downloads the exact artifacts the pipeline built
+# and verified — it never rebuilds — then attests provenance, generates an
+# SBOM, and uploads without --clobber (existing assets are never overwritten).
 on:
   push:
     tags:
       - v*
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
+  # Hard release gate: the same jobs ci.yml runs, on all three platforms.
   build:
-    name: Build release assets
-    runs-on: ubuntu-latest
+    uses: ./.github/workflows/build.yml
+    with:
+      version: ${{ github.ref_name }}
 
+  publish:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write       # create the release and upload assets
+      id-token: write       # provenance attestation (sigstore OIDC)
+      attestations: write   # provenance attestation
     steps:
       - name: Checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        uses: actions/checkout@v7
 
-      # Fail fast: a tag without its changelog section must die before
-      # any expensive build (the release body comes from CHANGELOG.md —
-      # user-defined flow: changelog → commit+tag → push → CI extracts).
+      # Fail fast: a tag without its changelog section must die before publish
+      # (the release body is sliced from CHANGELOG.md).
       - name: Extract release notes from CHANGELOG.md
         run: |
           scripts/extract-changelog.sh "$GITHUB_REF_NAME" > "$RUNNER_TEMP/release-notes.md"
           echo "--- release notes for $GITHUB_REF_NAME ---"
           cat "$RUNNER_TEMP/release-notes.md"
 
-      - name: Setup Go
-        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
+      # Promote the exact artifacts the build pipeline produced. No recompile.
+      - name: Download built artifacts
+        uses: actions/download-artifact@v8
         with:
-          go-version-file: go.mod
-          cache: true
+          name: release-dist
+          path: dist
 
-      - name: gofmt
-        run: |
-          out="$(gofmt -l .)"
-          if [ -n "$out" ]; then
-            echo "files need gofmt:" >&2
-            echo "$out" >&2
-            exit 1
-          fi
-
-      - name: Vet
-        run: go vet ./...
-
-      - name: Test
-        run: go test ./...
-
-      # github.ref_name is referenced only through the runner-provided
-      # $GITHUB_REF_NAME env var, never template-interpolated into run:
-      # text — tag names may legally contain shell metacharacters.
-      - name: Build assets
-        run: scripts/build-release.sh "$GITHUB_REF_NAME"
-
-      # Tag version gate (plan B11): the binary must report exactly the
-      # tag it was built from, or self-update's version comparison breaks.
-      - name: Verify version stamp matches tag
-        run: |
-          binary="dist/oma_${GITHUB_REF_NAME}_linux_amd64"
-          got="$("$binary" version --json | jq -r '.version')"
-          if [ "$got" != "$GITHUB_REF_NAME" ]; then
-            echo "version stamp mismatch: got '$got' want '$GITHUB_REF_NAME' (check the -ldflags -X path in scripts/build-release.sh)" >&2
-            exit 1
-          fi
-          echo "version stamp OK: $got"
-
-      - name: Verify checksums manifest
+      # Re-verify integrity of the promoted artifacts after upload/download.
+      - name: Re-verify checksums and binary count
         run: |
           cd dist
           sha256sum --check checksums.txt
-          count="$(ls oma_"${GITHUB_REF_NAME}"_* | wc -l)"
+          count="$(find . -maxdepth 1 -name "oma_${GITHUB_REF_NAME}_*" -type f | wc -l)"
           if [ "$count" -ne 6 ]; then
             echo "expected 6 platform binaries, found $count" >&2
             exit 1
           fi
+
+      # Software Bill of Materials for the release.
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: spdx-json
+          output-file: dist/sbom.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      # Build provenance: a signed attestation binding each binary's digest to
+      # this workflow run. `gh attestation verify` (and the installer, as a
+      # follow-up) can then prove an asset came from this pipeline.
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: dist/oma_*
 
       - name: Create or update release
         env:
@@ -86,7 +87,9 @@ jobs:
             gh release create "$tag" --title "$tag" --notes-file "$RUNNER_TEMP/release-notes.md" --verify-tag
           fi
 
+      # No --clobber: a formal release never silently overwrites an asset that
+      # already exists. A re-tag with existing assets fails loudly instead.
       - name: Upload assets
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+        run: gh release upload "$GITHUB_REF_NAME" dist/*

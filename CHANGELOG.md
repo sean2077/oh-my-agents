@@ -4,6 +4,17 @@
 >
 > Section heading format: `## vX.Y.Z - YYYY-MM-DD` (CI matches the tag by exact prefix; a tag with no matching section fails the release, fail-closed).
 
+## v0.9.0 - 2026-06-22
+
+This release hardens the release pipeline, the installers, and CI after the second external pre-1.0 review, and adds the user-facing stability and security contracts. No CLI behavior or shipped workflow schema changes.
+
+- **Release is gated on full CI**: a reusable `build.yml` runs the 3-platform test matrix (now with `-race`), `golangci-lint`, and `govulncheck`; both `ci.yml` and the tag-triggered release call it. The release **promotes the exact artifacts CI built and verified** instead of rebuilding, and no longer uploads with `--clobber`, so a published asset can never be silently overwritten.
+- **Supply chain**: release binaries now carry a build-provenance attestation (verify with `gh attestation verify`) and ship an SBOM.
+- **Fail-closed installer**: `scripts/install.sh` never silently builds the unreleased `main` branch — it resolves a release, verifies the checksum, and asserts the installed binary's version, stopping with an actionable error otherwise. A source build is an explicit `OMA_INSTALL_FROM_SOURCE=1` opt-in. A native PowerShell installer (`scripts/install.ps1`) mirrors the same contract; the default install tracks the latest release, with an optional tag-pinned form documented for reproducibility.
+- **Security gates in CI**: `go test -race` and `govulncheck` are required checks; the Go toolchain is bumped to 1.25.11 for upstream `net/http` / `crypto/tls` / `crypto/x509` fixes. New fuzz tests cover the relay artifact parser, the secret scanner, and the artifact-name and asset-name validators.
+- **Migration coverage**: new tests prove the session-scope and relay migrations back up byte-for-byte, preserve unknown fields, and leave no residue on an interrupted or repeated run.
+- **Docs**: new [`STABILITY.md`](STABILITY.md) (the 1.0 compatibility contract), [`SECURITY.md`](SECURITY.md) and issue templates, an end-to-end [`docs/tutorial.md`](docs/tutorial.md), and an [`eval/`](eval/) skill-triggering harness. The "no migration layers" wording is reconciled with the schema-migration policy, and an implemented plan doc moved to `docs/history/`.
+
 ## v0.8.2 - 2026-06-22
 
 This is a repo-workflow patch release. It adds an opt-in content-length guard for agent instruction files and tightens the root agent onboarding notes, without changing shipped CLI behavior or workflow schemas.

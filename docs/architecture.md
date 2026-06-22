@@ -6,6 +6,19 @@ A developer-facing map of how oma is put together. For *why* it is shaped this w
 
 oma is a single Go binary (`oma`) plus a set of agent-neutral markdown skills. The binary owns every mechanical step (counting, scoring, atomic writes, integrity checks); the skills carry only judgment and shell out to `oma` for anything counted, validated, or persisted. This split is not a convention — it is the organizing principle, and it decides which package or file a given piece of logic lives in.
 
+## The four layers
+
+The two artifacts resolve into four layers, from the one closest to the model down to the host:
+
+| Layer | Responsibility | Where it lives |
+|---|---|---|
+| **Skill policy** | Judgment: when to ask, when to review, how to weigh evidence, what to change | `assets/skills/<name>/SKILL.md` (markdown) |
+| **Deterministic CLI** | Counting, scoring, thresholds, round / stall / plateau judgment, atomic writes, integrity hashes | `internal/{interview,ralph,relay,asset,state,budget,checks}` |
+| **Protocol & state** | Session identity, worktree binding, the relay ledger, schemas, revisions, one-shot migrations | `internal/{relay,state,session}` + `~/.config/oma`, `<repo>/.oma` |
+| **Host adapter** | Projecting one canonical asset set into Claude Code / Codex; optional host accelerations | `internal/{agentdir,asset}`; `~/.agents/` → `~/.claude/`, `~/.codex/` |
+
+The line between the top layer and the three below it is the [mechanical-vs-judgment cut](design-philosophy.md): everything countable sinks below it; only judgment stays above.
+
 ## The asset model: one canonical store, projected to two hosts
 
 Assets — skills, subagents, hooks, prompts — live once in a canonical store and are projected into each host's directory (symlink on Unix-like hosts; junction/copy on native Windows):

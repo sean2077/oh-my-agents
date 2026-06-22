@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -125,5 +126,72 @@ func TestMigrateSessionScopeFailsClosedOnConflict(t *testing.T) {
 		`{"schema":"oma-state/1","namespace":"myapp--s-codex-0123456789ab","revision":1,"data":{},"updated":"2026-06-20T00:00:00Z"}`)
 	if _, err := MigrateSessionScope(root, true); err == nil {
 		t.Fatal("expected fail-closed on target-name collision, got nil")
+	}
+}
+
+// TestMigrateSessionScopeBackupEnablesRecovery proves the pre-migration backup
+// is a byte-exact copy of the original (so a migration can be undone by hand)
+// and that an unknown top-level field survives the rewrite untouched.
+func TestMigrateSessionScopeBackupEnablesRecovery(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".oma", "state")
+	original := `{"schema":"oma-state/1","namespace":"app-codex-0123456789ab","revision":4,"data":{"phase":"impl"},"updated":"2026-06-20T00:00:00Z","future_field":{"keep":true}}`
+	writeStateFixture(t, dir, "app-codex-0123456789ab.json", original)
+
+	if _, err := MigrateSessionScope(root, true); err != nil {
+		t.Fatal(err)
+	}
+
+	backup, err := os.ReadFile(filepath.Join(dir, preMigrationDir, "app-codex-0123456789ab.json"))
+	if err != nil {
+		t.Fatalf("backup missing: %v", err)
+	}
+	if string(backup) != original {
+		t.Fatalf("backup not byte-identical to original:\n got %q\nwant %q", backup, original)
+	}
+
+	migrated, err := os.ReadFile(filepath.Join(dir, "app--s-codex-0123456789ab.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var obj map[string]any
+	if err := json.Unmarshal(migrated, &obj); err != nil {
+		t.Fatal(err)
+	}
+	if obj["future_field"] == nil {
+		t.Errorf("migration dropped unknown top-level field future_field: %v", obj)
+	}
+	if obj["namespace"] != "app--s-codex-0123456789ab" {
+		t.Errorf("namespace = %v, want rewritten form", obj["namespace"])
+	}
+}
+
+// TestMigrateSessionScopeAtomicNoResidue proves residue from a crashed earlier
+// run (a pre-existing .pre-migration backup dir) does not block a clean
+// re-apply, and that a successful migration leaves no temp file behind.
+func TestMigrateSessionScopeAtomicNoResidue(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".oma", "state")
+	writeStateFixture(t, dir, "app-codex-0123456789ab.json",
+		`{"schema":"oma-state/1","namespace":"app-codex-0123456789ab","revision":1,"data":{},"updated":"2026-06-20T00:00:00Z"}`)
+	if err := os.MkdirAll(filepath.Join(dir, preMigrationDir), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := MigrateSessionScope(root, true); err != nil {
+		t.Fatalf("re-apply over pre-existing backup dir: %v", err)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if !e.IsDir() && strings.Contains(e.Name(), ".tmp") {
+			t.Errorf("temp residue left in state dir: %s", e.Name())
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "app--s-codex-0123456789ab.json")); err != nil {
+		t.Errorf("migrated file missing: %v", err)
 	}
 }
