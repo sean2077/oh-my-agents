@@ -28,8 +28,9 @@ for f in $staged; do
 	*) continue ;;
 	esac
 	lines=$(git show ":$f" | awk '
-		NR==1 && $0 ~ /^---[\r]?$/ { infm=1; next }
-		infm==1 && $0 ~ /^---[\r]?$/ { infm=0; body=1; next }
+		{ sub(/\r$/, "") }
+		NR==1 && $0 == "---" { infm=1; next }
+		infm==1 && $0 == "---" { infm=0; body=1; next }
 		infm==1 { next }
 		{ body=1 }
 		body==1 && NF>0 { n++ }
