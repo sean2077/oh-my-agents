@@ -3,7 +3,9 @@ package cli
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/sean2077/oh-my-agents/internal/projectroot"
 	"github.com/sean2077/oh-my-agents/internal/ralph"
@@ -23,7 +25,24 @@ func ralphEngine() (*ralph.Engine, error) {
 	eng.SessionSuffix = suffix
 	eng.ProjectRoot = info.ProjectRoot
 	eng.WorktreeRoot = info.WorktreeRoot
+	eng.Branch, eng.BaseCommit = gitBranchAndHead(info.WorktreeRoot)
 	return eng, nil
+}
+
+// gitBranchAndHead reports the current branch and HEAD of root, used to bind a
+// ralph loop to its worktree+branch and detect a same-worktree branch switch.
+// Empty strings outside a git checkout (the binding check then skips branch).
+func gitBranchAndHead(root string) (branch, head string) {
+	if root == "" {
+		return "", ""
+	}
+	if out, err := exec.Command("git", "-C", root, "branch", "--show-current").Output(); err == nil {
+		branch = strings.TrimSpace(string(out))
+	}
+	if out, err := exec.Command("git", "-C", root, "rev-parse", "HEAD").Output(); err == nil {
+		head = strings.TrimSpace(string(out))
+	}
+	return branch, head
 }
 
 func currentProjectInfo() (projectroot.Info, error) {
@@ -36,7 +55,7 @@ func currentProjectInfo() (projectroot.Info, error) {
 
 func newRalphCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "ralph", Short: "Solidified persistent loop: counting, stop judgment, history (docs/reference/workflows.md §2)"}
-	cmd.AddCommand(newRalphStartCmd(), newRalphNextCmd(), newRalphCheckCmd(), newRalphAbortCmd(), newRalphStatusCmd())
+	cmd.AddCommand(newRalphStartCmd(), newRalphNextCmd(), newRalphCheckCmd(), newRalphAbortCmd(), newRalphStatusCmd(), newRalphRebindCmd())
 	return cmd
 }
 
@@ -83,7 +102,6 @@ func newRalphStartCmd() *cobra.Command {
 func newRalphNextCmd() *cobra.Command {
 	var id string
 	var asJSON bool
-	var allowWorktreeChange bool
 	cmd := &cobra.Command{
 		Use:   "next",
 		Short: "Advance one round; stop verdicts (passed/exhausted/stalled/plateaued) exit 4",
@@ -93,7 +111,6 @@ func newRalphNextCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			eng.AllowWorktreeChange = allowWorktreeChange
 			st, v, err := eng.Next(id, DryRun())
 			if err != nil {
 				return err
@@ -116,7 +133,6 @@ func newRalphNextCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&id, "id", "", "instance id (default: current session's default ralph loop)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable output")
-	cmd.Flags().BoolVar(&allowWorktreeChange, "allow-worktree-change", false, "allow access when the loop was started from another worktree")
 	return cmd
 }
 
@@ -125,7 +141,6 @@ func newRalphCheckCmd() *cobra.Command {
 	var verifierExit int
 	var score float64
 	var asJSON bool
-	var allowWorktreeChange bool
 	cmd := &cobra.Command{
 		Use:   "check",
 		Short: "Record a verifier result the AGENT ran (oma never executes verifiers)",
@@ -135,7 +150,6 @@ func newRalphCheckCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			eng.AllowWorktreeChange = allowWorktreeChange
 			// A nil score means "not provided"; --score 0 is a real value, so
 			// distinguish via Changed (RecordCheck enforces policy/score rules).
 			var scorePtr *float64
@@ -167,14 +181,12 @@ func newRalphCheckCmd() *cobra.Command {
 	cmd.Flags().Float64Var(&score, "score", 0, "evaluator score (required under keep-policy score_improvement)")
 	cmd.Flags().StringVar(&note, "note", "", "failure signature (stall detection compares these)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable output")
-	cmd.Flags().BoolVar(&allowWorktreeChange, "allow-worktree-change", false, "allow access when the loop was started from another worktree")
 	_ = cmd.MarkFlagRequired("verifier-exit")
 	return cmd
 }
 
 func newRalphAbortCmd() *cobra.Command {
 	var id string
-	var allowWorktreeChange bool
 	cmd := &cobra.Command{
 		Use:   "abort",
 		Short: "Abort a running loop",
@@ -184,7 +196,6 @@ func newRalphAbortCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			eng.AllowWorktreeChange = allowWorktreeChange
 			s, err := eng.Abort(id, DryRun())
 			if err != nil {
 				return err
@@ -197,7 +208,6 @@ func newRalphAbortCmd() *cobra.Command {
 		}),
 	}
 	cmd.Flags().StringVar(&id, "id", "", "instance id (default: current session's default ralph loop)")
-	cmd.Flags().BoolVar(&allowWorktreeChange, "allow-worktree-change", false, "allow access when the loop was started from another worktree")
 	return cmd
 }
 
@@ -230,6 +240,33 @@ func newRalphStatusCmd() *cobra.Command {
 	cmd.Flags().StringVar(&id, "id", "", "instance id (default: current session's default ralph loop)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable output")
 	cmd.Flags().BoolVar(&allowWorktreeChange, "allow-worktree-change", false, "allow access when the loop was started from another worktree")
+	return cmd
+}
+
+func newRalphRebindCmd() *cobra.Command {
+	var id string
+	cmd := &cobra.Command{
+		Use:   "rebind-worktree",
+		Short: "Re-point a loop at the current worktree/branch (explicit, mutating)",
+		Args:  cobra.NoArgs,
+		RunE: run(func(cmd *cobra.Command, _ []string) error {
+			eng, err := ralphEngine()
+			if err != nil {
+				return err
+			}
+			s, err := eng.Rebind(id, DryRun())
+			if err != nil {
+				return err
+			}
+			prefix := ""
+			if DryRun() {
+				prefix = "[dry-run] "
+			}
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%srebound %s to worktree %s branch %s\n", prefix, s.ID, s.WorktreeRoot, s.Branch)
+			return nil
+		}),
+	}
+	cmd.Flags().StringVar(&id, "id", "", "instance id (default: current session's default ralph loop)")
 	return cmd
 }
 

@@ -73,15 +73,16 @@ oma interview abort [--id <id>]
 oma interview status [--id <id>] [--json]
 
 oma ralph start --goal <text> [--max-rounds N] [--stall-window N] [--id <id>]
-oma ralph next [--id <id>] [--allow-worktree-change] [--json]
-oma ralph check --verifier-exit <code> [--note <text>] [--id <id>] [--allow-worktree-change] [--json]
-oma ralph abort [--id <id>] [--allow-worktree-change]
+oma ralph next [--id <id>] [--json]
+oma ralph check --verifier-exit <code> [--note <text>] [--id <id>] [--json]
+oma ralph abort [--id <id>]
 oma ralph status [--id <id>] [--allow-worktree-change] [--json]
+oma ralph rebind-worktree [--id <id>]
 ```
 
 - State lands in `<project root>/.oma/state/interview-<id>.json` / `.oma/state/ralph-<id>.json`. The engine scopes explicit logical ids before reading or writing (`--id same` becomes `same--s-<session>`). For `start`, omitted `--id` uses the session suffix itself as the workflow type's default instance id; later omitted read/mutate commands address that same default instance directly. Explicit `--id` is the advanced multi-instance path and must be repeated on later commands for that instance. `--session <slug>` switches to an explicit scope.
 - The `--s-` token is reserved as the workflow/session boundary in generated state names; explicit workflow ids and session slugs containing it are refused or hashed before use.
-- Ralph records the starting session/project/worktree metadata. Later `next`/`check`/`abort`/`status` refuse when run from a different worktree for the same project/session, unless `--allow-worktree-change` is passed intentionally.
+- Ralph records the starting session/project/worktree/branch metadata. `next`/`check`/`abort` refuse when run from a different worktree, or a different branch in the same worktree, for the same project/session; move the loop with `oma ralph rebind-worktree` (it updates the binding and bumps the revision). `status` stays read-only and takes `--allow-worktree-change` to inspect a loop bound elsewhere.
 - The verdict output of `gate`/`next` must contain: the verdict, the numbers it rests on, and the suggested next step (both machine-readable and human-readable forms).
 - **No `oma autopilot *` surface** (autopilot is pure markdown, using general `oma state`; changing this requires reopening the spec).
 - **ralph start ambiguity gate (advisory)**: if `--goal` is too vague (≤15 words and lacking a file/issue/symbol/test-runner anchor), a suggestion is printed to stderr (clarify with deep-interview first, or plan with ralplan) — it does **not** block startup.

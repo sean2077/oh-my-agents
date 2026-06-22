@@ -73,6 +73,8 @@ type State struct {
 	Session      string  `json:"session,omitempty"`
 	ProjectRoot  string  `json:"project_root,omitempty"`
 	WorktreeRoot string  `json:"worktree_root,omitempty"`
+	Branch       string  `json:"branch,omitempty"`
+	BaseCommit   string  `json:"base_commit,omitempty"`
 	Phase        string  `json:"phase"`
 	Goal         string  `json:"goal"`
 	KeepPolicy   string  `json:"keep_policy"`
@@ -111,6 +113,8 @@ type Engine struct {
 	SessionSuffix       string
 	ProjectRoot         string
 	WorktreeRoot        string
+	Branch              string
+	BaseCommit          string
 	AllowWorktreeChange bool
 }
 
@@ -186,6 +190,8 @@ func (e *Engine) Start(id string, opts StartOpts, dryRun bool) (*State, error) {
 		Session:      e.SessionSuffix,
 		ProjectRoot:  e.ProjectRoot,
 		WorktreeRoot: e.WorktreeRoot,
+		Branch:       e.Branch,
+		BaseCommit:   e.BaseCommit,
 		KeepPolicy:   keep,
 		MaxRounds:    maxRounds, StallWindow: stallWindow, PlateauWindow: plateauWindow,
 		Checks:  []Check{},
@@ -255,10 +261,29 @@ func (e *Engine) checkWorktreeBinding(s *State) error {
 		return fmt.Errorf("%w: loop %s belongs to project %s; current project is %s", ErrRalph, s.ID, s.ProjectRoot, e.ProjectRoot)
 	}
 	if filepath.Clean(s.WorktreeRoot) != filepath.Clean(e.WorktreeRoot) {
-		return fmt.Errorf("%w: loop %s is bound to worktree %s; current worktree is %s (pass --allow-worktree-change to inspect or intentionally continue)",
+		return fmt.Errorf("%w: loop %s is bound to worktree %s; current worktree is %s (run `oma ralph rebind-worktree` to move it, or `status --allow-worktree-change` to inspect)",
 			ErrRalph, s.ID, s.WorktreeRoot, e.WorktreeRoot)
 	}
+	if s.Branch != "" && e.Branch != "" && s.Branch != e.Branch {
+		return fmt.Errorf("%w: loop %s was started on branch %s; current branch is %s (run `oma ralph rebind-worktree` to move it intentionally)",
+			ErrRalph, s.ID, s.Branch, e.Branch)
+	}
 	return nil
+}
+
+// Rebind re-points a loop at the engine's current worktree/branch/base commit
+// and bumps the revision. It is the explicit, mutating alternative to a
+// one-shot worktree bypass: next/check/abort never cross a worktree/branch
+// boundary silently — the operator rebinds first.
+func (e *Engine) Rebind(id string, dryRun bool) (*State, error) {
+	prev := e.AllowWorktreeChange
+	e.AllowWorktreeChange = true // a rebind intentionally crosses the binding
+	defer func() { e.AllowWorktreeChange = prev }()
+	return e.withResolved(id, dryRun, func(s *State) error {
+		s.WorktreeRoot, s.ProjectRoot = e.WorktreeRoot, e.ProjectRoot
+		s.Branch, s.BaseCommit = e.Branch, e.BaseCommit
+		return e.saveUnless(s, dryRun)
+	})
 }
 
 // validate enforces the /2 keep-policy contract on LOADED persisted state, so a

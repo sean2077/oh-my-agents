@@ -80,14 +80,15 @@ running ──plateau_window consecutive rounds with no strict score gain (score
 any state ──abort──▶ aborted
 ```
 
-Fields: `id, revision, session, project_root, worktree_root, phase, goal, keep_policy(pass_only|score_improvement, default pass_only), max_rounds(default 10), round, checks[{round, verifier_exit, score?, note, at}], stall_window(default 3), plateau_window(default 3), best_round, best_score, created, updated`. `project_root` is the shared `.oma` owner and `worktree_root` is the checkout where the loop started; later commands refuse from another worktree unless `--allow-worktree-change` is passed intentionally. Under score_improvement, `checks[].score` is required and finite, and `best_round`/`best_score` record the strict best; for the `receipt`, see schemas.md §6.
+Fields: `id, revision, session, project_root, worktree_root, branch, base_commit, phase, goal, keep_policy(pass_only|score_improvement, default pass_only), max_rounds(default 10), round, checks[{round, verifier_exit, score?, note, at}], stall_window(default 3), plateau_window(default 3), best_round, best_score, created, updated`. `project_root` is the shared `.oma` owner and `worktree_root`/`branch` are the checkout and branch the loop started on; `next`/`check`/`abort` refuse from another worktree or a switched branch — move the loop with `oma ralph rebind-worktree`, which updates the binding and bumps the revision. Under score_improvement, `checks[].score` is required and finite, and `best_round`/`best_score` record the strict best; for the `receipt`, see schemas.md §6.
 
 ### 2.2 Command semantics
 
 - `start --goal <text> [--keep-policy pass_only|score_improvement] [--max-rounds N] [--stall-window N] [--plateau-window N]`: initializes; `goal` is required (the anchor for stop-judgment semantics). keep-policy defaults to pass_only.
-- `next [--allow-worktree-change]`: round+1; emits continue|stop with the reason (stop on passed/exhausted/stalled/plateaued, exit code 4).
-- `check --verifier-exit <code> [--note] [--score <float>] [--allow-worktree-change]`: records one verification result; exit 0 → passed. `--note` should carry the failure signature (e.g. the test name); the CLI judges `stalled` from the note string (stall_window consecutive identical notes, pass_only). `--score` is **required and finite** under score_improvement (omitting it is refused; passing `--score` under pass_only is also refused); plateau_window consecutive rounds with no strict gain → plateaued.
-- `status [--allow-worktree-change]`: current round, history, and stop state.
+- `next`: round+1; emits continue|stop with the reason (stop on passed/exhausted/stalled/plateaued, exit code 4).
+- `check --verifier-exit <code> [--note] [--score <float>]`: records one verification result; exit 0 → passed. `--note` should carry the failure signature (e.g. the test name); the CLI judges `stalled` from the note string (stall_window consecutive identical notes, pass_only). `--score` is **required and finite** under score_improvement (omitting it is refused; passing `--score` under pass_only is also refused); plateau_window consecutive rounds with no strict gain → plateaued.
+- `status [--allow-worktree-change]`: current round, history, and stop state (read-only; the flag inspects a loop bound to another worktree).
+- `rebind-worktree`: re-point the loop at the current worktree/branch (explicit, mutating; bumps the revision). The mutating commands never cross a worktree/branch boundary silently — rebind first.
 
 ## 3. autopilot — a pure-markdown workflow (no dedicated command surface)
 
