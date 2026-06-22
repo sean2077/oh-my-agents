@@ -10,7 +10,7 @@ LD_FLAGS := -s -w -X github.com/sean2077/oh-my-agents/internal/version.Version=$
 
 .DEFAULT_GOAL := help
 
-.PHONY: help build install test vet fmt fmt-check lint check ci release clean
+.PHONY: help build install test vet fmt fmt-check lint check ci release clean hooks
 
 help:
 	@printf '%s\n' \
@@ -25,7 +25,8 @@ help:
 		"  check       Run fmt-check, vet, test, and build" \
 		"  ci          Run check plus lint" \
 		"  release     Build release assets with VERSION=vX.Y.Z" \
-		"  clean       Remove local build outputs"
+		"  clean       Remove local build outputs" \
+		"  hooks       Enable repo git hooks (content-length guard)"
 
 build:
 	$(GO) build -trimpath -ldflags '$(LD_FLAGS)' -o $(BIN) ./cmd/oma
@@ -67,3 +68,7 @@ release:
 
 clean:
 	rm -rf dist $(BIN)
+
+hooks:
+	git config core.hooksPath scripts/hooks
+	@echo "git hooks enabled (scripts/hooks); content-length guard active on commit."

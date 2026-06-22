@@ -1,0 +1,49 @@
+#!/bin/sh
+# Content-length guard — development only, agent-neutral.
+#
+# The SAME hook fires for every committer (Codex, Claude Code, or a human)
+# because it rides git, not any agent's hook system. It warns when a STAGED
+# SKILL.md or AGENTS.md body (non-blank lines after the YAML frontmatter)
+# exceeds the budget, to keep agent content lean — trim or link out rather than
+# inline. It is NOT part of the shipped oma product; it is a repo dev aid.
+#
+#   Enable once:  make hooks            (or: git config core.hooksPath scripts/hooks)
+#   Tuning:       OMA_CONTENT_BUDGET_LINES=<n>   default 120
+#                 OMA_CONTENT_BUDGET_BLOCK=1     fail the commit instead of warning
+set -eu
+
+budget=${OMA_CONTENT_BUDGET_LINES:-120}
+block=${OMA_CONTENT_BUDGET_BLOCK:-0}
+over=0
+
+staged=$(git diff --cached --name-only --diff-filter=ACM)
+[ -n "$staged" ] || exit 0
+
+OIFS=$IFS
+IFS='
+'
+for f in $staged; do
+	case ${f##*/} in
+	SKILL.md | AGENTS.md) ;;
+	*) continue ;;
+	esac
+	lines=$(git show ":$f" | awk '
+		NR==1 && $0 ~ /^---[\r]?$/ { infm=1; next }
+		infm==1 && $0 ~ /^---[\r]?$/ { infm=0; body=1; next }
+		infm==1 { next }
+		{ body=1 }
+		body==1 && NF>0 { n++ }
+		END { print n+0 }
+	')
+	if [ "$lines" -gt "$budget" ]; then
+		echo "content-budget: $f body is $lines non-blank lines (budget $budget) — keep agent content lean (trim / link out), or raise OMA_CONTENT_BUDGET_LINES if the length is essential." >&2
+		over=$((over + 1))
+	fi
+done
+IFS=$OIFS
+
+if [ "$over" -gt 0 ] && [ "$block" = "1" ]; then
+	echo "content-budget: $over file(s) over budget — commit blocked (OMA_CONTENT_BUDGET_BLOCK=1)." >&2
+	exit 1
+fi
+exit 0

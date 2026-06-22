@@ -29,6 +29,8 @@ go vet ./...
 
 CI runs the test matrix, `gofmt` / `vet` / `build`, and `golangci-lint` on every push and PR. The release workflow cross-compiles six platforms with a checksums manifest and a tag-version gate.
 
+Optionally enable the repo git hooks once with `make hooks` (`git config core.hooksPath scripts/hooks`). The `pre-commit` hook is a dev aid — not part of shipped `oma` — that warns when a staged `SKILL.md`/`AGENTS.md` body exceeds the content budget (default 120 non-blank lines after the frontmatter), to keep agent content lean. It rides git, so it fires identically for Codex, Claude Code, and humans. Tune with `OMA_CONTENT_BUDGET_LINES=<n>`, or set `OMA_CONTENT_BUDGET_BLOCK=1` to fail the commit instead of warning.
+
 ## Releasing
 
 Releases are changelog-first and tag-triggered:
