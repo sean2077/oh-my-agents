@@ -4,6 +4,18 @@
 >
 > Section heading format: `## vX.Y.Z - YYYY-MM-DD` (CI matches the tag by exact prefix; a tag with no matching section fails the release, fail-closed).
 
+## v0.8.0 - 2026-06-22
+
+This release hardens relay delivery, workflow-state migration, and worktree binding after the external P0/P1/P2 review. It also adds a read-only workflow inventory view for multi-session projects.
+
+- **Relay delivery cursor**: `oma relay wait` and Stop-hook delivery now use a per-reader `.cursor/<author>-<session>` consumption cursor, so out-of-order concurrent publishes do not lose a peer artifact just because its sequence number is lower than the reader's latest artifact.
+- **v0.7 migration repair tools**: `oma doctor state --migrate-session-scope` dry-runs/applies old `name-session` workflow-state migration into the current `name--s-session` form with backups, while `oma doctor relay --migrate` repairs old relay sessions missing `participant_sessions` so both peers can re-join fail-closed.
+- **Worktree-bound operations**: relay pairs now record creator worktree/branch/commit and refuse `relay close` from another worktree unless explicitly allowed; `ralph` now refuses mutating continuation after a worktree or branch switch until `oma ralph rebind-worktree` is run.
+- **Autopilot state guard**: generic `oma state bind-worktree` / `check-worktree` gives markdown workflows a mechanical worktree guard, and the bundled `autopilot` skill now initializes goal/phase and plan/phase transitions atomically with `state patch`.
+- **Forward-compatible state writes**: state, interview, ralph, and relay session JSON now preserve unknown top-level fields across load/save cycles, honoring the minor-additive schema contract.
+- **Workflow inventory**: `oma workflow list [--all-sessions] [--json]` gives a read-only project view over workflow instances across current or all sessions.
+- **Release hygiene and coverage**: Go source checkout line endings are pinned to LF for the Windows gofmt gate, staticcheck is clean, and new tests cover crash recovery plus real-process relay publishing concurrency.
+
 ## v0.7.0 - 2026-06-20
 
 This release moves parallel workflow isolation into the CLI itself, so agents can run several workflow sessions against one project without each skill inventing its own state layout.
