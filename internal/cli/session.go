@@ -11,14 +11,6 @@ func workflowScope() workflowstate.Scope {
 	return workflowstate.Scope{Session: WorkflowSession(), Getenv: os.Getenv}
 }
 
-func scopeWorkflowID(id string) (string, error) {
-	scoped, err := workflowScope().ID(id)
-	if err != nil {
-		return "", Errf(ExitState, "%v", err)
-	}
-	return scoped, nil
-}
-
 func scopeStateKey(key string) (string, error) {
 	scoped, err := workflowScope().StateKey(key)
 	if err != nil {

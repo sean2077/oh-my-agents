@@ -1,0 +1,4 @@
+# Force LF for Go sources so `gofmt -l .` is byte-identical across the CI OS
+# matrix. Without this, Windows checkouts introduce CRLF and fail the gofmt
+# gate even though the committed files are LF.
+*.go text eol=lf
