@@ -186,12 +186,22 @@ func TestInterviewScoreHelperProcess(t *testing.T) {
 	for {
 		if _, _, err := e.Score("case", in, false); err == nil {
 			os.Exit(0)
+		} else if roundPersisted(e, round) {
+			os.Exit(0)
 		} else if (!strings.Contains(err.Error(), "replays and skips are refused") && !strings.Contains(err.Error(), "being mutated by another process")) || time.Now().After(deadline) {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(2)
 		}
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(time.Duration(20+round*5+os.Getpid()%7) * time.Millisecond)
 	}
+}
+
+func roundPersisted(e *Engine, round int) bool {
+	s, err := e.Load("case--s-same")
+	if err != nil || len(s.Rounds) < round {
+		return false
+	}
+	return s.Rounds[round-1].Round == round
 }
 
 func TestGreenfieldAmbiguityFormula(t *testing.T) {
