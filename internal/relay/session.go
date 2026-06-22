@@ -12,6 +12,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/sean2077/oh-my-agents/internal/jsonmerge"
 )
 
 const (
@@ -44,6 +46,10 @@ type Session struct {
 	Closed       *time.Time `json:"closed"`
 	Outcome      *string    `json:"outcome"`
 	Reason       *string    `json:"reason"`
+
+	// extra preserves unknown top-level fields across load/save (schemas.md
+	// minor-additive contract). Unexported, so it is never serialized itself.
+	extra map[string]json.RawMessage
 }
 
 // checkWorktreeBinding refuses a mutation when the pair is bound to one
@@ -212,6 +218,9 @@ func (l *Ledger) LoadSession(slug string) (*Session, error) {
 	if s.Pair != slug {
 		return nil, fmt.Errorf("%w: session.json pair %q does not match directory %q", ErrRelay, s.Pair, slug)
 	}
+	if s.extra, err = jsonmerge.Extra(raw, &s); err != nil {
+		return nil, err
+	}
 	return &s, nil
 }
 
@@ -220,7 +229,7 @@ func (l *Ledger) saveSession(s *Session) error {
 	if err := s.Validate(); err != nil {
 		return err
 	}
-	raw, err := json.MarshalIndent(s, "", "  ")
+	raw, err := jsonmerge.Marshal(s, s.extra)
 	if err != nil {
 		return err
 	}

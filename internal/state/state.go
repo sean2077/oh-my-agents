@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/sean2077/oh-my-agents/internal/atomicfile"
+	"github.com/sean2077/oh-my-agents/internal/jsonmerge"
 )
 
 // Schema is the persisted state-file schema (docs/reference/schemas.md §3).
@@ -46,6 +47,10 @@ type File struct {
 	ProjectRoot  string            `json:"project_root,omitempty"`
 	Data         map[string]string `json:"data"`
 	Updated      string            `json:"updated"`
+
+	// extra preserves unknown top-level fields across load/save (schemas.md
+	// minor-additive contract). Unexported, so it is never serialized itself.
+	extra map[string]json.RawMessage
 }
 
 // Entry is one validated state namespace returned by List.
@@ -125,6 +130,7 @@ func load(path, ns string) (*File, error) {
 	if f.Data == nil {
 		f.Data = map[string]string{}
 	}
+	f.extra, _ = jsonmerge.Extra(raw, &f) // raw already parsed above, so no error
 	return &f, nil
 }
 
@@ -272,7 +278,7 @@ func (s *Store) PatchExpected(ns string, values map[string]string, override stri
 }
 
 func writeAtomic(path string, f *File) error {
-	raw, err := json.MarshalIndent(f, "", "  ")
+	raw, err := jsonmerge.Marshal(f, f.extra)
 	if err != nil {
 		return err
 	}

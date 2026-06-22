@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/sean2077/oh-my-agents/internal/atomicfile"
+	"github.com/sean2077/oh-my-agents/internal/jsonmerge"
 	"github.com/sean2077/oh-my-agents/internal/session"
 )
 
@@ -92,6 +93,10 @@ type State struct {
 	// the deliverable), and terminal_check is the best-score check. It proves
 	// the recorded results, not that the agent truly ran the command.
 	Receipt string `json:"receipt,omitempty"`
+
+	// extra preserves unknown top-level fields across load/save (schemas.md
+	// minor-additive contract). Unexported, so it is never serialized itself.
+	extra map[string]json.RawMessage
 }
 
 // Terminal reports an end state.
@@ -223,6 +228,9 @@ func (e *Engine) Load(id string) (*State, error) {
 		return nil, fmt.Errorf("%w: state id %q does not match file %q", ErrRalph, s.ID, id)
 	}
 	if err := s.validate(); err != nil {
+		return nil, err
+	}
+	if s.extra, err = jsonmerge.Extra(raw, &s); err != nil {
 		return nil, err
 	}
 	return &s, nil
@@ -547,7 +555,7 @@ func (e *Engine) saveUnless(s *State, dryRun bool) error {
 func (e *Engine) save(s *State) error {
 	s.Updated = e.Now().UTC()
 	s.Revision++
-	raw, err := json.MarshalIndent(s, "", "  ")
+	raw, err := jsonmerge.Marshal(s, s.extra)
 	if err != nil {
 		return err
 	}
