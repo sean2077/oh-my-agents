@@ -49,11 +49,14 @@ oma state list [namespace-prefix] [--json]
 ```
 oma doctor [--json]
 oma doctor budget --agent claude --profile core4 --max-resident-tokens 2000 [--json]
+oma doctor state --migrate-session-scope [--apply]
+oma doctor relay [--restore <slug>] [--clean-stale] [--migrate] [--apply]
 ```
 
 - `doctor` runs every item in the check registry: install consistency (registry vs. actual projection), permission bits, refcheck (static command references), security items (POSIX world-writable targets, projection escapes), a report on legacy v1 relay ledgers, and relay v2 leftovers (residual drafts / leftovers with no `.ready`). Exit code 0 all-green / 1 has warnings / 4 has a fail-level item.
 - `doctor budget`: a deterministic count against the injection-surface model in adapter-conformance.md §5; over the limit exits 4.
-- relay maintenance subitems (belonging to doctor, kept out of the public relay surface): `oma doctor relay [--restore <slug>] [--clean-stale]`.
+- relay maintenance subitems (belonging to doctor, kept out of the public relay surface): `oma doctor relay [--restore <slug>] [--clean-stale] [--migrate]`. `--migrate` repairs v0.7.0 (`oma-relay/2`) pairs whose `session.json` predates `participant_sessions` (dry-run unless `--apply`; both sides must re-run `oma relay pair join` afterwards).
+- `oma doctor state --migrate-session-scope` upgrades v0.7.0 `name-session` workflow-state files to the current `name--s-session` form (dry-run unless `--apply`; originals are backed up under `.oma/state/.pre-migration`). Default instances (the bare session suffix) and explicit-slug sessions are left untouched.
 
 ## 5. Workflow commands (implementation semantics in workflows.md)
 

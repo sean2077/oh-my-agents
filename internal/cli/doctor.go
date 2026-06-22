@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/sean2077/oh-my-agents/internal/checks"
+	"github.com/sean2077/oh-my-agents/internal/state"
 	"github.com/spf13/cobra"
 )
 
@@ -63,7 +64,49 @@ func newDoctorCmd() *cobra.Command {
 		}),
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable output")
-	cmd.AddCommand(newDoctorBudgetCmd(), newDoctorRelayCmd())
+	cmd.AddCommand(newDoctorBudgetCmd(), newDoctorRelayCmd(), newDoctorStateCmd())
+	return cmd
+}
+
+// newDoctorStateCmd is the workflow-state maintenance surface. The only
+// action today is the v0.7.0 -> current session-scope namespace migration.
+func newDoctorStateCmd() *cobra.Command {
+	var migrateScope, apply bool
+	cmd := &cobra.Command{
+		Use:   "state",
+		Short: "Workflow state maintenance: --migrate-session-scope upgrades v0.7.0 name-session files",
+		Args:  cobra.NoArgs,
+		RunE: run(func(cmd *cobra.Command, _ []string) error {
+			if !migrateScope {
+				return fmt.Errorf("nothing to do: pass --migrate-session-scope")
+			}
+			root := findProjectRoot()
+			if root == "" {
+				return Errf(ExitState, "not inside a git project (workflow state lives in <root>/.oma/state)")
+			}
+			actions, err := state.MigrateSessionScope(root, apply)
+			if err != nil {
+				return err
+			}
+			if len(actions) == 0 {
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "no v0.7.0 session-scoped state to migrate")
+				return nil
+			}
+			for _, a := range actions {
+				verb := "would migrate"
+				if a.Applied {
+					verb = "migrated"
+				}
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s %s: %s -> %s\n", verb, a.Kind, a.OldName, a.NewName)
+			}
+			if !apply {
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "(dry run; pass --apply to perform; originals are backed up under .oma/state/.pre-migration)")
+			}
+			return nil
+		}),
+	}
+	cmd.Flags().BoolVar(&migrateScope, "migrate-session-scope", false, "upgrade v0.7.0 name-session state files to the name--s-session form")
+	cmd.Flags().BoolVar(&apply, "apply", false, "perform the migration (default: dry-run preview)")
 	return cmd
 }
 
@@ -71,17 +114,17 @@ func newDoctorCmd() *cobra.Command {
 // §5): stale-residue cleanup and archive restore stay out of the public
 // relay command group.
 func newDoctorRelayCmd() *cobra.Command {
-	var cleanStale bool
+	var cleanStale, migrate, apply bool
 	var restore, ledgerRoot string
 	cmd := &cobra.Command{
 		Use:   "relay",
 		Short: "Relay ledger maintenance: --clean-stale residue, --restore archived pairs",
 		Args:  cobra.NoArgs,
 		RunE: run(func(cmd *cobra.Command, _ []string) error {
-			if !cleanStale && restore == "" {
+			if !cleanStale && restore == "" && !migrate {
 				// Plain error → ExitState: ExitUsage is reserved for cobra
 				// parse failures (B1 review finding 1).
-				return fmt.Errorf("nothing to do: pass --clean-stale and/or --restore <slug>")
+				return fmt.Errorf("nothing to do: pass --clean-stale, --restore <slug>, and/or --migrate")
 			}
 			l, err := relayLedger(ledgerRoot, true)
 			if err != nil {
@@ -108,11 +151,32 @@ func newDoctorRelayCmd() *cobra.Command {
 					}
 				}
 			}
+			if migrate {
+				actions, err := l.MigrateParticipantSessions(apply)
+				if err != nil {
+					return err
+				}
+				if len(actions) == 0 {
+					_, _ = fmt.Fprintln(cmd.OutOrStdout(), "no pairs need participant_sessions migration")
+				}
+				for _, a := range actions {
+					verb := "would migrate"
+					if a.Applied {
+						verb = "migrated"
+					}
+					_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s %s: %s\n", verb, a.Pair, a.Note)
+				}
+				if len(actions) > 0 && !apply {
+					_, _ = fmt.Fprintln(cmd.OutOrStdout(), "(dry run; pass --apply to perform)")
+				}
+			}
 			return nil
 		}),
 	}
 	cmd.Flags().BoolVar(&cleanStale, "clean-stale", false, "remove safe residue (post-publish leftovers, stale abandoned intents)")
 	cmd.Flags().StringVar(&restore, "restore", "", "move an archived pair back to the active root (stays terminal)")
 	cmd.Flags().StringVar(&ledgerRoot, "ledger-root", "", "override the ledger root")
+	cmd.Flags().BoolVar(&migrate, "migrate", false, "repair v0.7.0 pairs missing participant_sessions (both sides must re-join after)")
+	cmd.Flags().BoolVar(&apply, "apply", false, "with --migrate: perform the migration (default: dry-run preview)")
 	return cmd
 }
