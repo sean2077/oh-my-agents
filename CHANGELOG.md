@@ -4,6 +4,14 @@
 >
 > Section heading format: `## vX.Y.Z - YYYY-MM-DD` (CI matches the tag by exact prefix; a tag with no matching section fails the release, fail-closed).
 
+## v0.9.1 - 2026-06-22
+
+This patch release repairs the v0.9.0 publish gate after the Windows installer smoke exposed a CI-only failure. It does not change CLI behavior or shipped workflow schemas.
+
+- **Windows installer smoke**: `scripts/install.ps1` now uses `Net.SecurityProtocolType` when enabling TLS 1.2, keeping the native Windows install smoke compatible with GitHub's PowerShell runner.
+- **Release gate ordering**: release packaging now waits for the script lint and installer-smoke jobs, so a tag cannot package assets after an installer gate has failed.
+- **Docs**: the reproducible install examples now pin to `v0.9.1`.
+
 ## v0.9.0 - 2026-06-22
 
 This release hardens the release pipeline, the installers, and CI after the second external pre-1.0 review, and adds the user-facing stability and security contracts. No CLI behavior or shipped workflow schema changes.

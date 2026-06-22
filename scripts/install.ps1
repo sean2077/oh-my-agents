@@ -32,7 +32,7 @@
   irm https://raw.githubusercontent.com/sean2077/oh-my-agents/main/scripts/install.ps1 | iex
 .EXAMPLE
   # Pin to a release: set the version, fetch the script at that tag, then run it.
-  $v = 'v0.9.0'; $env:OMA_INSTALL_VERSION = $v
+  $v = 'v0.9.1'; $env:OMA_INSTALL_VERSION = $v
   irm "https://raw.githubusercontent.com/sean2077/oh-my-agents/$v/scripts/install.ps1" | iex
 #>
 [CmdletBinding()]

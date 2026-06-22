@@ -64,7 +64,7 @@ oma version
 For a reproducible, supply-chain-pinned install, fetch the installer **at a release tag** (so the script itself is immutable, not the moving `main`) and pin the version to match:
 
 ```bash
-OMA_VERSION=v0.9.0   # a tag from the releases page
+OMA_VERSION=v0.9.1   # a tag from the releases page
 curl -fsSL "https://raw.githubusercontent.com/sean2077/oh-my-agents/${OMA_VERSION}/scripts/install.sh" | OMA_INSTALL_VERSION="$OMA_VERSION" bash
 ```
 
