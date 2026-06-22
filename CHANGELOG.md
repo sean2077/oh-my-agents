@@ -4,6 +4,13 @@
 >
 > Section heading format: `## vX.Y.Z - YYYY-MM-DD` (CI matches the tag by exact prefix; a tag with no matching section fails the release, fail-closed).
 
+## v0.8.1 - 2026-06-22
+
+This is a release-hygiene patch after v0.8.0 exposed CI-only failures on GitHub's current runners. It does not change the CLI behavior or shipped workflow schemas.
+
+- **Go lint compatibility**: `jsonmerge` now uses `reflect.Pointer` instead of the old `reflect.Ptr` alias, keeping `golangci-lint v2.12.2` / `govet` green under the current Go toolchain.
+- **Windows concurrency-test stability**: the real-process state, interview, and ralph concurrency tests retain cross-process lock coverage while reducing Windows worker fanout and retrying expected fail-closed lock contention on slow runners.
+
 ## v0.8.0 - 2026-06-22
 
 This release hardens relay delivery, workflow-state migration, and worktree binding after the external P0/P1/P2 review. It also adds a read-only workflow inventory view for multi-session projects.
