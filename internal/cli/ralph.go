@@ -3,9 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
 
 	"github.com/sean2077/oh-my-agents/internal/projectroot"
 	"github.com/sean2077/oh-my-agents/internal/ralph"
@@ -25,7 +23,6 @@ func ralphEngine() (*ralph.Engine, error) {
 	eng.SessionSuffix = suffix
 	eng.ProjectRoot = info.ProjectRoot
 	eng.WorktreeRoot = info.WorktreeRoot
-	eng.Branch, eng.BaseCommit = gitWorktreeIdentity(info.WorktreeRoot)
 	return eng, nil
 }
 
@@ -35,19 +32,6 @@ func currentProjectInfo() (projectroot.Info, error) {
 		return projectroot.Info{}, err
 	}
 	return projectroot.Resolve(dir)
-}
-
-func gitWorktreeIdentity(root string) (branch, commit string) {
-	if root == "" {
-		return "", ""
-	}
-	if out, err := exec.Command("git", "-C", root, "branch", "--show-current").Output(); err == nil {
-		branch = strings.TrimSpace(string(out))
-	}
-	if out, err := exec.Command("git", "-C", root, "rev-parse", "HEAD").Output(); err == nil {
-		commit = strings.TrimSpace(string(out))
-	}
-	return branch, commit
 }
 
 func newRalphCmd() *cobra.Command {

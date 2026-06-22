@@ -284,7 +284,7 @@ func replaceCopyTreeAtomic(src, dest string, destExists bool, swapID string) err
 func uniqueProjectionSibling(dest, purpose, swapID string) (string, error) {
 	parent := filepath.Dir(dest)
 	base := filepath.Base(dest)
-	for i := 0; i < 100; i++ {
+	for i := 0; i < 8; i++ {
 		candidate := filepath.Join(parent, "."+base+"."+purpose+"-"+swapID+fmt.Sprintf("-%02d", i))
 		if !pathWithin(candidate, parent) {
 			return "", fmt.Errorf("%w: projection sibling %q escapes parent %q", ErrInvalid, candidate, parent)

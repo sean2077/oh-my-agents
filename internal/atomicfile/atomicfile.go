@@ -33,12 +33,6 @@ func Write(path string, data []byte, mode os.FileMode) error {
 	return nil
 }
 
-// Replace is an explicit alias for Write at call sites where replacement
-// semantics are clearer than creation semantics.
-func Replace(path string, data []byte, mode os.FileMode) error {
-	return Write(path, data, mode)
-}
-
 // WriteWithBackup writes path and first refreshes path+".bak" with the
 // previous generation when one exists.
 func WriteWithBackup(path string, data []byte, mode os.FileMode) error {

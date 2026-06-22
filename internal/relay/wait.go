@@ -48,7 +48,7 @@ func (l *Ledger) Wait(slug string, timeout time.Duration) (*WaitResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	peerSession, _ := s.participantSession(peer)
+	peerSession := s.participantSession(peer)
 	if archived {
 		return l.archivedResult(dir, peer)
 	}

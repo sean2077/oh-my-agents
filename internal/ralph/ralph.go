@@ -72,8 +72,6 @@ type State struct {
 	Session      string  `json:"session,omitempty"`
 	ProjectRoot  string  `json:"project_root,omitempty"`
 	WorktreeRoot string  `json:"worktree_root,omitempty"`
-	Branch       string  `json:"branch,omitempty"`
-	BaseCommit   string  `json:"base_commit,omitempty"`
 	Phase        string  `json:"phase"`
 	Goal         string  `json:"goal"`
 	KeepPolicy   string  `json:"keep_policy"`
@@ -108,8 +106,6 @@ type Engine struct {
 	SessionSuffix       string
 	ProjectRoot         string
 	WorktreeRoot        string
-	Branch              string
-	BaseCommit          string
 	AllowWorktreeChange bool
 }
 
@@ -185,8 +181,6 @@ func (e *Engine) Start(id string, opts StartOpts, dryRun bool) (*State, error) {
 		Session:      e.SessionSuffix,
 		ProjectRoot:  e.ProjectRoot,
 		WorktreeRoot: e.WorktreeRoot,
-		Branch:       e.Branch,
-		BaseCommit:   e.BaseCommit,
 		KeepPolicy:   keep,
 		MaxRounds:    maxRounds, StallWindow: stallWindow, PlateauWindow: plateauWindow,
 		Checks:  []Check{},

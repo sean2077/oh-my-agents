@@ -35,8 +35,6 @@ var ErrRelay = errors.New("relay refused (fail-closed)")
 var (
 	// ErrPairNotFound marks a missing active/archived pair.
 	ErrPairNotFound = errors.New("pair not found")
-	// ErrPairArchived marks an operation that refuses because a pair is archived.
-	ErrPairArchived = errors.New("pair archived")
 	// ErrPairClosing marks an operation that refuses because close is in progress.
 	ErrPairClosing = errors.New("pair closing")
 	// ErrConflict marks a concurrent mutation conflict.

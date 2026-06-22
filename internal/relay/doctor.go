@@ -54,7 +54,7 @@ func (l *Ledger) cleanStaleLocked(slug string, dryRun bool) ([]string, error) {
 	}
 
 	for _, author := range s.Participants {
-		sessionKey, _ := s.participantSession(author)
+		sessionKey := s.participantSession(author)
 		stale := l.heartbeatStale(slug, author, sessionKey)
 		for _, seq := range l.reservations(slug, author, sessionKey) {
 			seqPath := filepath.Join(pairDir, ".seq", fmt.Sprintf("%03d", seq))

@@ -134,12 +134,11 @@ func (s *Session) Peer(author string) (string, error) {
 	}
 }
 
-func (s *Session) participantSession(author string) (string, bool) {
+func (s *Session) participantSession(author string) string {
 	if s.ParticipantSessions == nil {
-		return "", false
+		return ""
 	}
-	key, ok := s.ParticipantSessions[author]
-	return key, ok
+	return s.ParticipantSessions[author]
 }
 
 func (s *Session) claimParticipant(id Identity) (bool, error) {
@@ -284,7 +283,7 @@ func (l *Ledger) NewPair(topic, peer, project string, dryRun bool) (*Session, er
 	if err := os.MkdirAll(l.Root, 0o700); err != nil {
 		return nil, err
 	}
-	for attempt := 0; attempt < 16; attempt++ {
+	for attempt := 0; attempt < 8; attempt++ {
 		if attempt > 0 {
 			suffix, err := randomPairSuffix()
 			if err != nil {
@@ -333,9 +332,6 @@ func pairSlug(now time.Time, topic, suffix string) string {
 		maxTopic := 48 - 1 - len(suffix)
 		if len(label) > maxTopic {
 			label = strings.TrimRight(label[:maxTopic], "-")
-			if label == "" {
-				label = topic[:1]
-			}
 		}
 		label += "-" + suffix
 	}

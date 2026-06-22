@@ -154,9 +154,6 @@ func (l *Ledger) Join(slug string, dryRun bool) (*Session, error) {
 		if err != nil {
 			return nil, err
 		}
-		if s.Terminal() {
-			return nil, fmt.Errorf("%w: pair %s is %s", ErrRelay, slug, s.Status)
-		}
 		if err := s.mutationError(); err != nil {
 			return nil, err
 		}
@@ -174,9 +171,6 @@ func (l *Ledger) Join(slug string, dryRun bool) (*Session, error) {
 		s, err = l.LoadSession(slug)
 		if err != nil {
 			return err
-		}
-		if s.Terminal() {
-			return fmt.Errorf("%w: pair %s is %s", ErrRelay, slug, s.Status)
 		}
 		if err := s.mutationError(); err != nil {
 			return err

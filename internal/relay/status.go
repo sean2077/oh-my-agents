@@ -79,7 +79,7 @@ func (l *Ledger) Status(slug string, last int) (*PairStatus, error) {
 
 	for _, p := range s.Participants {
 		info := HeartbeatInfo{}
-		sessionKey, _ := s.participantSession(p)
+		sessionKey := s.participantSession(p)
 		if age, ok := l.heartbeatAge(s.Pair, p, sessionKey); ok {
 			t := l.Now().Add(-age)
 			info.LastBeat = &t
@@ -100,7 +100,7 @@ func (l *Ledger) Status(slug string, last int) (*PairStatus, error) {
 		}
 	}
 	peer, _ := s.Peer(l.Identity.Author)
-	peerSession, _ := s.participantSession(peer)
+	peerSession := s.participantSession(peer)
 	for _, seq := range l.reservations(s.Pair, peer, peerSession) {
 		st.PeerReservations = append(st.PeerReservations, seq)
 		if l.hasReadyAt(s.Pair, seq, peer) {

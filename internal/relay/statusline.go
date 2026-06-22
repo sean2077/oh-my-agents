@@ -102,7 +102,7 @@ func (l *Ledger) statuslineState(explicit string) *StatuslineState {
 		st.Turn = "you" // freshly bootstrapped: write the first artifact
 	case st.LatestAuthor == l.Identity.Author:
 		st.Turn = peer // waiting on the peer
-		peerSession, _ := s.participantSession(peer)
+		peerSession := s.participantSession(peer)
 		st.PeerStale = peer != "" && l.heartbeatStale(slug, peer, peerSession)
 	default:
 		st.Turn = "you" // peer addressed me

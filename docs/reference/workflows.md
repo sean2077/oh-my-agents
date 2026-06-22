@@ -80,7 +80,7 @@ running ──plateau_window consecutive rounds with no strict score gain (score
 any state ──abort──▶ aborted
 ```
 
-Fields: `id, revision, session, project_root, worktree_root, branch, base_commit, phase, goal, keep_policy(pass_only|score_improvement, default pass_only), max_rounds(default 10), round, checks[{round, verifier_exit, score?, note, at}], stall_window(default 3), plateau_window(default 3), best_round, best_score, created, updated`. `project_root` is the shared `.oma` owner and `worktree_root` is the checkout where the loop started; later commands refuse from another worktree unless `--allow-worktree-change` is passed intentionally. Under score_improvement, `checks[].score` is required and finite, and `best_round`/`best_score` record the strict best; for the `receipt`, see schemas.md §6.
+Fields: `id, revision, session, project_root, worktree_root, phase, goal, keep_policy(pass_only|score_improvement, default pass_only), max_rounds(default 10), round, checks[{round, verifier_exit, score?, note, at}], stall_window(default 3), plateau_window(default 3), best_round, best_score, created, updated`. `project_root` is the shared `.oma` owner and `worktree_root` is the checkout where the loop started; later commands refuse from another worktree unless `--allow-worktree-change` is passed intentionally. Under score_improvement, `checks[].score` is required and finite, and `best_round`/`best_score` record the strict best; for the `receipt`, see schemas.md §6.
 
 ### 2.2 Command semantics
 
