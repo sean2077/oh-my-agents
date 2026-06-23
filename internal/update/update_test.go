@@ -532,6 +532,21 @@ func TestParseSemverRejectsLeadingZero(t *testing.T) {
 	}
 }
 
+func TestParseSemverRejectsMalformedBuildMetadata(t *testing.T) {
+	bad := []string{"v1.2.3+.", "v1.2.3+build.", "v1.2.3+build..meta", "v1.2.3+", "v1.2.3-rc.1+"}
+	for _, s := range bad {
+		if IsSemver(s) {
+			t.Errorf("IsSemver(%q) = true, want false (malformed build metadata)", s)
+		}
+	}
+	good := []string{"v1.2.3+001", "v1.2.3+build.1", "v1.2.3+exp.sha", "v1.2.3-rc.1+build.2"}
+	for _, s := range good {
+		if !IsSemver(s) {
+			t.Errorf("IsSemver(%q) = false, want true (valid build metadata)", s)
+		}
+	}
+}
+
 func TestCompareVersions(t *testing.T) {
 	cases := []struct {
 		a, b string

@@ -450,7 +450,7 @@ func runVersionProbe(path string) (string, error) {
 
 // Core identifiers reject leading zeros (SemVer §2). Prerelease numeric
 // identifiers do too (§9) — enforced below, since the regex alone can't.
-var semverRe = regexp.MustCompile(`^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$`)
+var semverRe = regexp.MustCompile(`^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-([0-9A-Za-z.-]+))?(?:\+([0-9A-Za-z.-]+))?$`)
 
 // parseSemver extracts the MAJOR.MINOR.PATCH core and the prerelease string
 // (build metadata is accepted but ignored, per SemVer). ok is false for any
@@ -476,6 +476,15 @@ func parseSemver(s string) (core [3]int, prerelease string, ok bool) {
 				return core, "", false
 			}
 			if isAllDigits(id) && len(id) > 1 && id[0] == '0' {
+				return core, "", false
+			}
+		}
+	}
+	if build := m[5]; build != "" {
+		// Build metadata is dot-separated identifiers that must each be
+		// non-empty (§10); it is otherwise ignored for precedence.
+		for _, id := range strings.Split(build, ".") {
+			if id == "" {
 				return core, "", false
 			}
 		}
