@@ -61,7 +61,10 @@ freezes the *contract*, those files describe the *surface*.
    bundle `assets-<version>.tar.gz`; `self-update` (`--channel stable|prerelease`,
    `--version <tag>`) and `oma asset install --ref` resolve releases from GitHub
    Releases of this repo only, checksum- and version-verified, SemVer-gated
-   (downgrades refused without `--allow-downgrade`), fail-closed (security-contract §5).
+   (downgrades refused without `--allow-downgrade`), fail-closed
+   (security-contract §5). Prerelease tags (`vX.Y.Z-rc.N`, `vX.Y.Z-beta.N`,
+   etc.) are published as GitHub prereleases and excluded from the stable
+   `/releases/latest` channel; `--channel prerelease` is the opt-in path.
 10. **Supported platforms** — see below.
 
 ## Not frozen (may change in any 1.x release)

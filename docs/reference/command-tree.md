@@ -128,7 +128,7 @@ oma relay close --outcome <approve|reject|abandon> --reason <text> [--pair <slug
 oma config show [--json]       # prints the effective config + per-key source (flag/env/project/user/default); read-only
 oma config path [--json]       # prints the resolved user/project config file locations; read-only
 oma self-update [--check] [--channel stable|prerelease] [--version <tag>] [--allow-downgrade]
-                               # SemVer-gated: offers only a strictly newer release and refuses downgrades unless --allow-downgrade; --channel prerelease includes prereleases (default stable), --version pins an exact tag; --check is strictly read-only (compare only); --dry-run discloses the paths to be downloaded/replaced; flow and security in security-contract.md §5
+                               # SemVer-gated: offers only a strictly newer release and refuses downgrades unless --allow-downgrade; --channel prerelease includes prereleases (default stable), --version pins an exact tag; --check is strictly read-only (compare only); --dry-run downloads/verifies the release artifact in an auto-cleaned private temp dir, discloses the paths to be replaced, and writes no persistent target state; flow and security in security-contract.md §5
 oma version [--json]           # version, commit, schema version summary
 ```
 

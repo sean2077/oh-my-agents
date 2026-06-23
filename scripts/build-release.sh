@@ -9,6 +9,10 @@ VERSION="${1:-${GITHUB_REF_NAME:-dev}}"
 COMMIT="${COMMIT:-$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo none)}"
 OUT_DIR="${OUT_DIR:-$ROOT/dist}"
 
+if [[ "$VERSION" != "dev" ]]; then
+  "$ROOT/scripts/validate-release-tag.sh" "$VERSION" >/dev/null
+fi
+
 if [[ "$OUT_DIR" != /* ]]; then
   OUT_DIR="$ROOT/$OUT_DIR"
 fi

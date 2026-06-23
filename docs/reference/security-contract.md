@@ -29,14 +29,15 @@
 
 ## 5. self-update trust chain
 
-- The update source is **restricted** to GitHub Releases of the compile-time constant `github.com/sean2077/oh-my-agents`; it does not follow cross-repo/cross-domain redirects; the asset name must match the `oma_<version>_<os>_<arch>` pattern, and an unexpected name is fail-closed.
+- The update source is **restricted** to GitHub Releases of the compile-time constant `github.com/sean2077/oh-my-agents`; it does not follow cross-repo/cross-domain or HTTPS-to-HTTP redirects; the asset name must match the `oma_<version>_<os>_<arch>` pattern, and an unexpected name is fail-closed.
 - After download, verify the SHA-256 from the `checksums.txt` shipped with the release; a mismatch → refuse and keep the current binary (when the release pipeline supports signing, this upgrades to signature verification — a minor-evolution slot is left open).
+- `--dry-run` runs the same remote validation as a real update — download `checksums.txt`, reject duplicate/missing target entries, download and hash the target binary, chmod it executable, and run the version self-check — using an auto-cleaned private temp directory rather than `<binary>.oma-update-tmp` or `.old`.
 - Replacement: write a tmp file in the same directory → verify it is executable → atomic rename to swap it in; the old binary is first backed up as `<path>.old`; if the post-replacement self-check (a `--version` subprocess) fails → automatically roll back to `.old`.
 - Target path not writable → degrade to printing manual-update guidance (no privilege escalation, no sudo).
 - `--check` is strictly read-only: it only queries and compares versions, with zero disk writes.
 - **Installer parity** (`scripts/install.sh`, `scripts/install.ps1`): first install consumes the same release/asset/checksum contract and is equally fail-closed — it resolves a release, downloads only the `oma_<version>_<os>_<arch>` asset, rejects duplicate checksum entries for consumed files, verifies SHA-256 against the release `checksums.txt`, prepares the artifact executable before probing its version, then asserts the freshly installed binary reports exactly the requested version. It never silently degrades to a source build or to the unreleased `main` branch: a source build is an explicit opt-in (`OMA_INSTALL_FROM_SOURCE=1`) that still prefers the newest released tag. The default install tracks the latest release; for a reproducible install the README documents fetching the installer script pinned to a release tag (immutable) instead of the mutable `main` ref.
 - **Remote asset bundle parity** (`oma asset install --ref`): the bundle is fetched only from this repository's release downloads, verified against the consumed `assets-<version>.tar.gz` checksum entry, and safely extracted under a private temp directory. The fetcher enforces compressed response size, per-entry size, total extracted size, entry count, path traversal, and file-type limits before the asset engine sees the source tree; any refusal removes the temp tree.
-- Test: checksum mismatch, metadata unavailable, target not writable, replacement interrupted (kill injection), self-check failure rollback, `--check` zero disk writes.
+- Test: checksum mismatch, metadata unavailable, target not writable, replacement interrupted (kill injection), self-check failure rollback, `--check` zero disk writes, `--dry-run` full remote validation with zero persistent target writes.
 
 ## 6. relay peer-input handling
 

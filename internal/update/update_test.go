@@ -27,6 +27,7 @@ type fakeRelease struct {
 	dupBinary  bool     // serve the platform binary asset twice (ambiguous release)
 	dupSums    bool     // serve checksums.txt twice (ambiguous release)
 	dupSumName bool     // serve duplicate checksum entries for the same consumed file
+	requestLog *[]string
 }
 
 func serveRelease(t *testing.T, fr fakeRelease) *httptest.Server {
@@ -39,7 +40,13 @@ func serveRelease(t *testing.T, fr fakeRelease) *httptest.Server {
 	if fr.badName {
 		assetName = "definitely-not-oma.tar.gz"
 	}
-	mux.HandleFunc("/repos/"+Repo+"/releases/latest", func(w http.ResponseWriter, _ *http.Request) {
+	record := func(r *http.Request) {
+		if fr.requestLog != nil {
+			*fr.requestLog = append(*fr.requestLog, r.URL.Path)
+		}
+	}
+	mux.HandleFunc("/repos/"+Repo+"/releases/latest", func(w http.ResponseWriter, r *http.Request) {
+		record(r)
 		binURL := srv.URL + "/dl/" + assetName
 		if fr.foreignURL {
 			binURL = "https://evil.example.com/dl/" + assetName
@@ -63,10 +70,12 @@ func serveRelease(t *testing.T, fr fakeRelease) *httptest.Server {
 		}
 		_, _ = fmt.Fprintf(w, `{"tag_name":%q,"assets":[%s]}`, fr.tag, strings.Join(assets, ","))
 	})
-	mux.HandleFunc("/dl/"+assetName, func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/dl/"+assetName, func(w http.ResponseWriter, r *http.Request) {
+		record(r)
 		_, _ = w.Write(fr.binary)
 	})
-	mux.HandleFunc("/dl/checksums.txt", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/dl/checksums.txt", func(w http.ResponseWriter, r *http.Request) {
+		record(r)
 		sum := sha256.Sum256(fr.sumOf)
 		_, _ = fmt.Fprintf(w, "%s  %s\n", hex.EncodeToString(sum[:]), assetName)
 		if fr.dupSumName {
@@ -93,6 +102,7 @@ func testUpdater(t *testing.T, srv *httptest.Server, newVersion string) (*Update
 		Arch:       "amd64",
 		Out:        io.Discard,
 		SelfCheck:  func(string) (string, error) { return newVersion, nil },
+		TempDir:    t.TempDir(),
 	}
 	return u, bin
 }
@@ -354,7 +364,8 @@ func TestCheckIsStrictlyReadOnly(t *testing.T) {
 
 func TestDryRunDisclosesPathsWritesNothing(t *testing.T) {
 	newBin := []byte("NEW")
-	srv := serveRelease(t, fakeRelease{tag: "v0.0.9", binary: newBin, sumOf: newBin})
+	var requests []string
+	srv := serveRelease(t, fakeRelease{tag: "v0.0.9", binary: newBin, sumOf: newBin, requestLog: &requests})
 	u, bin := testUpdater(t, srv, "v0.0.9")
 	var out strings.Builder
 	u.Out = &out
@@ -370,6 +381,59 @@ func TestDryRunDisclosesPathsWritesNothing(t *testing.T) {
 	}
 	if got := dirFingerprint(t, filepath.Dir(bin)); got != before {
 		t.Fatal("dry-run wrote to the binary directory")
+	}
+	for _, want := range []string{"/dl/checksums.txt", "/dl/oma_v0.0.9_linux_amd64"} {
+		if !sawRequest(requests, want) {
+			t.Fatalf("dry-run did not request %s; requests=%v", want, requests)
+		}
+	}
+	if entries, err := os.ReadDir(u.TempDir); err != nil || len(entries) != 0 {
+		t.Fatalf("dry-run validation temp dir not cleaned: entries=%v err=%v", entries, err)
+	}
+}
+
+func TestDryRunChecksumMismatchFailsClosedAndCleansTemp(t *testing.T) {
+	srv := serveRelease(t, fakeRelease{tag: "v0.0.9", binary: []byte("TAMPERED"), sumOf: []byte("EXPECTED")})
+	u, bin := testUpdater(t, srv, "v0.0.9")
+	before := dirFingerprint(t, filepath.Dir(bin))
+	rel, _, err := u.Check()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := u.Apply(rel, true, false); !errors.Is(err, ErrUpdate) || !strings.Contains(err.Error(), "checksum mismatch") {
+		t.Fatalf("dry-run checksum mismatch: err = %v", err)
+	}
+	if got := dirFingerprint(t, filepath.Dir(bin)); got != before {
+		t.Fatal("dry-run checksum mismatch changed the binary directory")
+	}
+	if entries, err := os.ReadDir(u.TempDir); err != nil || len(entries) != 0 {
+		t.Fatalf("dry-run checksum mismatch left temp residue: entries=%v err=%v", entries, err)
+	}
+}
+
+func TestDryRunWrongVersionFailsClosedAndCleansTemp(t *testing.T) {
+	newBin := []byte("WRONG VERSION BINARY")
+	srv := serveRelease(t, fakeRelease{tag: "v0.0.9", binary: newBin, sumOf: newBin})
+	u, bin := testUpdater(t, srv, "v0.0.8")
+	before := dirFingerprint(t, filepath.Dir(bin))
+	rel, _, err := u.Check()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := u.Apply(rel, true, false); !errors.Is(err, ErrUpdate) || !strings.Contains(err.Error(), "self-check") {
+		t.Fatalf("dry-run wrong version: err = %v", err)
+	}
+	if got := dirFingerprint(t, filepath.Dir(bin)); got != before {
+		t.Fatal("dry-run wrong-version validation changed the binary directory")
+	}
+	if _, err := os.Lstat(bin + ".old"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("dry-run wrong-version validation must not create .old")
+	}
+	if _, err := os.Lstat(bin + ".oma-update-tmp"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("dry-run wrong-version validation must not create the target temp file")
+	}
+	if entries, err := os.ReadDir(u.TempDir); err != nil || len(entries) != 0 {
+		t.Fatalf("dry-run wrong-version validation left temp residue: entries=%v err=%v", entries, err)
 	}
 }
 
@@ -658,4 +722,41 @@ func TestResolveInvalidVersionAndChannelRejected(t *testing.T) {
 	if _, err := u.Resolve("weird", ""); err == nil || !strings.Contains(err.Error(), "unknown channel") {
 		t.Fatalf("unknown channel: err = %v", err)
 	}
+}
+
+func TestRestrictedClientRejectsNonHTTPSRedirects(t *testing.T) {
+	client := restrictedClient()
+	via, _ := http.NewRequest(http.MethodGet, "https://api.github.com/repos/"+Repo+"/releases/latest", nil)
+	cases := []struct {
+		name    string
+		target  string
+		wantErr string
+	}{
+		{name: "same host https", target: "https://github.com/" + Repo + "/releases/download/v1.0.0/oma_v1.0.0_linux_amd64"},
+		{name: "githubusercontent https", target: "https://objects.githubusercontent.com/github-production-release-asset-2e65be/asset"},
+		{name: "same host http", target: "http://github.com/" + Repo + "/releases/download/v1.0.0/oma_v1.0.0_linux_amd64", wantErr: "non-HTTPS"},
+		{name: "foreign host https", target: "https://evil.example.com/asset", wantErr: "foreign host"},
+	}
+	for _, tc := range cases {
+		req, _ := http.NewRequest(http.MethodGet, tc.target, nil)
+		err := client.CheckRedirect(req, []*http.Request{via})
+		if tc.wantErr == "" {
+			if err != nil {
+				t.Errorf("%s: err = %v, want nil", tc.name, err)
+			}
+			continue
+		}
+		if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+			t.Errorf("%s: err = %v, want %q", tc.name, err, tc.wantErr)
+		}
+	}
+}
+
+func sawRequest(requests []string, want string) bool {
+	for _, got := range requests {
+		if got == want {
+			return true
+		}
+	}
+	return false
 }

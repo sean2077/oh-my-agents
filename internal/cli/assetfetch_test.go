@@ -252,3 +252,31 @@ func TestAssetFetcherValidate(t *testing.T) {
 		t.Errorf("validate(valid) = %v", err)
 	}
 }
+
+func TestAssetRestrictedClientRejectsNonHTTPSRedirects(t *testing.T) {
+	client := assetRestrictedClient()
+	via, _ := http.NewRequest(http.MethodGet, "https://github.com/sean2077/oh-my-agents/releases/download/v1.0.0/checksums.txt", nil)
+	cases := []struct {
+		name    string
+		target  string
+		wantErr string
+	}{
+		{name: "github https", target: "https://github.com/sean2077/oh-my-agents/releases/download/v1.0.0/assets-v1.0.0.tar.gz"},
+		{name: "githubusercontent https", target: "https://objects.githubusercontent.com/github-production-release-asset-2e65be/asset"},
+		{name: "github http", target: "http://github.com/sean2077/oh-my-agents/releases/download/v1.0.0/assets-v1.0.0.tar.gz", wantErr: "non-HTTPS"},
+		{name: "foreign https", target: "https://evil.example.com/assets-v1.0.0.tar.gz", wantErr: "foreign host"},
+	}
+	for _, tc := range cases {
+		req, _ := http.NewRequest(http.MethodGet, tc.target, nil)
+		err := client.CheckRedirect(req, []*http.Request{via})
+		if tc.wantErr == "" {
+			if err != nil {
+				t.Errorf("%s: err = %v, want nil", tc.name, err)
+			}
+			continue
+		}
+		if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+			t.Errorf("%s: err = %v, want %q", tc.name, err, tc.wantErr)
+		}
+	}
+}

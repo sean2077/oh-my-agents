@@ -232,7 +232,7 @@ gofmt -l .              # must be empty
 go vet ./...
 ```
 
-CI runs the 3-platform test matrix with `-race`, `gofmt`/`vet`/`build`, `golangci-lint`, and `govulncheck` on every push and PR. Releases call the **same** pipeline as a hard gate, then promote the exact built-and-verified artifacts (no rebuild) with a checksums manifest, a tag-version gate, a build-provenance attestation, and an SBOM. The compatibility contract is [`STABILITY.md`](STABILITY.md).
+CI runs the 3-platform test matrix with `-race`, `gofmt`/`vet`/`build`, `golangci-lint`, and `govulncheck` on every push and PR. Releases call the **same** pipeline as a hard gate, then promote the exact built-and-verified artifacts (no rebuild) with a checksums manifest, a strict SemVer tag gate, prerelease/latest classification checks, a build-provenance attestation, and an SBOM. The compatibility contract is [`STABILITY.md`](STABILITY.md).
 
 This project is itself built through its own `pair-delivery` workflow: every slice is cross-reviewed by a second agent over the `oma relay` ledger before it lands. The skill that describes that process is the one we used to build it.
 

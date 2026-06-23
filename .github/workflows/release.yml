@@ -16,15 +16,31 @@ permissions:
   contents: read
 
 jobs:
+  tag:
+    name: Validate release tag
+    runs-on: ubuntu-latest
+    outputs:
+      is_prerelease: ${{ steps.validate.outputs.is_prerelease }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Validate SemVer release tag
+        id: validate
+        run: |
+          scripts/validate-release-tag.sh "$GITHUB_REF_NAME" | tee "$RUNNER_TEMP/release-tag.env"
+          cat "$RUNNER_TEMP/release-tag.env" >> "$GITHUB_OUTPUT"
+
   # Hard release gate: the same jobs ci.yml runs, on all three platforms.
   build:
+    needs: tag
     uses: ./.github/workflows/build.yml
     with:
       version: ${{ github.ref_name }}
 
   publish:
     name: Publish release
-    needs: build
+    needs: [tag, build]
     runs-on: ubuntu-latest
     permissions:
       contents: write       # create the release and upload assets
@@ -89,8 +105,13 @@ jobs:
       - name: Create or reuse a draft release
         env:
           GH_TOKEN: ${{ github.token }}
+          IS_PRERELEASE: ${{ needs.tag.outputs.is_prerelease }}
         run: |
           tag="${GITHUB_REF_NAME}"
+          latest_args=()
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            latest_args+=(--latest=false)
+          fi
           if gh release view "$tag" >/dev/null 2>&1; then
             # An ALREADY-PUBLISHED release must never be reverted to draft (that
             # would hide a valid public release when the no-clobber upload below
@@ -99,9 +120,15 @@ jobs:
               echo "release $tag is already published; refusing to revert it to draft — cut a new version instead" >&2
               exit 1
             fi
-            gh release edit "$tag" --title "$tag" --notes-file "$RUNNER_TEMP/release-notes.md" --verify-tag --draft
+            gh release edit "$tag" --title "$tag" --notes-file "$RUNNER_TEMP/release-notes.md" --verify-tag --draft --prerelease="$IS_PRERELEASE"
           else
-            gh release create "$tag" --title "$tag" --notes-file "$RUNNER_TEMP/release-notes.md" --verify-tag --draft
+            gh release create "$tag" --title "$tag" --notes-file "$RUNNER_TEMP/release-notes.md" --verify-tag --draft --prerelease="$IS_PRERELEASE" "${latest_args[@]}"
+          fi
+          actual_draft="$(gh release view "$tag" --json isDraft -q .isDraft)"
+          actual_prerelease="$(gh release view "$tag" --json isPrerelease -q .isPrerelease)"
+          if [ "$actual_draft" != "true" ] || [ "$actual_prerelease" != "$IS_PRERELEASE" ]; then
+            echo "release classification mismatch before upload: draft=$actual_draft prerelease=$actual_prerelease want draft=true prerelease=$IS_PRERELEASE" >&2
+            exit 1
           fi
 
       # No --clobber: a re-run never silently overwrites an already-uploaded asset.
@@ -133,4 +160,13 @@ jobs:
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release edit "$GITHUB_REF_NAME" --draft=false --verify-tag
+          IS_PRERELEASE: ${{ needs.tag.outputs.is_prerelease }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          gh release edit "$tag" --draft=false --verify-tag --prerelease="$IS_PRERELEASE"
+          actual_draft="$(gh release view "$tag" --json isDraft -q .isDraft)"
+          actual_prerelease="$(gh release view "$tag" --json isPrerelease -q .isPrerelease)"
+          if [ "$actual_draft" != "false" ] || [ "$actual_prerelease" != "$IS_PRERELEASE" ]; then
+            echo "published release classification mismatch: draft=$actual_draft prerelease=$actual_prerelease want draft=false prerelease=$IS_PRERELEASE" >&2
+            exit 1
+          fi

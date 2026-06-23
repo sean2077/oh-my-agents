@@ -4,6 +4,20 @@
 >
 > Section heading format: `## vX.Y.Z - YYYY-MM-DD` (CI matches the tag by exact prefix; a tag with no matching section fails the release, fail-closed).
 
+## v1.0.0-rc.1 - 2026-06-23
+
+This release candidate freezes the intended 1.0 CLI, JSON, disk-schema, release-channel, and core4 skill contracts for final validation. It is published as a GitHub prerelease and is excluded from the stable `self-update` channel; use `oma self-update --channel prerelease` or `--version v1.0.0-rc.1` to opt in.
+
+- **1.0 compatibility contract**: [`STABILITY.md`](STABILITY.md) is the release contract for command names, flags, exit codes, JSON schema evolution, on-disk schema evolution, asset projection, relay protocol behavior, core4 behavior, artifact names, and supported platforms.
+- **State compatibility**: persistent state written by `v0.9.x` is directly supported by this RC. Existing explicit migrations remain one-shot, fail-closed `oma doctor` flows with backups; no long-lived dual-read compatibility layer is introduced.
+- **Release channels**: stable self-update reads GitHub's latest non-prerelease release only. Prerelease tags such as this RC are marked `isPrerelease=true`, never promoted to latest, and are selected only by `--channel prerelease` or an explicit `--version`.
+- **Installer and updater hardening**: Unix online installs chmod the downloaded artifact before version probing; installer backups use a two-phase commit; self-update dry-run now performs the same checksum, download, chmod, and version self-check as a real update while leaving no persistent target writes; updater and asset-bundle redirects refuse HTTPS-to-HTTP downgrades.
+- **Asset bundle hardening**: remote `oma asset install --ref` verifies the bundle checksum, safely extracts through a private temp directory, enforces compressed/per-file/total/entry limits, rejects duplicate consumed checksum entries, and dry-runs through the full engine path before printing exact target paths.
+- **Verification matrix**: CI runs Linux, macOS, and Windows Go tests with `-race`, `gofmt`, `go vet`, `golangci-lint`, `govulncheck`, Unix installer release-branch smokes, Windows installer smoke, build-once packaging, and exact-artifact installer checks on Linux, macOS, and Windows.
+- **Host compatibility recorded on 2026-06-23**: Claude Code `2.1.186` and `codex-cli 0.142.0` were available in the maintainer environment used for this RC preparation. Host behavior is confined to documented projection paths, hook snippets, and statusline/Stop-hook wiring; host config remains user-owned.
+- **Known limits**: GitHub immutable releases must still be confirmed in repository settings; GitHub Actions are not yet pinned to full commit SHA references; final `v1.0.0` should follow only after RC clean-machine install, asset install, self-update stable/prerelease, downgrade refusal, rollback, and uninstall checks pass on Linux, macOS, and Windows.
+- **Upgrade and rollback**: upgrade with the install script, `oma self-update --channel prerelease`, or `oma self-update --version v1.0.0-rc.1`. Self-update keeps the previous binary at `<oma>.old` after a successful replacement and rolls back automatically if the post-replace version self-check fails.
+
 ## v0.9.1 - 2026-06-22
 
 This patch release repairs the v0.9.0 publish gate after the Windows installer smoke exposed a CI-only failure. It does not change CLI behavior or shipped workflow schemas.

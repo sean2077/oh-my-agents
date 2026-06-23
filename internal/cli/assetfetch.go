@@ -75,6 +75,9 @@ func assetRestrictedClient() *http.Client {
 			if len(via) >= 10 {
 				return fmt.Errorf("too many redirects")
 			}
+			if req.URL.Scheme != "https" {
+				return fmt.Errorf("redirect to non-HTTPS URL refused")
+			}
 			host := req.URL.Hostname()
 			if host == "github.com" || strings.HasSuffix(host, ".githubusercontent.com") {
 				return nil

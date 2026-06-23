@@ -59,6 +59,7 @@ type Updater struct {
 	OS, Arch   string                            // default runtime.GOOS/GOARCH
 	SelfCheck  func(path string) (string, error) // default: run `path version --json`
 	Out        io.Writer                         // progress / manual instructions
+	TempDir    string                            // optional parent for dry-run validation downloads
 }
 
 // New builds a production Updater for the running binary.
@@ -91,6 +92,9 @@ func restrictedClient() *http.Client {
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 10 {
 				return fmt.Errorf("%w: too many redirects", ErrUpdate)
+			}
+			if req.URL.Scheme != "https" {
+				return fmt.Errorf("%w: redirect to non-HTTPS URL refused", ErrUpdate)
 			}
 			host := req.URL.Hostname()
 			if host == "api.github.com" || host == "github.com" || strings.HasSuffix(host, ".githubusercontent.com") {
@@ -227,7 +231,9 @@ func (u *Updater) updateAvailable(remote string) bool {
 }
 
 // Apply downloads, verifies and atomically installs the release over the
-// running binary. dryRun discloses the exact paths and writes nothing.
+// running binary. dryRun discloses the exact paths and writes no persistent
+// target state; it may use an auto-cleaned private temp dir to validate the
+// remote artifact.
 // allowDowngrade permits replacing the running binary with an equal or older
 // release; without it a downgrade is refused fail-closed.
 func (u *Updater) Apply(rel *Release, dryRun, allowDowngrade bool) error {
@@ -277,12 +283,6 @@ func (u *Updater) Apply(rel *Release, dryRun, allowDowngrade bool) error {
 		}
 		return fmt.Errorf("%w: %s does not exist", ErrUpdate, u.BinaryPath)
 	}
-	if dryRun {
-		_, _ = fmt.Fprintf(u.Out, "would download %s\nwould verify against %s\nwould write %s\nwould backup %s -> %s (rotating any previous backup)\nwould replace %s\n",
-			binAsset.URL, sumAsset.URL, tmp, u.BinaryPath, old, u.BinaryPath)
-		return nil
-	}
-
 	sums, err := u.fetchChecksums(sumAsset.URL, wantName)
 	if err != nil {
 		return err
@@ -291,20 +291,25 @@ func (u *Updater) Apply(rel *Release, dryRun, allowDowngrade bool) error {
 	if !ok {
 		return fmt.Errorf("%w: checksums.txt has no entry for %q", ErrUpdate, wantName)
 	}
+	if dryRun {
+		validationDir, err := os.MkdirTemp(u.TempDir, "oma-self-update-")
+		if err != nil {
+			return fmt.Errorf("%w: create dry-run validation temp dir: %v", ErrUpdate, err)
+		}
+		defer func() { _ = os.RemoveAll(validationDir) }()
+		validationPath := filepath.Join(validationDir, wantName)
+		if err := u.prepareCandidate(validationPath, binAsset.URL, wantSum, rel.TagName); err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintf(u.Out, "would download %s\nwould verify against %s\nwould write %s\nwould backup %s -> %s (rotating any previous backup)\nwould replace %s\n",
+			binAsset.URL, sumAsset.URL, tmp, u.BinaryPath, old, u.BinaryPath)
+		return nil
+	}
 
 	// Download to a same-directory temp so the final rename is atomic.
-	if err := u.downloadTo(tmp, binAsset.URL, wantSum); err != nil {
+	if err := u.prepareCandidate(tmp, binAsset.URL, wantSum, rel.TagName); err != nil {
 		_ = os.Remove(tmp)
 		return err
-	}
-	if err := os.Chmod(tmp, 0o755); err != nil {
-		_ = os.Remove(tmp)
-		return err
-	}
-	// Pre-flight the NEW binary before it takes over the real path.
-	if got, err := u.SelfCheck(tmp); err != nil || got != rel.TagName {
-		_ = os.Remove(tmp)
-		return fmt.Errorf("%w: downloaded binary failed self-check (version %q err=%v); current binary untouched", ErrUpdate, got, err)
 	}
 
 	// Swap: current -> .old (atomically rotating a previous successful
@@ -325,6 +330,23 @@ func (u *Updater) Apply(rel *Release, dryRun, allowDowngrade bool) error {
 		return fmt.Errorf("%w: post-replace self-check failed (version %q err=%v); previous binary rolled back", ErrUpdate, got, err)
 	}
 	_, _ = fmt.Fprintf(u.Out, "updated %s -> %s (previous kept at %s)\n", u.Current, rel.TagName, old)
+	return nil
+}
+
+func (u *Updater) prepareCandidate(path, rawURL, wantSum, tag string) error {
+	if err := u.downloadTo(path, rawURL, wantSum); err != nil {
+		_ = os.Remove(path)
+		return err
+	}
+	if err := os.Chmod(path, 0o755); err != nil {
+		_ = os.Remove(path)
+		return err
+	}
+	// Pre-flight the NEW binary before it takes over the real path.
+	if got, err := u.SelfCheck(path); err != nil || got != tag {
+		_ = os.Remove(path)
+		return fmt.Errorf("%w: downloaded binary failed self-check (version %q err=%v); current binary untouched", ErrUpdate, got, err)
+	}
 	return nil
 }
 
