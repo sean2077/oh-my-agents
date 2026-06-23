@@ -4,7 +4,9 @@ name: Release Assets
 # govulncheck, package) as a hard gate; only if every job passes does the
 # publish job run. Publish downloads the exact artifacts the pipeline built
 # and verified — it never rebuilds — then attests provenance, generates an
-# SBOM, and uploads without --clobber (existing assets are never overwritten).
+# SBOM, and uploads to a DRAFT release; the assets are pulled back and
+# re-verified (checksums + expected asset set) before the release is published,
+# so a partial or tampered upload never appears as a live release.
 on:
   push:
     tags:
@@ -58,11 +60,13 @@ jobs:
             exit 1
           fi
 
-      # Software Bill of Materials for the release.
+      # SBOM of the actual shipped artifacts (syft reads each Go binary's embedded
+      # module info), so the bill of materials reflects what users download rather
+      # than just the source tree. It is attested below, not left unverifiable.
       - name: Generate SBOM
         uses: anchore/sbom-action@v0
         with:
-          path: .
+          path: dist
           format: spdx-json
           output-file: dist/sbom.spdx.json
           upload-artifact: false
@@ -74,22 +78,52 @@ jobs:
       - name: Attest build provenance
         uses: actions/attest-build-provenance@v4
         with:
-          subject-path: dist/oma_*
+          subject-path: |
+            dist/oma_*
+            dist/assets-*.tar.gz
+            dist/sbom.spdx.json
 
-      - name: Create or update release
+      # Draft first: assets upload to a NON-public release, get verified, and
+      # only then is it published — a partial upload never appears as a live
+      # release (GitHub's recommended prep flow for immutable releases).
+      - name: Create or reuse a draft release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           tag="${GITHUB_REF_NAME}"
           if gh release view "$tag" >/dev/null 2>&1; then
-            gh release edit "$tag" --title "$tag" --notes-file "$RUNNER_TEMP/release-notes.md" --verify-tag
+            gh release edit "$tag" --title "$tag" --notes-file "$RUNNER_TEMP/release-notes.md" --verify-tag --draft
           else
-            gh release create "$tag" --title "$tag" --notes-file "$RUNNER_TEMP/release-notes.md" --verify-tag
+            gh release create "$tag" --title "$tag" --notes-file "$RUNNER_TEMP/release-notes.md" --verify-tag --draft
           fi
 
-      # No --clobber: a formal release never silently overwrites an asset that
-      # already exists. A re-tag with existing assets fails loudly instead.
-      - name: Upload assets
+      # No --clobber: a re-run never silently overwrites an already-uploaded asset.
+      - name: Upload assets to the draft
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "$GITHUB_REF_NAME" dist/*
+
+      # Pull the uploaded assets back down and re-verify integrity + the expected
+      # asset set before anything becomes public.
+      - name: Verify the draft's assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          dir="$RUNNER_TEMP/verify"
+          gh release download "$tag" --dir "$dir"
+          cd "$dir"
+          sha256sum --check checksums.txt
+          test -f "sbom.spdx.json" || { echo "missing sbom.spdx.json" >&2; exit 1; }
+          test -f "assets-${tag}.tar.gz" || { echo "missing assets-${tag}.tar.gz" >&2; exit 1; }
+          count="$(find . -maxdepth 1 -name "oma_${tag}_*" -type f | wc -l)"
+          if [ "$count" -ne 6 ]; then
+            echo "expected 6 platform binaries on the release, found $count" >&2
+            exit 1
+          fi
+          echo "draft assets verified: 6 binaries + checksums + sbom + assets bundle"
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$GITHUB_REF_NAME" --draft=false --verify-tag

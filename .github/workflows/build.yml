@@ -108,7 +108,12 @@ jobs:
         uses: actions/checkout@v7
 
       - name: shellcheck installers and release scripts
-        run: shellcheck scripts/install.sh scripts/build-release.sh scripts/extract-changelog.sh
+        run: shellcheck scripts/install.sh scripts/build-release.sh scripts/extract-changelog.sh scripts/test-install.sh
+
+      # Regression for the installer's verify-before-replace + rollback contract:
+      # a wrong-version artifact must not clobber a working install.
+      - name: install.sh verify-before-replace smoke
+        run: bash scripts/test-install.sh
 
       # Static half of the install.ps1 validation bar: pwsh ships on the runner,
       # so syntax-gate the PowerShell installer here. The end-to-end smoke half
@@ -190,6 +195,20 @@ jobs:
             exit 1
           fi
 
+      # The content-asset bundle `oma asset install --ref` fetches must actually
+      # carry the core4 skills, or a clean-machine install would fail.
+      - name: Verify assets bundle is well-formed
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          tmp="$(mktemp -d)"
+          tar -C "$tmp" -xzf "dist/assets-${VERSION}.tar.gz"
+          for s in deep-interview ralph autopilot pair-delivery; do
+            test -f "$tmp/skills/$s/manifest.json" \
+              || { echo "assets bundle missing skills/$s/manifest.json" >&2; exit 1; }
+          done
+          echo "assets bundle OK ($(find "$tmp" -name manifest.json | wc -l) manifests)"
+
       # The single set of built+verified artifacts. The release publish job
       # downloads exactly these and never recompiles (build-once, promote-same).
       - name: Upload release-dist artifact
@@ -199,3 +218,51 @@ jobs:
           path: dist/
           if-no-files-found: error
           retention-days: 7
+
+  # Prove the EXACT artifacts this run produced install cleanly through the real
+  # installers. The install-smoke job above only exercises a historical online
+  # release; this is the release gate for the just-built binaries (review ⑧).
+  verify-artifacts:
+    name: Verify built artifact installs (${{ matrix.os }})
+    needs: package
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Download built artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: release-dist
+          path: dist
+
+      - name: Install the freshly built binary via install.sh (linux)
+        if: runner.os == 'Linux'
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          OMA_INSTALL_FILE="dist/oma_${VERSION}_linux_amd64" \
+          OMA_INSTALL_VERSION="$VERSION" \
+          OMA_INSTALL_BIN_DIR="$RUNNER_TEMP/oma-verify" \
+            bash scripts/install.sh
+          got="$("$RUNNER_TEMP/oma-verify/oma" version --json | sed -nE 's/.*"version"[^"]*"([^"]+)".*/\1/p')"
+          [ "$got" = "$VERSION" ] || { echo "verify: installed '$got' want '$VERSION'" >&2; exit 1; }
+          echo "linux artifact install OK: $got"
+
+      - name: Install the freshly built binary via install.ps1 (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $bin = Join-Path 'dist' ("oma_{0}_windows_amd64.exe" -f $env:VERSION)
+          ./scripts/install.ps1 -File $bin -Version $env:VERSION -BinDir (Join-Path $env:RUNNER_TEMP 'oma-verify')
+          $exe = Join-Path $env:RUNNER_TEMP 'oma-verify/oma.exe'
+          $got = (& $exe version --json | ConvertFrom-Json).version
+          if ($got -ne $env:VERSION) { Write-Error "verify: installed '$got' want '$env:VERSION'"; exit 1 }
+          Write-Host "windows artifact install OK: $got"
