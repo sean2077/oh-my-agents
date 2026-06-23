@@ -286,8 +286,12 @@ install_from_file() {
   [ -f "$FILE" ] || err "OMA_INSTALL_FILE=$FILE is not a file"
   [ "$VERSION" != "latest" ] || err "OMA_INSTALL_FILE requires OMA_INSTALL_VERSION=<expected tag>"
   log "installing local binary $FILE ($VERSION)"
-  verify_artifact_version "$FILE" "$VERSION"
-  install_atomic "$FILE" "$VERSION"
+  local prepared
+  prepared="$tmpdir/local-$(basename "$BIN_NAME")"
+  cp "$FILE" "$prepared"
+  chmod 0755 "$prepared"
+  verify_artifact_version "$prepared" "$VERSION"
+  install_atomic "$prepared" "$VERSION"
   path_note
 }
 

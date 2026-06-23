@@ -44,6 +44,9 @@ residue="$(find "$bindir" -maxdepth 1 -name '.*' -type f)"
 # 2. A matching-version artifact installs cleanly and replaces the binary.
 good="$work/good-oma"
 fake_oma "$good" "v2.0.0"
+# GitHub Actions artifacts are downloaded from a zip and do not preserve the
+# executable bit. Local-file installs must still verify and install them.
+chmod 0644 "$good"
 OMA_INSTALL_FILE="$good" OMA_INSTALL_VERSION="v2.0.0" OMA_INSTALL_BIN_DIR="$bindir" \
   bash "$here/install.sh" >/dev/null 2>&1 || fail "install of a matching artifact should succeed"
 [ "$("$dest" version)" = '{"version":"v2.0.0"}' ] || fail "matching artifact was not installed"
