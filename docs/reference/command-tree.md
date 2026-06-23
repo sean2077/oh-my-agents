@@ -3,7 +3,7 @@
 ## 1. Global conventions
 
 - **Exit codes**: `0` success; `1` completed but with warnings (doctor check warnings, etc.); `2` usage error; `3` environment/state error (permissions, corrupt schema, fail-closed refusal); `4` gate not passed (gate/budget/refcheck verdict negative); relay wait uses a dedicated `10/11/12` (see §6).
-- **`--json`**: supported by all query commands; output carries a `schema` field (e.g. `"oma-cli/1"`); fields are stable once published, added fields are backward-compatible, and removal/rename requires a major bump.
+- **`--json`**: supported by all query commands; output carries a `schema` field (e.g. `"oma-cli/1"`); fields are stable once published, added fields are backward-compatible, and removal/rename requires a major bump. Every workflow `status --json` document (`interview`/`ralph`/`relay`) also exposes a stable **`terminal`** boolean; a new terminal/phase state string is a minor change, so consumers must treat the `phase`/`status` string as opaque and key their done/continue logic on `terminal` rather than enumerating the known states.
 - **`--dry-run`**: a **global persistent flag**, inherited by every mutating command (the whole asset family, state set, relay draft/publish/close, self-update, etc.); it prints the exact absolute paths to be created/modified/deleted and the operation type, touching nothing on disk (zero backups, zero leftover temp files). Query commands accept it but ignore it.
 - **`--session <slug|current>`**: a **global workflow-state scope** used by `state`, `interview`, and `ralph`; it defaults to `current`. `current` resolves `CODEX_THREAD_ID`, `CLAUDE_CODE_SESSION_ID`, or `OMA_SESSION_ID` into a path-safe suffix and fails closed when none is available. Pass an explicit slug only to override the platform session boundary. Relay commands accept the global flag as part of the root command surface but do not use it for pair isolation; relay uses platform author-session bindings instead.
 - **Error-message convention**: a single-line first sentence stating the reason for refusal plus a one-line suggested action (`hint:` prefix); a fail-closed refusal must name the check that triggered it.
@@ -12,7 +12,7 @@
 ## 2. `oma asset` — content asset management
 
 ```
-oma asset install <name>... [--agent claude,codex] [--dry-run] [--force]
+oma asset install [--ref <tag>|--from <root>] <name>... [--agent claude,codex] [--dry-run] [--force]
 oma asset list [--installed] [--json]
 oma asset update [<name>...] [--dry-run]        # alias: oma update
 oma asset remove <name>... [--dry-run]
@@ -22,7 +22,7 @@ oma asset audit [--from <root>] [--json]        # advisory bloat audit: LOC/resi
 oma asset link --dev [--repo <path>]            # dogfood: symlink the local checkout
 ```
 
-- `install`: asset files → canonical location `~/.agents/{skills,agents,hooks}/<name>/` → platform projection into each agent directory per the manifest's `targets` (`symlink` on Unix-like hosts; `junction` for native-Windows directory assets when available, managed `copy` fallback/file assets otherwise). By default all targets are projected; `--agent` narrows them. Hook assets are canonical-only (placed only in the canonical location, never injected into host config; the user wires them by hand — see relay-v2-protocol.md §12.4).
+- `install`: asset files → canonical location `~/.agents/{skills,agents,hooks}/<name>/` → platform projection into each agent directory per the manifest's `targets` (`symlink` on Unix-like hosts; `junction` for native-Windows directory assets when available, managed `copy` fallback/file assets otherwise). By default all targets are projected; `--agent` narrows them. Hook assets are canonical-only (placed only in the canonical location, never injected into host config; the user wires them by hand — see relay-v2-protocol.md §12.4). Source resolution: `--from <root>` (a local checkout's `assets/`) ＞ `--ref <tag>` (the pinned release's `assets-<tag>.tar.gz`, fetched over https and verified against that release's `checksums.txt`) ＞ default = the running binary's own version, so a clean machine installs the version-matched bundle and never an unpinned ref; a `dev` build with neither flag fails closed (`ExitState`).
 - Overwrite semantics: target already exists and is not oma-managed → refuse; `--force` backs up first, then overwrites (see security-contract.md §2).
 - `rollback`: restores from `~/.config/oma/backups/`; when `--to` is omitted, the most recent backup is used.
 - `link --dev`: rewrites the canonical entry to a symlink pointing at the repo checkout; the registry is marked `dev: true`.
@@ -127,7 +127,8 @@ oma relay close --outcome <approve|reject|abandon> --reason <text> [--pair <slug
 ```
 oma config show [--json]       # prints the effective config + per-key source (flag/env/project/user/default); read-only
 oma config path [--json]       # prints the resolved user/project config file locations; read-only
-oma self-update [--check]      # --check is strictly read-only (version comparison only); --dry-run follows the global contract (discloses the paths to be downloaded/replaced); flow and security requirements in security-contract.md §5
+oma self-update [--check] [--channel stable|prerelease] [--version <tag>] [--allow-downgrade]
+                               # SemVer-gated: offers only a strictly newer release and refuses downgrades unless --allow-downgrade; --channel prerelease includes prereleases (default stable), --version pins an exact tag; --check is strictly read-only (compare only); --dry-run discloses the paths to be downloaded/replaced; flow and security in security-contract.md §5
 oma version [--json]           # version, commit, schema version summary
 ```
 

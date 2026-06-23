@@ -7,6 +7,7 @@
 - Every persisted file carries a `schema` field in the form `oma-<domain>/<major>` (e.g. `oma-registry/1`).
 - **Unrecognized major → fail-closed**: reads and writes are refused, prompting the user to upgrade oma or check the file's origin.
 - Minor evolution = additive fields only: readers tolerate unknown fields (preserved and passed through, never dropped); deletion, renaming, or any semantic change must bump the major and ship an `oma doctor` migration subcommand (versioned migration is a terminal-state mechanism, not a transitional form).
+- **State-string evolution is additive too.** A minor may *add* a terminal/phase state string (a new ralph/interview phase, a new relay status) but never repurposes an existing one. Consumers must treat every `phase`/`status` string as opaque and tolerate values they do not recognize, keying done/continue logic on the stable `terminal` boolean that each `status --json` document exposes — never on an exhaustive switch over the known state set.
 - Writes are always atomic (unique same-directory tmp+rename) and `0600`; before writing state-like JSON documents, a single-generation `.bak` backup is taken of any existing file.
 
 ## 2. Install registry `~/.config/oma/registry.json` (`oma-registry/1`)

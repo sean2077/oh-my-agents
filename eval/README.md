@@ -101,6 +101,13 @@ To produce **real** numbers (replacing the shipped samples):
 4. **Write a predictions file** per arm: a two-column TSV,
    `<case-id><TAB><skill>` (`none` when no skill fired), `#`-comments allowed.
    See [`results/example-arm-c.tsv`](results/example-arm-c.tsv) for the format.
+   Record the run **provenance** in the file's `#` header — without it a number
+   is not reproducible and must not be quoted as a result:
+   - model + version and host + version (e.g. `claude-opus-4-8` on Claude Code
+     `x.y.z`, or a GPT model on Codex `a.b.c`);
+   - `oma version` (commit/build) and the case-manifest revision;
+   - the run date and the sampling settings (temperature / reasoning effort);
+   - the repetition index `i` of `k` (one file per repeat).
 5. **Score** each arm with `bash eval/run.sh <your-arm>.tsv --arm <label>` and
    compare the tables.
 
@@ -119,7 +126,10 @@ The §1.1 claim is supported if, across enough cases and repetitions:
 
 A single run is **anecdote, not evidence**: triggering is stochastic. Treat one
 predictions file as one sample; repeat each arm *k* times (fresh sessions),
-score each, and report the mean and spread per metric. The fixture is small by
+score each, and report the **mean and a confidence interval** per metric. A
+predictions file with missing, duplicate, or extra case-ids is invalid — fix it
+rather than scoring it. Never publish an accuracy claim without the per-run
+provenance (above) and the A/B/C comparison attached. The fixture is small by
 design — it is a *probe*, sized for repeated manual runs, not a benchmark with
 statistical power on its own. Widen [`cases/triggering.jsonl`](cases/triggering.jsonl)
 before drawing strong conclusions.

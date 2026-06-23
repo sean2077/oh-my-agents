@@ -43,7 +43,8 @@ write access to your `~/.agents` / `~/.config/oma`, are generally out of scope.
 Releases ship a `checksums.txt`; `oma self-update` and the installers verify both
 the SHA-256 and the installed binary's reported version, fail closed, and never
 follow cross-repo / cross-domain redirects (security-contract §5). Release
-binaries also carry build-provenance attestations — verify one with:
+binaries, the `assets-<version>.tar.gz` bundle, and the SBOM also carry
+build-provenance attestations — verify one with:
 
 ```bash
 gh attestation verify oma_<version>_<os>_<arch> --repo sean2077/oh-my-agents
@@ -52,6 +53,11 @@ gh attestation verify oma_<version>_<os>_<arch> --repo sean2077/oh-my-agents
 ## Release withdrawal
 
 A release found to ship a vulnerability is superseded by a patched release;
-`CHANGELOG.md` records the issue and the fixed version. Because release assets are
-never overwritten (`--clobber` is disallowed in the release workflow), a published
-asset cannot be silently swapped — a fix always lands as a new version.
+`CHANGELOG.md` records the issue and the fixed version. The release workflow
+publishes through a draft that is verified before going public and never passes
+`--clobber`, so the **pipeline itself** does not overwrite a published asset.
+This is workflow discipline, not a platform guarantee: until GitHub's
+immutable-releases setting is enabled for this repository, a maintainer (or a
+stolen token) with write access could still alter or delete assets. Treat the
+build-provenance attestation and `checksums.txt` as the authoritative integrity
+signal, and trust a new version over any in-place change.

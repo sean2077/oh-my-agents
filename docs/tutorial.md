@@ -71,6 +71,13 @@ canonical store and `oma` projects them into both `~/.claude/` and `~/.codex/`.
 oma asset install deep-interview ralph autopilot pair-delivery
 ```
 
+With no source flag, `oma asset install` fetches the assets bundle published with
+**your installed oma version** (verified against the release `checksums.txt`), so a
+clean machine needs nothing but the binary from step 1 — and it never fetches an
+unpinned ref. Pin a different release with `--ref <tag>`, or install from a local
+checkout with `--from ./assets` (when developing `oma` itself). A `dev` build has
+no release to match, so it asks for an explicit `--ref`/`--from`.
+
 Confirm what landed:
 
 ```bash

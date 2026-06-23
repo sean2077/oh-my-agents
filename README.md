@@ -98,10 +98,15 @@ Once releases are published, `oma self-update` updates the binary in place from 
 **Prerequisite: the `oma` CLI must be installed and on `PATH`** (see above) — the skills drive it for every mechanical step and do not work without it.
 
 ```bash
-# With oma, from a checkout of this repository
+# Clean machine: fetch the assets bundle matching your installed oma version
+# (verified against the release checksums.txt; never an unpinned fetch).
+oma asset install deep-interview ralph autopilot pair-delivery
+
+# Pin an explicit release, or install from a checkout of this repository:
+oma asset install --ref v1.0.0 deep-interview ralph autopilot pair-delivery
 ./oma asset install --from assets deep-interview ralph autopilot pair-delivery
 
-# Or directly through the npx skills installer
+# Or directly through the npx skills installer (skills only; not oma-managed)
 npx skills add sean2077/oh-my-agents -g --agent claude-code codex
 ```
 

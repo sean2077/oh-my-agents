@@ -11,7 +11,8 @@ not that the project has the most features. Until `1.0.0` the same rules are the
 |---|---|
 | Remove/rename a command, flag, exit code, or published JSON field; bump a disk-schema major; drop a supported platform | **MAJOR** |
 | Add a command/flag/JSON field/terminal state; additive disk-schema minor; new on-demand skill | **MINOR** |
-| Bug fix, doc change, skill wording, dependency bump with no contract change | **PATCH** |
+| Change a shipped skill's trigger semantics, gating, role responsibility, or phase/terminal behavior | **MINOR** |
+| Bug fix, doc change, non-behavioral skill wording, dependency bump with no contract change | **PATCH** |
 
 The authoritative details live in [`docs/reference/`](docs/reference/); this file
 freezes the *contract*, those files describe the *surface*.
@@ -26,9 +27,12 @@ freezes the *contract*, those files describe the *surface*.
    These are contractual and parseable by scripts.
 3. **JSON output** — every `--json` payload carries a `schema` field (e.g.
    `oma-cli/1`). Published fields are stable; new fields are additive and
-   backward-compatible; removing/renaming a field is a major. Terminal-state
-   strings (e.g. interview/ralph/relay states) are part of this contract;
-   1.x may *add* a terminal state (minor) but not repurpose an existing one.
+   backward-compatible; removing/renaming a field is a major. Adding a
+   terminal/phase state string is a **minor**, so the contract makes it *safe*:
+   every workflow `status --json` document exposes a stable `terminal` boolean,
+   and consumers must treat the `phase`/`status` string as opaque and tolerate
+   unknown values (key done/continue logic on `terminal`, never an exhaustive
+   switch). 1.x may *add* a terminal state but never repurposes an existing one.
 4. **On-disk schemas** — the persisted formats and their evolution policy in
    [`docs/reference/schemas.md`](docs/reference/schemas.md). The shipped majors
    are: `oma-registry/1`, `oma-state/1`, `oma-relay/2` (artifacts `oma-relay/4`,
@@ -44,21 +48,31 @@ freezes the *contract*, those files describe the *surface*.
 7. **Relay protocol** — sequence reservation, reader cursor, publish
    transaction, archive, and the completion-receipt gate
    ([`docs/reference/relay-v2-protocol.md`](docs/reference/relay-v2-protocol.md)).
-8. **core4 → CLI contract** — the `oma` commands the bundled `deep-interview`,
-   `ralph`, `autopilot`, and `pair-delivery` skills invoke. The CI `refcheck`
-   gate enforces that every `oma …` reference in a shipped skill resolves; the
-   *commands* those skills depend on are frozen (their prose is not — see below).
-9. **Release artifact naming & channels** — assets are `oma_<version>_<os>_<arch>[.exe]`
-   plus `checksums.txt`; `self-update` and the installers resolve releases from
-   GitHub Releases of this repo only, checksum- and version-verified, fail-closed
-   (security-contract §5).
+8. **core4 behavioral contract** — for the bundled `deep-interview`, `ralph`,
+   `autopilot`, and `pair-delivery` skills, the frozen surface is their **ids**,
+   the **trigger semantics** of each skill's `description`, the **`oma` commands**
+   they invoke (the CI `refcheck` gate enforces every `oma …` reference resolves),
+   and the **phase/terminal behavior and safety stops** those commands drive. A
+   skill's free-form prose is not frozen, but a change to any of these behavioral
+   properties is at least a minor (see the table above and the skill-prose note
+   below).
+9. **Release artifact naming & channels** — release assets are
+   `oma_<version>_<os>_<arch>[.exe]`, `checksums.txt`, and the content-asset
+   bundle `assets-<version>.tar.gz`; `self-update` (`--channel stable|prerelease`,
+   `--version <tag>`) and `oma asset install --ref` resolve releases from GitHub
+   Releases of this repo only, checksum- and version-verified, SemVer-gated
+   (downgrades refused without `--allow-downgrade`), fail-closed (security-contract §5).
 10. **Supported platforms** — see below.
 
 ## Not frozen (may change in any 1.x release)
 
-- **Skill prose.** The body of any `SKILL.md` is wording, not contract; it may
-  be rewritten in a minor/patch as long as the `oma` commands it calls stay
-  within the frozen CLI surface.
+- **Non-behavioral skill prose.** Examples, explanations, and phrasing in any
+  `SKILL.md` body may be rewritten in a patch. But a skill body is also runtime
+  policy: changes to *when it triggers, when it advances a phase, what evidence
+  it treats as sufficient, which `oma` commands it calls, or when it must stop*
+  are behavioral and follow the graded rule in the table above (at least a minor;
+  breaking an existing workflow contract is a major) — and for core4 these
+  properties are frozen per item 8.
 - **The on-demand skill catalog.** Skills may be added, deprecated, merged, or
   renamed (lifecycle status is tracked in `oma asset catalog`); only the
   core4↔CLI contract above is frozen.
@@ -84,9 +98,11 @@ freezes the *contract*, those files describe the *surface*.
   are idempotent, and fail closed on conflict. There is no long-lived dual-read
   compatibility layer (see [`docs/design-philosophy.md`](docs/design-philosophy.md) §3.4).
 - **Upgrade range.** A release migrates state written by any release back to the
-  oldest one still carrying a supported migration path; the `oma doctor`
-  migration coverage and `CHANGELOG.md` state the supported source versions for
-  each step. Downgrades are not supported once a major has migrated state.
+  oldest one still carrying a supported migration path; `oma doctor` migration
+  coverage and `CHANGELOG.md` name the supported source versions for each step.
+  At **1.0.0**, all `v0.9.x` persistent state — every shipped on-disk schema — is
+  directly migratable to `1.0.0`. Downgrades are not supported once a major has
+  migrated state.
 
 ## Supported platforms and minimum versions
 
@@ -94,8 +110,10 @@ freezes the *contract*, those files describe the *surface*.
   published release binaries). Other targets require an opt-in source build.
 - **Source builds** — the Go toolchain version pinned in `go.mod` (currently
   `go 1.25.11`) or newer.
-- **Hosts** — Claude Code and Codex on their current stable releases. `oma` is
-  host-neutral by contract; host-specific behavior is confined to the optional
+- **Hosts** — Claude Code and Codex. `oma` is host-neutral by contract and
+  targets no specific host version; each release records the host versions it was
+  last verified against, and the date, in `CHANGELOG.md`. Future host releases are
+  best-effort until verified. Host-specific behavior is confined to the optional
   acceleration branches noted above.
 
 ## Deprecation policy
