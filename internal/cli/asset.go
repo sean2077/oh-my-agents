@@ -112,11 +112,14 @@ func newAssetInstallCmd() *cobra.Command {
 				requested = cfg.Asset.DefaultAgents
 			}
 
-			// Resolve the assets source. A local --from wins; otherwise fetch
+			// Resolve the assets source. A local --from is mutually exclusive
+			// with --ref; without --from, fetch
 			// the pinned release bundle at --ref, defaulting to the running
 			// binary's own version so a clean machine just works. A dev/source
 			// build has no release to pin, so it must pass --ref or --from — we
-			// never fetch an unpinned ref (e.g. main).
+			// never fetch an unpinned ref (e.g. main). Dry-run still follows the
+			// full fetch/verify/extract path, using only an auto-cleaned temp dir,
+			// so it validates the exact remote bundle before reporting paths.
 			srcRoot, label := from, "dir"
 			if from == "" {
 				wantRef := ref
@@ -132,12 +135,6 @@ func newAssetInstallCmd() *cobra.Command {
 				if err := fetcher.validate(); err != nil {
 					return err
 				}
-				if DryRun() {
-					_, _ = fmt.Fprintf(cmd.OutOrStdout(),
-						"[dry-run] would fetch %s\n[dry-run] would verify it against %s/checksums.txt and install: %s\n",
-						fetcher.bundleURL(), fetcher.base(), strings.Join(args, " "))
-					return nil
-				}
 				root, cleanup, err := fetcher.Fetch(os.TempDir())
 				if err != nil {
 					return err
@@ -146,11 +143,16 @@ func newAssetInstallCmd() *cobra.Command {
 				srcRoot, label = root, "release"
 			}
 
+			sources := make([]string, 0, len(args))
 			for _, name := range args {
 				src, err := resolveSource(srcRoot, name)
 				if err != nil {
 					return err
 				}
+				sources = append(sources, src)
+			}
+			for i, name := range args {
+				src := sources[i]
 				rep, err := eng.Install(src, asset.Options{DryRun: DryRun(), Force: force, Source: label, Agents: requested})
 				if err != nil {
 					return Errf(ExitState, "install %s: %v", name, err)
@@ -164,6 +166,7 @@ func newAssetInstallCmd() *cobra.Command {
 	cmd.Flags().StringVar(&ref, "ref", "", "release tag to fetch the assets bundle from (default: this binary's version)")
 	cmd.Flags().BoolVar(&force, "force", false, "back up and replace unmanaged destinations")
 	cmd.Flags().StringSliceVar(&agents, "agent", nil, "narrow projection agents (final = manifest targets ∩ this; default from config asset.default_agents)")
+	cmd.MarkFlagsMutuallyExclusive("from", "ref")
 	return cmd
 }
 

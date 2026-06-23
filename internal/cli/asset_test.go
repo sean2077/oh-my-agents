@@ -5,8 +5,24 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func writeCLIAssetSource(t *testing.T, root, name string) {
+	t.Helper()
+	dir := filepath.Join(root, "skills", name)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	manifest := `{"schema":"oma-asset/1","name":"` + name + `","type":"skill","targets":["claude","codex"]}`
+	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("body"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestAssetAuditCLI(t *testing.T) {
 	root := t.TempDir()
@@ -58,5 +74,93 @@ func TestAssetAuditCLI(t *testing.T) {
 	}
 	if !bytes.Contains(buf2.Bytes(), []byte("demo")) || !bytes.Contains(buf2.Bytes(), []byte("ORPHAN")) {
 		t.Fatalf("text output missing demo/ORPHAN: %s", buf2.String())
+	}
+}
+
+func withAssetDownloadBase(t *testing.T, base string) {
+	t.Helper()
+	old := assetReleaseDownloadBase
+	assetReleaseDownloadBase = base
+	t.Cleanup(func() { assetReleaseDownloadBase = old })
+}
+
+func TestAssetInstallRemoteDryRunFetchesValidatesAndReportsPaths(t *testing.T) {
+	ref := "v1.2.3"
+	tarball := makeTarGz(t, map[string]string{
+		"skills/demo/manifest.json": `{"schema":"oma-asset/1","name":"demo","type":"skill","targets":["claude","codex"]}`,
+		"skills/demo/SKILL.md":      "body",
+	})
+	srv := serveAssets(t, ref, tarball, false)
+	withAssetDownloadBase(t, srv.URL)
+	home := t.TempDir()
+	t.Setenv("OMA_HOME", home)
+
+	code, out := runOma(t, "--dry-run", "asset", "install", "--ref", ref, "demo")
+	if code != ExitOK {
+		t.Fatalf("dry-run remote install exit %d: %s", code, out)
+	}
+	for _, want := range []string{
+		"[dry-run] create  " + filepath.Join(home, ".agents", "skills", "demo"),
+		"[dry-run] link    " + filepath.Join(home, ".claude", "skills", "demo"),
+		"[dry-run] link    " + filepath.Join(home, ".codex", "skills", "demo"),
+		"[dry-run] replace " + filepath.Join(home, ".config", "oma", "registry.json"),
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("dry-run output missing %q:\n%s", want, out)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(home, ".agents")); !os.IsNotExist(err) {
+		t.Fatalf("remote dry-run wrote canonical root: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".config", "oma", "registry.json")); !os.IsNotExist(err) {
+		t.Fatalf("remote dry-run wrote registry: %v", err)
+	}
+}
+
+func TestAssetInstallRemoteDryRunRejectsMissingAsset(t *testing.T) {
+	ref := "v1.2.3"
+	tarball := makeTarGz(t, map[string]string{
+		"skills/demo/manifest.json": `{"schema":"oma-asset/1","name":"demo","type":"skill","targets":["claude","codex"]}`,
+		"skills/demo/SKILL.md":      "body",
+	})
+	srv := serveAssets(t, ref, tarball, false)
+	withAssetDownloadBase(t, srv.URL)
+	home := t.TempDir()
+	t.Setenv("OMA_HOME", home)
+
+	code, out := runOma(t, "--dry-run", "asset", "install", "--ref", ref, "not-exist")
+	if code != ExitState || !strings.Contains(out, `asset "not-exist" not found`) {
+		t.Fatalf("dry-run missing asset exit %d output:\n%s", code, out)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".agents")); !os.IsNotExist(err) {
+		t.Fatalf("missing-asset dry-run wrote canonical root: %v", err)
+	}
+}
+
+func TestAssetInstallValidatesAllAssetsBeforeWriting(t *testing.T) {
+	srcRoot := t.TempDir()
+	writeCLIAssetSource(t, srcRoot, "demo")
+	home := t.TempDir()
+	t.Setenv("OMA_HOME", home)
+
+	code, out := runOma(t, "asset", "install", "--from", srcRoot, "demo", "not-exist")
+	if code != ExitState || !strings.Contains(out, `asset "not-exist" not found`) {
+		t.Fatalf("install missing asset exit %d output:\n%s", code, out)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".agents", "skills", "demo")); !os.IsNotExist(err) {
+		t.Fatalf("first asset was written before validating the full request: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".config", "oma", "registry.json")); !os.IsNotExist(err) {
+		t.Fatalf("registry was written before validating the full request: %v", err)
+	}
+}
+
+func TestAssetInstallFromAndRefAreMutuallyExclusive(t *testing.T) {
+	srcRoot := t.TempDir()
+	writeCLIAssetSource(t, srcRoot, "demo")
+
+	code, out := runOma(t, "asset", "install", "--from", srcRoot, "--ref", "v1.2.3", "demo")
+	if code != ExitUsage || !strings.Contains(out, "from ref") || !strings.Contains(out, "were all set") {
+		t.Fatalf("from/ref exit %d output:\n%s", code, out)
 	}
 }

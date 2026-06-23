@@ -24,7 +24,19 @@ import (
 // size-limited, redirect-restricted — and is deliberately a separate, self-
 // contained path so the security-reviewed updater stays frozen.
 
-const assetsBundleMaxBytes = 64 << 20 // a generous ceiling for the assets/ tree
+const (
+	assetsBundleMaxCompressedBytes = 64 << 20
+	assetsBundleMaxEntryBytes      = 64 << 20
+	assetsBundleMaxExtractedBytes  = 128 << 20
+	assetsBundleMaxEntries         = 10_000
+)
+
+type assetFetchLimits struct {
+	CompressedBytes int64
+	EntryBytes      int64
+	ExtractedBytes  int64
+	Entries         int
+}
 
 var (
 	refRe  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
@@ -39,13 +51,16 @@ type assetFetcher struct {
 	DownloadBase string // default https://github.com (overridden in tests)
 	Client       *http.Client
 	Out          io.Writer
+	Limits       assetFetchLimits
 }
+
+var assetReleaseDownloadBase = "https://github.com"
 
 func newAssetFetcher(repo, ref string, out io.Writer) *assetFetcher {
 	return &assetFetcher{
 		Repo:         repo,
 		Ref:          ref,
-		DownloadBase: "https://github.com",
+		DownloadBase: assetReleaseDownloadBase,
 		Client:       assetRestrictedClient(),
 		Out:          out,
 	}
@@ -75,6 +90,28 @@ func (f *assetFetcher) base() string {
 }
 func (f *assetFetcher) bundleURL() string { return f.base() + "/" + f.bundleName() }
 
+func (f *assetFetcher) limits() assetFetchLimits {
+	limits := assetFetchLimits{
+		CompressedBytes: assetsBundleMaxCompressedBytes,
+		EntryBytes:      assetsBundleMaxEntryBytes,
+		ExtractedBytes:  assetsBundleMaxExtractedBytes,
+		Entries:         assetsBundleMaxEntries,
+	}
+	if f.Limits.CompressedBytes > 0 {
+		limits.CompressedBytes = f.Limits.CompressedBytes
+	}
+	if f.Limits.EntryBytes > 0 {
+		limits.EntryBytes = f.Limits.EntryBytes
+	}
+	if f.Limits.ExtractedBytes > 0 {
+		limits.ExtractedBytes = f.Limits.ExtractedBytes
+	}
+	if f.Limits.Entries > 0 {
+		limits.Entries = f.Limits.Entries
+	}
+	return limits
+}
+
 // validate guards the repo/ref before they reach any URL: ref pins the release
 // download path, so it must be a clean tag with no separators or traversal.
 func (f *assetFetcher) validate() error {
@@ -95,7 +132,7 @@ func (f *assetFetcher) Fetch(parent string) (root string, cleanup func(), err er
 		return "", nil, err
 	}
 	bundle := f.bundleName()
-	sums, err := f.fetchChecksums(f.base() + "/checksums.txt")
+	sums, err := f.fetchChecksums(f.base()+"/checksums.txt", bundle)
 	if err != nil {
 		return "", nil, err
 	}
@@ -109,14 +146,15 @@ func (f *assetFetcher) Fetch(parent string) (root string, cleanup func(), err er
 		return "", nil, Errf(ExitState, "create temp dir: %v", err)
 	}
 	cleanup = func() { _ = os.RemoveAll(tmp) }
+	limits := f.limits()
 
 	tarPath := filepath.Join(tmp, bundle)
-	if err := f.download(tarPath, f.bundleURL(), wantSHA); err != nil {
+	if err := f.download(tarPath, f.bundleURL(), wantSHA, limits.CompressedBytes); err != nil {
 		cleanup()
 		return "", nil, err
 	}
 	root = filepath.Join(tmp, "assets")
-	if err := extractTarGz(tarPath, root, assetsBundleMaxBytes); err != nil {
+	if err := extractTarGz(tarPath, root, limits); err != nil {
 		cleanup()
 		return "", nil, Errf(ExitState, "extract %s: %v", bundle, err)
 	}
@@ -124,8 +162,10 @@ func (f *assetFetcher) Fetch(parent string) (root string, cleanup func(), err er
 	return root, cleanup, nil
 }
 
-// fetchChecksums parses sha256sum format: "<hex>  <name>" per line.
-func (f *assetFetcher) fetchChecksums(url string) (map[string]string, error) {
+// fetchChecksums parses sha256sum format: "<hex>  <name>" per line. Duplicate
+// entries for consumed names are fail-closed; duplicates for unrelated release
+// assets are ignored because this path validates only the bundle it consumes.
+func (f *assetFetcher) fetchChecksums(url string, consumedNames ...string) (map[string]string, error) {
 	resp, err := f.Client.Get(url)
 	if err != nil {
 		return nil, Errf(ExitState, "checksums download failed: %v", err)
@@ -139,12 +179,20 @@ func (f *assetFetcher) fetchChecksums(url string) (map[string]string, error) {
 		return nil, Errf(ExitState, "checksums read failed: %v", err)
 	}
 	sums := map[string]string{}
+	consumed := map[string]bool{}
+	for _, name := range consumedNames {
+		consumed[name] = true
+	}
 	for _, line := range strings.Split(string(raw), "\n") {
 		fields := strings.Fields(line)
 		if len(fields) != 2 || len(fields[0]) != 64 {
 			continue
 		}
-		sums[strings.TrimPrefix(fields[1], "*")] = strings.ToLower(fields[0])
+		name := strings.TrimPrefix(fields[1], "*")
+		if _, exists := sums[name]; exists && consumed[name] {
+			return nil, Errf(ExitState, "checksums.txt has duplicate entries for %s", name)
+		}
+		sums[name] = strings.ToLower(fields[0])
 	}
 	if len(sums) == 0 {
 		return nil, Errf(ExitState, "checksums.txt is empty or malformed")
@@ -154,7 +202,7 @@ func (f *assetFetcher) fetchChecksums(url string) (map[string]string, error) {
 
 // download streams the bundle to path while hashing, then verifies the digest
 // BEFORE it can be used (mismatch deletes it).
-func (f *assetFetcher) download(path, url, wantHex string) error {
+func (f *assetFetcher) download(path, url, wantHex string, maxBytes int64) error {
 	resp, err := f.Client.Get(url)
 	if err != nil {
 		return Errf(ExitState, "asset bundle download failed: %v", err)
@@ -168,11 +216,15 @@ func (f *assetFetcher) download(path, url, wantHex string) error {
 		return Errf(ExitState, "create %s: %v", path, err)
 	}
 	h := sha256.New()
-	_, copyErr := io.Copy(io.MultiWriter(out, h), io.LimitReader(resp.Body, assetsBundleMaxBytes))
+	written, copyErr := io.Copy(io.MultiWriter(out, h), io.LimitReader(resp.Body, maxBytes+1))
 	closeErr := out.Close()
 	if copyErr != nil || closeErr != nil {
 		_ = os.Remove(path)
 		return Errf(ExitState, "download %s: %v", filepath.Base(path), firstErr(copyErr, closeErr))
+	}
+	if written > maxBytes {
+		_ = os.Remove(path)
+		return Errf(ExitState, "asset bundle %s exceeds the %d-byte compressed limit", filepath.Base(path), maxBytes)
 	}
 	if got := hex.EncodeToString(h.Sum(nil)); got != wantHex {
 		_ = os.Remove(path)
@@ -190,11 +242,10 @@ func firstErr(errs ...error) error {
 	return nil
 }
 
-// extractTarGz unpacks a gzip'd tar under root, refusing any entry that would
-// escape root (zip-slip), is not a plain file/dir (no symlinks/devices), or
-// exceeds maxBytes (an oversized member fails closed instead of being silently
-// truncated).
-func extractTarGz(tarPath, root string, maxBytes int64) error {
+// extractTarGz unpacks a gzip'd tar under root, refusing entries that would
+// escape root (zip-slip), non-file/dir entries (no symlinks/devices), oversized
+// entries, oversized total extracted content, or excessive entry counts.
+func extractTarGz(tarPath, root string, limits assetFetchLimits) error {
 	fh, err := os.Open(tarPath)
 	if err != nil {
 		return err
@@ -210,6 +261,8 @@ func extractTarGz(tarPath, root string, maxBytes int64) error {
 	}
 	cleanRoot := filepath.Clean(root)
 	tr := tar.NewReader(gz)
+	var totalBytes int64
+	entryCount := 0
 	for {
 		hdr, err := tr.Next()
 		if err == io.EOF {
@@ -217,6 +270,10 @@ func extractTarGz(tarPath, root string, maxBytes int64) error {
 		}
 		if err != nil {
 			return err
+		}
+		entryCount++
+		if entryCount > limits.Entries {
+			return fmt.Errorf("archive has more than %d entries", limits.Entries)
 		}
 		name := filepath.Clean(hdr.Name)
 		if name == "." {
@@ -235,9 +292,16 @@ func extractTarGz(tarPath, root string, maxBytes int64) error {
 				return err
 			}
 		case tar.TypeReg:
-			if hdr.Size > maxBytes {
-				return fmt.Errorf("archive entry %q (%d bytes) exceeds the %d-byte limit", hdr.Name, hdr.Size, maxBytes)
+			if hdr.Size < 0 {
+				return fmt.Errorf("archive entry %q has negative size %d", hdr.Name, hdr.Size)
 			}
+			if hdr.Size > limits.EntryBytes {
+				return fmt.Errorf("archive entry %q (%d bytes) exceeds the %d-byte per-entry limit", hdr.Name, hdr.Size, limits.EntryBytes)
+			}
+			if totalBytes > limits.ExtractedBytes-hdr.Size {
+				return fmt.Errorf("archive extracted size exceeds the %d-byte limit", limits.ExtractedBytes)
+			}
+			totalBytes += hdr.Size
 			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 				return err
 			}
@@ -247,7 +311,7 @@ func extractTarGz(tarPath, root string, maxBytes int64) error {
 			}
 			// Read one byte past the cap so a header under-reporting its size
 			// (streaming more than declared) is still caught as truncation.
-			written, copyErr := io.Copy(out, io.LimitReader(tr, maxBytes+1))
+			written, copyErr := io.Copy(out, io.LimitReader(tr, limits.EntryBytes+1))
 			closeErr := out.Close()
 			if copyErr != nil {
 				return copyErr
@@ -255,8 +319,8 @@ func extractTarGz(tarPath, root string, maxBytes int64) error {
 			if closeErr != nil {
 				return closeErr
 			}
-			if written > maxBytes {
-				return fmt.Errorf("archive entry %q exceeds the %d-byte limit (truncation refused)", hdr.Name, maxBytes)
+			if written > limits.EntryBytes {
+				return fmt.Errorf("archive entry %q exceeds the %d-byte limit (truncation refused)", hdr.Name, limits.EntryBytes)
 			}
 		default:
 			return fmt.Errorf("unsupported archive entry %q (type %d): only regular files and directories are allowed", hdr.Name, hdr.Typeflag)

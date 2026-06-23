@@ -71,6 +71,10 @@ func testFetcher(srv *httptest.Server, ref string) *assetFetcher {
 	}
 }
 
+func testExtractLimits(entryBytes, extractedBytes int64, entries int) assetFetchLimits {
+	return assetFetchLimits{EntryBytes: entryBytes, ExtractedBytes: extractedBytes, Entries: entries}
+}
+
 func TestAssetFetchSuccess(t *testing.T) {
 	ref := "v1.2.3"
 	tarball := makeTarGz(t, map[string]string{
@@ -105,6 +109,46 @@ func TestAssetFetchChecksumMismatchFailsClosed(t *testing.T) {
 	}
 }
 
+func TestAssetFetchDuplicateChecksumNameFailsClosed(t *testing.T) {
+	ref := "v1.2.3"
+	tarball := makeTarGz(t, map[string]string{"skills/x/manifest.json": "{}"})
+	sum := sha256.Sum256(tarball)
+	hexsum := hex.EncodeToString(sum[:])
+	bundle := "assets-" + ref + ".tar.gz"
+	base := "/sean2077/oh-my-agents/releases/download/" + ref
+	mux := http.NewServeMux()
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	mux.HandleFunc(base+"/checksums.txt", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = fmt.Fprintf(w, "%s  %s\n", hexsum, bundle)
+		_, _ = fmt.Fprintf(w, "%s  %s\n", strings.Repeat("f", 64), bundle)
+	})
+	mux.HandleFunc(base+"/"+bundle, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(tarball)
+	})
+	_, _, err := testFetcher(srv, ref).Fetch(t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "duplicate entries") {
+		t.Fatalf("err = %v, want duplicate checksum-name rejection", err)
+	}
+}
+
+func TestAssetFetchCompressedLimitFailsClosedAndCleansTemp(t *testing.T) {
+	ref := "v1.2.3"
+	tarball := makeTarGz(t, map[string]string{"skills/x/manifest.json": strings.Repeat("x", 128)})
+	srv := serveAssets(t, ref, tarball, false)
+	dest := t.TempDir()
+	fetcher := testFetcher(srv, ref)
+	fetcher.Limits.CompressedBytes = int64(len(tarball) - 1)
+	_, _, err := fetcher.Fetch(dest)
+	if err == nil || !strings.Contains(err.Error(), "compressed limit") {
+		t.Fatalf("err = %v, want compressed limit refusal", err)
+	}
+	entries, _ := os.ReadDir(dest)
+	if len(entries) != 0 {
+		t.Fatalf("temp residue after refused compressed fetch: %v", entries)
+	}
+}
+
 func TestAssetFetchMissingBundleFailsClosed(t *testing.T) {
 	ref := "v9.9.9"
 	base := "/sean2077/oh-my-agents/releases/download/" + ref
@@ -126,7 +170,7 @@ func TestExtractTarGzRejectsTraversal(t *testing.T) {
 	if err := os.WriteFile(tarPath, tarball, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := extractTarGz(tarPath, filepath.Join(t.TempDir(), "root"), 1<<20); err == nil || !strings.Contains(err.Error(), "unsafe path") {
+	if err := extractTarGz(tarPath, filepath.Join(t.TempDir(), "root"), testExtractLimits(1<<20, 1<<20, 1000)); err == nil || !strings.Contains(err.Error(), "unsafe path") {
 		t.Fatalf("err = %v, want unsafe-path rejection", err)
 	}
 }
@@ -138,8 +182,57 @@ func TestExtractTarGzRejectsOversizedEntry(t *testing.T) {
 	if err := os.WriteFile(tarPath, tarball, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := extractTarGz(tarPath, filepath.Join(t.TempDir(), "root"), 4); err == nil || !strings.Contains(err.Error(), "exceeds") {
+	if err := extractTarGz(tarPath, filepath.Join(t.TempDir(), "root"), testExtractLimits(4, 1<<20, 1000)); err == nil || !strings.Contains(err.Error(), "exceeds") {
 		t.Fatalf("err = %v, want oversize rejection", err)
+	}
+}
+
+func TestExtractTarGzRejectsTotalExtractedSize(t *testing.T) {
+	tarball := makeTarGz(t, map[string]string{
+		"skills/x/a.txt": "1234",
+		"skills/x/b.txt": "5678",
+	})
+	tarPath := filepath.Join(t.TempDir(), "b.tar.gz")
+	if err := os.WriteFile(tarPath, tarball, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := extractTarGz(tarPath, filepath.Join(t.TempDir(), "root"), testExtractLimits(10, 6, 1000)); err == nil || !strings.Contains(err.Error(), "extracted size") {
+		t.Fatalf("err = %v, want total-size rejection", err)
+	}
+}
+
+func TestExtractTarGzRejectsEntryCount(t *testing.T) {
+	tarball := makeTarGz(t, map[string]string{
+		"skills/x/a.txt": "",
+		"skills/x/b.txt": "",
+		"skills/x/c.txt": "",
+	})
+	tarPath := filepath.Join(t.TempDir(), "b.tar.gz")
+	if err := os.WriteFile(tarPath, tarball, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := extractTarGz(tarPath, filepath.Join(t.TempDir(), "root"), testExtractLimits(10, 10, 2)); err == nil || !strings.Contains(err.Error(), "more than 2 entries") {
+		t.Fatalf("err = %v, want entry-count rejection", err)
+	}
+}
+
+func TestAssetFetchExtractLimitFailsClosedAndCleansTemp(t *testing.T) {
+	ref := "v1.2.3"
+	tarball := makeTarGz(t, map[string]string{
+		"skills/x/a.txt": "1234",
+		"skills/x/b.txt": "5678",
+	})
+	srv := serveAssets(t, ref, tarball, false)
+	dest := t.TempDir()
+	fetcher := testFetcher(srv, ref)
+	fetcher.Limits.ExtractedBytes = 6
+	_, _, err := fetcher.Fetch(dest)
+	if err == nil || !strings.Contains(err.Error(), "extracted size") {
+		t.Fatalf("err = %v, want extracted-size refusal", err)
+	}
+	entries, _ := os.ReadDir(dest)
+	if len(entries) != 0 {
+		t.Fatalf("temp residue after refused extract: %v", entries)
 	}
 }
 

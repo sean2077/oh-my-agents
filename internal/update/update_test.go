@@ -26,6 +26,7 @@ type fakeRelease struct {
 	aux        []string // extra release assets the updater must ignore (SBOM, sigs, attestations)
 	dupBinary  bool     // serve the platform binary asset twice (ambiguous release)
 	dupSums    bool     // serve checksums.txt twice (ambiguous release)
+	dupSumName bool     // serve duplicate checksum entries for the same consumed file
 }
 
 func serveRelease(t *testing.T, fr fakeRelease) *httptest.Server {
@@ -68,6 +69,9 @@ func serveRelease(t *testing.T, fr fakeRelease) *httptest.Server {
 	mux.HandleFunc("/dl/checksums.txt", func(w http.ResponseWriter, _ *http.Request) {
 		sum := sha256.Sum256(fr.sumOf)
 		_, _ = fmt.Fprintf(w, "%s  %s\n", hex.EncodeToString(sum[:]), assetName)
+		if fr.dupSumName {
+			_, _ = fmt.Fprintf(w, "%s  %s\n", strings.Repeat("f", 64), assetName)
+		}
 	})
 	return srv
 }
@@ -461,6 +465,19 @@ func TestDuplicateConsumedAssetsRefused(t *testing.T) {
 	}
 	if err := u2.Apply(rel2, false, false); !errors.Is(err, ErrUpdate) || !strings.Contains(err.Error(), "more than one") {
 		t.Fatalf("duplicate checksums: err = %v", err)
+	}
+}
+
+func TestDuplicateChecksumEntryRefused(t *testing.T) {
+	newBin := []byte("NEW")
+	srv := serveRelease(t, fakeRelease{tag: "v0.0.9", binary: newBin, sumOf: newBin, dupSumName: true})
+	u, _ := testUpdater(t, srv, "v0.0.9")
+	rel, _, err := u.Check()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := u.Apply(rel, false, false); !errors.Is(err, ErrUpdate) || !strings.Contains(err.Error(), "duplicate entries") {
+		t.Fatalf("duplicate checksum entry: err = %v", err)
 	}
 }
 

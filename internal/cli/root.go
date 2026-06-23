@@ -56,7 +56,8 @@ var dryRun bool
 var workflowSession = defaultWorkflowSession
 
 // DryRun reports whether --dry-run was passed (global persistent flag:
-// mutating commands must report exact paths and write nothing).
+// mutating commands must report exact paths and leave persistent target state
+// unchanged; remote validation may use auto-cleaned temp files).
 func DryRun() bool { return dryRun }
 
 // WorkflowSession returns the workflow-session scope requested by the global
@@ -70,7 +71,7 @@ func newRootCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	root.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "report exact paths that would change, write nothing")
+	root.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "report exact paths that would change without changing persistent target state")
 	root.PersistentFlags().StringVar(&workflowSession, "session", defaultWorkflowSession, "scope workflow state to a session slug, or 'current' for the platform session")
 	root.AddCommand(newVersionCmd(), newAssetCmd(), newConfigCmd(), newStateCmd(), newDoctorCmd(), newRelayCmd(), newInterviewCmd(), newRalphCmd(), newWorkflowCmd(), newSelfUpdateCmd())
 	return root

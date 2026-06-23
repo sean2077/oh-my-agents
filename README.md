@@ -202,7 +202,7 @@ For a full walkthrough — install → deep-interview → autopilot → ralph �
 - **`oma state`**: generic project-level key/value state for workflows.
 - **`oma config`**, **`oma self-update`**, **`oma version`**.
 
-Conventions: `--json` on every query command; `--dry-run` is a global flag that discloses exact paths and writes nothing; exit codes are contractual (`0` ok, `1` warn, `2` usage, `3` fail-closed, `4` gate failed; relay `wait` adds `10/11/12`).
+Conventions: `--json` on every query command; `--dry-run` is a global flag that discloses exact paths and writes no persistent target state (remote validation may use auto-cleaned temp files); exit codes are contractual (`0` ok, `1` warn, `2` usage, `3` fail-closed, `4` gate failed; relay `wait` adds `10/11/12`).
 
 ## Architecture
 

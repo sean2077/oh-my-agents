@@ -36,6 +36,7 @@ VERSION="${OMA_INSTALL_VERSION:-latest}"
 BIN_DIR="${OMA_INSTALL_BIN_DIR:-$HOME/.local/bin}"
 FROM_SOURCE="${OMA_INSTALL_FROM_SOURCE:-0}"
 FILE="${OMA_INSTALL_FILE:-}"
+DOWNLOAD_BASE="${OMA_INSTALL_DOWNLOAD_BASE:-https://github.com}"
 
 case "$(uname -s 2>/dev/null || true)" in
   MINGW*|MSYS*|CYGWIN*) OS="windows"; EXT=".exe" ;;
@@ -74,10 +75,14 @@ sha256_of() {
 tmpdir="$(mktemp -d)"
 tmpbin=""
 backup=""
+backup_candidate=""
 cleanup() {
   rm -rf "$tmpdir"
   if [ -n "$tmpbin" ] && [ -e "$tmpbin" ]; then
     rm -f "$tmpbin"
+  fi
+  if [ -n "$backup_candidate" ] && [ -e "$backup_candidate" ]; then
+    rm -f "$backup_candidate"
   fi
   # A backup still set here means we aborted mid-swap: restore the previous
   # binary so a failed install never leaves the target missing or half-written.
@@ -104,6 +109,12 @@ verify_artifact_version() {
   [ "$got" = "$want" ] || err "version mismatch: downloaded binary reports '$got', expected '$want'; target left untouched"
 }
 
+prepare_artifact() {
+  local src="$1" prepared="$2"
+  cp "$src" "$prepared"
+  chmod 0755 "$prepared"
+}
+
 # Place an ALREADY-VERIFIED binary at $BIN_DIR/$BIN_NAME atomically: back up any
 # existing target, rename into place, re-check the installed binary, and roll
 # the previous one back on failure (the install-time analogue of self-update's
@@ -116,8 +127,11 @@ install_atomic() {
   chmod 0755 "$tmpbin"
 
   if [ -e "$dest" ]; then
+    backup_candidate="$BIN_DIR/.${BIN_NAME}.old.$$.tmp"
+    cp -p "$dest" "$backup_candidate"
+    mv "$backup_candidate" "$BIN_DIR/.${BIN_NAME}.old.$$"
+    backup_candidate=""
     backup="$BIN_DIR/.${BIN_NAME}.old.$$"
-    cp -p "$dest" "$backup"
   fi
 
   mv "$tmpbin" "$dest"
@@ -244,8 +258,10 @@ build_from_source() {
         -X github.com/sean2077/oh-my-agents/internal/version.Commit=$commit" \
       -o "$tmpdir/built" ./cmd/oma
   )
-  verify_artifact_version "$tmpdir/built" "$source_version"
-  install_atomic "$tmpdir/built" "$source_version"
+  local prepared="$tmpdir/prepared-built"
+  prepare_artifact "$tmpdir/built" "$prepared"
+  verify_artifact_version "$prepared" "$source_version"
+  install_atomic "$prepared" "$source_version"
   path_note
 }
 
@@ -258,7 +274,7 @@ install_from_release() {
   fi
 
   local asset="oma_${tag}_${OS}_${ARCH}${EXT}"
-  local base="https://github.com/$REPO/releases/download/$tag"
+  local base="${DOWNLOAD_BASE%/}/$REPO/releases/download/$tag"
   log "downloading $asset ($tag)"
   curl -fsSL -o "$tmpdir/$asset" "$base/$asset" \
     || err "no prebuilt asset $asset for $tag — this platform has no published binary. Set OMA_INSTALL_FROM_SOURCE=1 to build $tag from source (needs git + go)."
@@ -267,14 +283,23 @@ install_from_release() {
   curl -fsSL -o "$tmpdir/checksums.txt" "$base/checksums.txt" \
     || err "release $tag has no checksums.txt (unverifiable)"
   local want got
-  want="$(awk -v a="$asset" '$2 == a {print $1}' "$tmpdir/checksums.txt")"
+  want="$(awk -v a="$asset" '
+    $2 == a { count++; value = $1 }
+    END {
+      if (count == 1) print value
+      else if (count > 1) print "__DUPLICATE__"
+    }
+  ' "$tmpdir/checksums.txt")"
+  [ "$want" != "__DUPLICATE__" ] || err "checksums.txt has duplicate entries for $asset"
   [ -n "$want" ] || err "checksums.txt has no entry for $asset"
   got="$(sha256_of "$tmpdir/$asset")"
   [ "$got" = "$want" ] || err "checksum mismatch for $asset (want $want, got $got)"
   log "checksum ok"
 
-  verify_artifact_version "$tmpdir/$asset" "$tag"
-  install_atomic "$tmpdir/$asset" "$tag"
+  local prepared="$tmpdir/prepared-$asset"
+  prepare_artifact "$tmpdir/$asset" "$prepared"
+  verify_artifact_version "$prepared" "$tag"
+  install_atomic "$prepared" "$tag"
   path_note
 }
 
@@ -288,8 +313,7 @@ install_from_file() {
   log "installing local binary $FILE ($VERSION)"
   local prepared
   prepared="$tmpdir/local-$(basename "$BIN_NAME")"
-  cp "$FILE" "$prepared"
-  chmod 0755 "$prepared"
+  prepare_artifact "$FILE" "$prepared"
   verify_artifact_version "$prepared" "$VERSION"
   install_atomic "$prepared" "$VERSION"
   path_note

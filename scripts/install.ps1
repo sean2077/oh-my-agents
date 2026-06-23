@@ -147,10 +147,15 @@ function Install-FromRelease {
     catch { Die "release $tag has no checksums.txt (unverifiable)" }
 
     $want = $null
+    $matches = 0
     foreach ($line in Get-Content (Join-Path $work 'checksums.txt')) {
       $f = $line -split '\s+'
-      if ($f.Count -ge 2 -and $f[1] -eq $asset) { $want = $f[0].ToLower() }
+      if ($f.Count -ge 2 -and $f[1] -eq $asset) {
+        $matches += 1
+        $want = $f[0].ToLower()
+      }
     }
+    if ($matches -gt 1) { Die "checksums.txt has duplicate entries for $asset" }
     if (-not $want) { Die "checksums.txt has no entry for $asset" }
     $got = (Get-FileHash -Algorithm SHA256 (Join-Path $work $asset)).Hash.ToLower()
     if ($got -ne $want) { Die "checksum mismatch for $asset (want $want, got $got)" }

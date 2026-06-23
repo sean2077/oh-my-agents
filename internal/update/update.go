@@ -283,7 +283,7 @@ func (u *Updater) Apply(rel *Release, dryRun, allowDowngrade bool) error {
 		return nil
 	}
 
-	sums, err := u.fetchChecksums(sumAsset.URL)
+	sums, err := u.fetchChecksums(sumAsset.URL, wantName)
 	if err != nil {
 		return err
 	}
@@ -371,8 +371,11 @@ func (u *Updater) checkSourceURL(raw string) error {
 	}
 }
 
-// fetchChecksums parses sha256sum format: "<hex>  <name>" per line.
-func (u *Updater) fetchChecksums(rawURL string) (map[string]string, error) {
+// fetchChecksums parses sha256sum format: "<hex>  <name>" per line. Duplicate
+// entries for consumed names are fail-closed; duplicates for unrelated release
+// assets are ignored because self-update validates only the platform binary it
+// consumes.
+func (u *Updater) fetchChecksums(rawURL string, consumedNames ...string) (map[string]string, error) {
 	resp, err := u.Client.Get(rawURL)
 	if err != nil {
 		return nil, fmt.Errorf("%w: checksums download failed: %v", ErrUpdate, err)
@@ -386,12 +389,20 @@ func (u *Updater) fetchChecksums(rawURL string) (map[string]string, error) {
 		return nil, err
 	}
 	sums := map[string]string{}
+	consumed := map[string]bool{}
+	for _, name := range consumedNames {
+		consumed[name] = true
+	}
 	for _, line := range strings.Split(string(raw), "\n") {
 		fields := strings.Fields(line)
 		if len(fields) != 2 || len(fields[0]) != 64 {
 			continue
 		}
-		sums[strings.TrimPrefix(fields[1], "*")] = strings.ToLower(fields[0])
+		name := strings.TrimPrefix(fields[1], "*")
+		if _, exists := sums[name]; exists && consumed[name] {
+			return nil, fmt.Errorf("%w: checksums.txt has duplicate entries for %s", ErrUpdate, name)
+		}
+		sums[name] = strings.ToLower(fields[0])
 	}
 	if len(sums) == 0 {
 		return nil, fmt.Errorf("%w: checksums.txt is empty or malformed", ErrUpdate)
