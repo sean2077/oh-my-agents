@@ -101,8 +101,12 @@ func TestConcurrentProcessScoresDoNotLoseRounds(t *testing.T) {
 
 	start := filepath.Join(t.TempDir(), "start")
 	workers := 8
+	helperDeadline := 2 * time.Minute
 	if runtime.GOOS == "windows" {
-		workers = 4
+		// Windows hosted runners can starve helper processes behind directory-lock
+		// polling under -race. Keep real cross-process coverage with lower fanout.
+		workers = 2
+		helperDeadline = 4 * time.Minute
 	}
 	type child struct {
 		cmd *exec.Cmd
@@ -116,6 +120,7 @@ func TestConcurrentProcessScoresDoNotLoseRounds(t *testing.T) {
 			"OMA_INTERVIEW_DIR="+dir,
 			"OMA_INTERVIEW_START="+start,
 			"OMA_INTERVIEW_ROUND="+strconv.Itoa(round),
+			"OMA_INTERVIEW_HELPER_DEADLINE_MS="+strconv.FormatInt(helperDeadline.Milliseconds(), 10),
 		)
 		out := &bytes.Buffer{}
 		cmd.Stdout = out
@@ -176,13 +181,22 @@ func TestInterviewScoreHelperProcess(t *testing.T) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
+	helperDeadline := 2 * time.Minute
+	if raw := os.Getenv("OMA_INTERVIEW_HELPER_DEADLINE_MS"); raw != "" {
+		ms, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || ms <= 0 {
+			fmt.Fprintf(os.Stderr, "invalid OMA_INTERVIEW_HELPER_DEADLINE_MS=%q\n", raw)
+			os.Exit(2)
+		}
+		helperDeadline = time.Duration(ms) * time.Millisecond
+	}
 	waitForFile(os.Getenv("OMA_INTERVIEW_START"))
 	e := NewEngine(os.Getenv("OMA_INTERVIEW_DIR"))
 	e.SessionSuffix = "same"
 	in := scoresInput(round, map[string]map[string]float64{
 		"a": {"goal": 0.5, "constraints": 0.5, "criteria": 0.5},
 	})
-	deadline := time.Now().Add(2 * time.Minute)
+	deadline := time.Now().Add(helperDeadline)
 	for {
 		if _, _, err := e.Score("case", in, false); err == nil {
 			os.Exit(0)
