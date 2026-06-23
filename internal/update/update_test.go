@@ -23,6 +23,9 @@ type fakeRelease struct {
 	noSums     bool
 	badName    bool
 	foreignURL bool
+	aux        []string // extra release assets the updater must ignore (SBOM, sigs, attestations)
+	dupBinary  bool     // serve the platform binary asset twice (ambiguous release)
+	dupSums    bool     // serve checksums.txt twice (ambiguous release)
 }
 
 func serveRelease(t *testing.T, fr fakeRelease) *httptest.Server {
@@ -40,11 +43,24 @@ func serveRelease(t *testing.T, fr fakeRelease) *httptest.Server {
 		if fr.foreignURL {
 			binURL = "https://evil.example.com/dl/" + assetName
 		}
-		assets := fmt.Sprintf(`{"name":%q,"browser_download_url":%q}`, assetName, binURL)
-		if !fr.noSums {
-			assets += fmt.Sprintf(`,{"name":"checksums.txt","browser_download_url":%q}`, srv.URL+"/dl/checksums.txt")
+		var assets []string
+		add := func(name, url string) {
+			assets = append(assets, fmt.Sprintf(`{"name":%q,"browser_download_url":%q}`, name, url))
 		}
-		_, _ = fmt.Fprintf(w, `{"tag_name":%q,"assets":[%s]}`, fr.tag, assets)
+		add(assetName, binURL)
+		if fr.dupBinary {
+			add(assetName, binURL)
+		}
+		if !fr.noSums {
+			add("checksums.txt", srv.URL+"/dl/checksums.txt")
+		}
+		if fr.dupSums {
+			add("checksums.txt", srv.URL+"/dl/checksums.txt")
+		}
+		for _, name := range fr.aux {
+			add(name, srv.URL+"/dl/"+name)
+		}
+		_, _ = fmt.Fprintf(w, `{"tag_name":%q,"assets":[%s]}`, fr.tag, strings.Join(assets, ","))
 	})
 	mux.HandleFunc("/dl/"+assetName, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write(fr.binary)
@@ -103,7 +119,7 @@ func TestHappyPathUpdateAndOldBackup(t *testing.T) {
 	if err != nil || !differs || rel.TagName != "v0.0.9" {
 		t.Fatalf("check: rel=%+v differs=%v err=%v", rel, differs, err)
 	}
-	if err := u.Apply(rel, false); err != nil {
+	if err := u.Apply(rel, false, false); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
 	got, _ := os.ReadFile(bin)
@@ -132,7 +148,7 @@ func TestChecksumMismatchRefusedBinaryUntouched(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := u.Apply(rel, false); !errors.Is(err, ErrUpdate) || !strings.Contains(err.Error(), "checksum mismatch") {
+	if err := u.Apply(rel, false, false); !errors.Is(err, ErrUpdate) || !strings.Contains(err.Error(), "checksum mismatch") {
 		t.Fatalf("err = %v, want checksum refusal", err)
 	}
 	if got := dirFingerprint(t, filepath.Dir(bin)); got != before {
@@ -165,7 +181,7 @@ func TestUnwritableTargetDegradesToInstructions(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(filepath.Dir(bin), 0o700) })
 
 	rel, _, _ := u.Check()
-	err := u.Apply(rel, false)
+	err := u.Apply(rel, false, false)
 	if !errors.Is(err, ErrUpdate) || !strings.Contains(err.Error(), "not writable") {
 		t.Fatalf("err = %v", err)
 	}
@@ -189,7 +205,7 @@ func TestInterruptedSwapRefusedOnlyWhenBinaryMissing(t *testing.T) {
 		t.Fatal(err)
 	}
 	rel, _, _ := u.Check()
-	if err := u.Apply(rel, false); !errors.Is(err, ErrUpdate) || !strings.Contains(err.Error(), "interrupted swap") {
+	if err := u.Apply(rel, false, false); !errors.Is(err, ErrUpdate) || !strings.Contains(err.Error(), "interrupted swap") {
 		t.Fatalf("err = %v", err)
 	}
 	old, _ := os.ReadFile(bin + ".old")
@@ -205,7 +221,7 @@ func TestTwoSuccessiveUpdatesRotateBackup(t *testing.T) {
 	srv := serveRelease(t, fakeRelease{tag: "v0.0.9", binary: bin9, sumOf: bin9})
 	u, bin := testUpdater(t, srv, "v0.0.9")
 	rel, _, _ := u.Check()
-	if err := u.Apply(rel, false); err != nil {
+	if err := u.Apply(rel, false, false); err != nil {
 		t.Fatalf("first update: %v", err)
 	}
 
@@ -215,7 +231,7 @@ func TestTwoSuccessiveUpdatesRotateBackup(t *testing.T) {
 	u.Current = "v0.0.9"
 	u.SelfCheck = func(string) (string, error) { return "v0.0.10", nil }
 	rel2, _, _ := u.Check()
-	if err := u.Apply(rel2, false); err != nil {
+	if err := u.Apply(rel2, false, false); err != nil {
 		t.Fatalf("second update must rotate the backup, got: %v", err)
 	}
 	got, _ := os.ReadFile(bin)
@@ -243,14 +259,14 @@ func TestNoProbeFileEverCreated(t *testing.T) {
 	rel, _, _ := u.Check()
 	var out strings.Builder
 	u.Out = &out
-	if err := u.Apply(rel, true); err != nil {
+	if err := u.Apply(rel, true, false); err != nil {
 		t.Fatalf("dry-run with canary present: %v", err)
 	}
 	raw, err := os.ReadFile(canary)
 	if err != nil || string(raw) != "canary" {
 		t.Fatal("canary file was touched by the writability check")
 	}
-	if err := u.Apply(rel, false); err != nil {
+	if err := u.Apply(rel, false, false); err != nil {
 		t.Fatalf("real apply with canary present: %v", err)
 	}
 }
@@ -269,7 +285,7 @@ func TestDryRunOnUnwritableDirValidatesWithZeroWrites(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(filepath.Dir(bin), 0o700) })
 	before := dirFingerprint(t, filepath.Dir(bin))
 	rel, _, _ := u.Check()
-	if err := u.Apply(rel, true); !errors.Is(err, ErrUpdate) || !strings.Contains(err.Error(), "not writable") {
+	if err := u.Apply(rel, true, false); !errors.Is(err, ErrUpdate) || !strings.Contains(err.Error(), "not writable") {
 		t.Fatalf("dry-run on unwritable dir: err = %v", err)
 	}
 	if got := dirFingerprint(t, filepath.Dir(bin)); got != before {
@@ -291,7 +307,7 @@ func TestSelfCheckFailureRollsBack(t *testing.T) {
 		return "", errors.New("crash on startup") // …the installed one fails
 	}
 	rel, _, _ := u.Check()
-	err := u.Apply(rel, false)
+	err := u.Apply(rel, false, false)
 	if !errors.Is(err, ErrUpdate) || !strings.Contains(err.Error(), "rolled back") {
 		t.Fatalf("err = %v", err)
 	}
@@ -306,7 +322,7 @@ func TestPreflightSelfCheckBlocksBadDownloadBeforeSwap(t *testing.T) {
 	srv := serveRelease(t, fakeRelease{tag: "v0.0.9", binary: newBin, sumOf: newBin})
 	u, bin := testUpdater(t, srv, "v0.0.8") // claims the wrong version
 	rel, _, _ := u.Check()
-	if err := u.Apply(rel, false); !errors.Is(err, ErrUpdate) || !strings.Contains(err.Error(), "self-check") {
+	if err := u.Apply(rel, false, false); !errors.Is(err, ErrUpdate) || !strings.Contains(err.Error(), "self-check") {
 		t.Fatalf("err = %v", err)
 	}
 	got, _ := os.ReadFile(bin)
@@ -340,7 +356,7 @@ func TestDryRunDisclosesPathsWritesNothing(t *testing.T) {
 	u.Out = &out
 	before := dirFingerprint(t, filepath.Dir(bin))
 	rel, _, _ := u.Check()
-	if err := u.Apply(rel, true); err != nil {
+	if err := u.Apply(rel, true, false); err != nil {
 		t.Fatal(err)
 	}
 	for _, want := range []string{"would download", "would backup", bin + ".old", bin + ".oma-update-tmp"} {
@@ -353,21 +369,27 @@ func TestDryRunDisclosesPathsWritesNothing(t *testing.T) {
 	}
 }
 
-func TestNamingContractAndForeignURLRefused(t *testing.T) {
-	// §5: unexpected asset names fail closed.
+func TestMissingTargetBinaryAndForeignURLRefused(t *testing.T) {
+	// An off-contract asset is present but the expected platform binary is not:
+	// Check ignores the stray asset (§5: validate only what we consume), and
+	// Apply fails closed for the missing target.
 	srv := serveRelease(t, fakeRelease{tag: "v0.0.9", binary: []byte("x"), sumOf: []byte("x"), badName: true})
 	u, _ := testUpdater(t, srv, "v0.0.9")
-	if _, _, err := u.Check(); !errors.Is(err, ErrUpdate) || !strings.Contains(err.Error(), "naming contract") {
-		t.Fatalf("bad name: err = %v", err)
+	rel, _, err := u.Check()
+	if err != nil {
+		t.Fatalf("check must ignore the off-contract asset, got: %v", err)
+	}
+	if err := u.Apply(rel, false, false); !errors.Is(err, ErrUpdate) || !strings.Contains(err.Error(), "no asset") {
+		t.Fatalf("missing target binary: err = %v", err)
 	}
 	// Foreign download URL fails closed before any network fetch.
 	srv2 := serveRelease(t, fakeRelease{tag: "v0.0.9", binary: []byte("x"), sumOf: []byte("x"), foreignURL: true})
 	u2, _ := testUpdater(t, srv2, "v0.0.9")
-	rel, _, err := u2.Check()
+	rel2, _, err := u2.Check()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := u2.Apply(rel, false); !errors.Is(err, ErrUpdate) || !strings.Contains(err.Error(), "outside the pinned source") {
+	if err := u2.Apply(rel2, false, false); !errors.Is(err, ErrUpdate) || !strings.Contains(err.Error(), "outside the pinned source") {
 		t.Fatalf("foreign URL: err = %v", err)
 	}
 }
@@ -387,7 +409,203 @@ func TestMissingChecksumsRefused(t *testing.T) {
 	srv := serveRelease(t, fakeRelease{tag: "v0.0.9", binary: newBin, sumOf: newBin, noSums: true})
 	u, _ := testUpdater(t, srv, "v0.0.9")
 	rel, _, _ := u.Check()
-	if err := u.Apply(rel, false); !errors.Is(err, ErrUpdate) || !strings.Contains(err.Error(), "checksums.txt") {
+	if err := u.Apply(rel, false, false); !errors.Is(err, ErrUpdate) || !strings.Contains(err.Error(), "checksums.txt") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestAuxiliaryAssetsIgnored(t *testing.T) {
+	// Regression: a release carrying SBOM / signature / attestation assets the
+	// updater does not consume must still check and apply cleanly. An SBOM
+	// asset (sbom.spdx.json) used to trip a naming-contract rejection in Check,
+	// which silently broke self-update for every release that shipped one.
+	newBin := []byte("NEW BINARY v9")
+	srv := serveRelease(t, fakeRelease{
+		tag:    "v0.0.9",
+		binary: newBin,
+		sumOf:  newBin,
+		aux:    []string{"sbom.spdx.json", "oma_v0.0.9_linux_amd64.sig", "provenance.intoto.jsonl"},
+	})
+	u, bin := testUpdater(t, srv, "v0.0.9")
+	rel, available, err := u.Check()
+	if err != nil || !available {
+		t.Fatalf("check with aux assets: available=%v err=%v", available, err)
+	}
+	if err := u.Apply(rel, false, false); err != nil {
+		t.Fatalf("apply with aux assets: %v", err)
+	}
+	if got, _ := os.ReadFile(bin); string(got) != "NEW BINARY v9" {
+		t.Fatalf("binary = %q", got)
+	}
+}
+
+func TestDuplicateConsumedAssetsRefused(t *testing.T) {
+	// An ambiguous release (the platform binary or checksums.txt served twice)
+	// must never be silently resolved — fail closed.
+	newBin := []byte("NEW")
+	srvBin := serveRelease(t, fakeRelease{tag: "v0.0.9", binary: newBin, sumOf: newBin, dupBinary: true})
+	u, _ := testUpdater(t, srvBin, "v0.0.1")
+	rel, _, err := u.Check()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := u.Apply(rel, false, false); !errors.Is(err, ErrUpdate) || !strings.Contains(err.Error(), "more than one") {
+		t.Fatalf("duplicate binary: err = %v", err)
+	}
+
+	srvSums := serveRelease(t, fakeRelease{tag: "v0.0.9", binary: newBin, sumOf: newBin, dupSums: true})
+	u2, _ := testUpdater(t, srvSums, "v0.0.1")
+	rel2, _, err := u2.Check()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := u2.Apply(rel2, false, false); !errors.Is(err, ErrUpdate) || !strings.Contains(err.Error(), "more than one") {
+		t.Fatalf("duplicate checksums: err = %v", err)
+	}
+}
+
+func TestDowngradeRefusedByDefaultAndAllowedWithFlag(t *testing.T) {
+	// The latest stable release is OLDER than the running binary (e.g. a
+	// v1.0.0-rc.1 build vs latest stable v0.9.0). Default: not an update, and
+	// Apply refuses; --allow-downgrade performs it.
+	older := []byte("OLDER RELEASE")
+	srv := serveRelease(t, fakeRelease{tag: "v0.9.0", binary: older, sumOf: older})
+	u, bin := testUpdater(t, srv, "v0.9.0")
+	u.Current = "v1.0.0-rc.1" // running ahead of the latest stable
+
+	rel, available, err := u.Check()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if available {
+		t.Fatal("a release older than the running version must not report as an update")
+	}
+	if err := u.Apply(rel, false, false); !errors.Is(err, ErrUpdate) || !strings.Contains(err.Error(), "refusing downgrade") {
+		t.Fatalf("default apply err = %v, want downgrade refusal", err)
+	}
+	if got, _ := os.ReadFile(bin); string(got) != "OLD BINARY" {
+		t.Fatalf("binary changed on a refused downgrade = %q", got)
+	}
+	if err := u.Apply(rel, false, true); err != nil {
+		t.Fatalf("allow-downgrade apply: %v", err)
+	}
+	if got, _ := os.ReadFile(bin); string(got) != "OLDER RELEASE" {
+		t.Fatalf("binary after allowed downgrade = %q", got)
+	}
+}
+
+func TestDevBuildSeesUpdate(t *testing.T) {
+	// An unversioned dev/source build is treated as older than any release.
+	newBin := []byte("REL")
+	srv := serveRelease(t, fakeRelease{tag: "v0.9.1", binary: newBin, sumOf: newBin})
+	u, _ := testUpdater(t, srv, "dev")
+	_, available, err := u.Check()
+	if err != nil || !available {
+		t.Fatalf("dev build: available=%v err=%v, want update available", available, err)
+	}
+}
+
+func TestMalformedRemoteTagFailsClosed(t *testing.T) {
+	newBin := []byte("NEW")
+	srv := serveRelease(t, fakeRelease{tag: "not-a-version", binary: newBin, sumOf: newBin})
+	u, _ := testUpdater(t, srv, "v0.0.1")
+	if _, _, err := u.Check(); !errors.Is(err, ErrUpdate) || !strings.Contains(err.Error(), "not a valid semantic version") {
+		t.Fatalf("malformed remote tag: err = %v", err)
+	}
+}
+
+func TestCompareVersions(t *testing.T) {
+	cases := []struct {
+		a, b string
+		want int
+		ok   bool
+	}{
+		{"v0.9.1", "v0.9.2", -1, true},
+		{"v0.9.2", "v0.9.1", 1, true},
+		{"v1.0.0", "v1.0.0", 0, true},
+		{"v2.0.0", "v1.9.9", 1, true},
+		{"v1.2.0", "v1.1.9", 1, true},
+		{"1.2.3", "v1.2.3", 0, true},        // optional leading v on either side
+		{"v1.0.0-rc.1", "v1.0.0", -1, true}, // prerelease < release
+		{"v1.0.0", "v1.0.0-rc.1", 1, true},
+		{"v1.0.0-rc.1", "v1.0.0-rc.2", -1, true},
+		{"v1.0.0-rc.2", "v1.0.0-rc.10", -1, true}, // numeric identifiers compare numerically, not lexically
+		{"v1.0.0-rc.10", "v1.0.0-rc.2", 1, true},
+		{"v1.0.0-alpha", "v1.0.0-beta", -1, true},   // alphanumeric lexical
+		{"v1.0.0-rc.1", "v1.0.0-rc.1.1", -1, true},  // more fields wins when all prior tie
+		{"v1.0.0-1", "v1.0.0-alpha", -1, true},      // numeric below alphanumeric
+		{"v1.0.0+build1", "v1.0.0+build2", 0, true}, // build metadata ignored
+		{"dev", "v0.9.1", 0, false},                 // unparseable → ok=false
+		{"v0.9.1", "main", 0, false},
+		{"", "v0.9.1", 0, false},
+	}
+	for _, c := range cases {
+		got, ok := CompareVersions(c.a, c.b)
+		if got != c.want || ok != c.ok {
+			t.Errorf("CompareVersions(%q, %q) = (%d, %v), want (%d, %v)", c.a, c.b, got, ok, c.want, c.ok)
+		}
+	}
+}
+
+// serveReleaseList serves the /releases list and a /releases/tags/<tag> doc per
+// tag (the prerelease channel and --version pin sources).
+func serveReleaseList(t *testing.T, tags []string) *httptest.Server {
+	t.Helper()
+	mux := http.NewServeMux()
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	mux.HandleFunc("/repos/"+Repo+"/releases", func(w http.ResponseWriter, _ *http.Request) {
+		var items []string
+		for _, tg := range tags {
+			items = append(items, fmt.Sprintf(`{"tag_name":%q,"draft":false,"prerelease":%v,"assets":[]}`, tg, strings.Contains(tg, "-")))
+		}
+		_, _ = fmt.Fprintf(w, "[%s]", strings.Join(items, ","))
+	})
+	for _, tg := range tags {
+		tag := tg
+		mux.HandleFunc("/repos/"+Repo+"/releases/tags/"+tag, func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = fmt.Fprintf(w, `{"tag_name":%q,"assets":[]}`, tag)
+		})
+	}
+	return srv
+}
+
+func TestResolvePrereleaseChannelPicksHighest(t *testing.T) {
+	srv := serveReleaseList(t, []string{"v0.9.1", "v1.0.0-rc.1", "v1.0.0-rc.2", "v0.9.2"})
+	u := &Updater{APIBase: srv.URL, Client: srv.Client(), Current: "v0.9.1", OS: "linux", Arch: "amd64", Out: io.Discard}
+	rel, available, err := u.CheckTarget("prerelease", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rel.TagName != "v1.0.0-rc.2" {
+		t.Fatalf("prerelease channel picked %q, want the highest v1.0.0-rc.2", rel.TagName)
+	}
+	if !available {
+		t.Fatal("v1.0.0-rc.2 is newer than v0.9.1 — should be available")
+	}
+}
+
+func TestResolveVersionPinAndDowngradeRefused(t *testing.T) {
+	srv := serveReleaseList(t, []string{"v0.9.1", "v1.0.0-rc.2"})
+	u := &Updater{APIBase: srv.URL, Client: srv.Client(), Current: "v1.0.0-rc.2", OS: "linux", Arch: "amd64", Out: io.Discard}
+	rel, available, err := u.CheckTarget("stable", "v0.9.1") // explicit older pin
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rel.TagName != "v0.9.1" {
+		t.Fatalf("version pin resolved %q, want v0.9.1", rel.TagName)
+	}
+	if available {
+		t.Fatal("pinning an older version must not report as an available update")
+	}
+}
+
+func TestResolveInvalidVersionAndChannelRejected(t *testing.T) {
+	u := &Updater{APIBase: "http://127.0.0.1:0", Client: http.DefaultClient}
+	if _, err := u.Resolve("stable", "../etc/passwd"); err == nil || !strings.Contains(err.Error(), "invalid --version") {
+		t.Fatalf("invalid version: err = %v", err)
+	}
+	if _, err := u.Resolve("weird", ""); err == nil || !strings.Contains(err.Error(), "unknown channel") {
+		t.Fatalf("unknown channel: err = %v", err)
 	}
 }

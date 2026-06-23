@@ -1,10 +1,13 @@
 // Package update implements oma self-update with the
 // docs/reference/security-contract.md §5 trust chain: the update source is pinned
-// to this repository's GitHub Releases at compile time, asset names must
-// match the release naming contract, every download is verified against
-// the release's checksums.txt, replacement is atomic with an .old backup
-// and a post-replace self-check that auto-rolls-back, and an unwritable
-// target degrades to printed manual instructions (never sudo).
+// to this repository's GitHub Releases at compile time, only the assets the
+// updater consumes are validated (the platform binary + checksums.txt; auxiliary
+// assets such as SBOMs, signatures and attestations are ignored), updates move
+// strictly forward by semantic version (a downgrade is refused unless explicitly
+// allowed), every download is verified against the release's checksums.txt,
+// replacement is atomic with an .old backup and a post-replace self-check that
+// auto-rolls-back, and an unwritable target degrades to printed manual
+// instructions (never sudo).
 package update
 
 import (
@@ -20,6 +23,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -33,8 +37,10 @@ var ErrUpdate = errors.New("self-update refused (fail-closed)")
 
 // Release is the subset of the GitHub release document oma reads.
 type Release struct {
-	TagName string  `json:"tag_name"`
-	Assets  []Asset `json:"assets"`
+	TagName    string  `json:"tag_name"`
+	Draft      bool    `json:"draft"`
+	Prerelease bool    `json:"prerelease"`
+	Assets     []Asset `json:"assets"`
 }
 
 // Asset is one release asset.
@@ -104,46 +110,144 @@ func (u *Updater) assetName(tag string) string {
 	return name
 }
 
-var assetNameRe = regexp.MustCompile(`^oma_[A-Za-z0-9.+-]+_[a-z0-9]+_[a-z0-9]+(\.exe)?$`)
+var releaseTagRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
-// Check queries the pinned source for the latest release — strictly
-// read-only (zero filesystem writes). It returns the release and whether
-// it differs from the running version.
+// Check resolves the latest stable release (the default channel). Strictly
+// read-only (zero filesystem writes).
 func (u *Updater) Check() (*Release, bool, error) {
-	endpoint := fmt.Sprintf("%s/repos/%s/releases/latest", u.APIBase, Repo)
+	return u.CheckTarget("stable", "")
+}
+
+// CheckTarget resolves the release selected by channel/version and reports
+// whether it is a strictly newer semantic version than the running binary —
+// strictly read-only. Auxiliary release assets the updater does not consume
+// (SBOMs, signatures, attestations) are ignored here; only the assets Apply
+// consumes are validated, and only at apply time (security-contract.md §5: a
+// supply-chain artifact added to a release can never break the update channel).
+func (u *Updater) CheckTarget(channel, version string) (*Release, bool, error) {
+	rel, err := u.Resolve(channel, version)
+	if err != nil {
+		return nil, false, err
+	}
+	return rel, u.updateAvailable(rel.TagName), nil
+}
+
+// Resolve fetches the target release document. An explicit version pins a tag;
+// the "prerelease" channel selects the highest semantic version including
+// prereleases; otherwise the latest stable release (GitHub's /releases/latest
+// excludes prereleases).
+func (u *Updater) Resolve(channel, version string) (*Release, error) {
+	switch {
+	case version != "":
+		if !releaseTagRe.MatchString(version) {
+			return nil, fmt.Errorf("%w: invalid --version %q (want a release tag)", ErrUpdate, version)
+		}
+		return u.fetchRelease(fmt.Sprintf("%s/repos/%s/releases/tags/%s", u.APIBase, Repo, version))
+	case channel == "prerelease":
+		return u.latestIncludingPrerelease()
+	case channel == "" || channel == "stable":
+		return u.fetchRelease(fmt.Sprintf("%s/repos/%s/releases/latest", u.APIBase, Repo))
+	default:
+		return nil, fmt.Errorf("%w: unknown channel %q (want stable or prerelease)", ErrUpdate, channel)
+	}
+}
+
+// fetchRelease GETs and validates a single release document.
+func (u *Updater) fetchRelease(endpoint string) (*Release, error) {
 	resp, err := u.Client.Get(endpoint)
 	if err != nil {
-		return nil, false, fmt.Errorf("%w: release metadata unavailable: %v", ErrUpdate, err)
+		return nil, fmt.Errorf("%w: release metadata unavailable: %v", ErrUpdate, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return nil, false, fmt.Errorf("%w: release metadata unavailable (HTTP %d from %s)", ErrUpdate, resp.StatusCode, endpoint)
+		return nil, fmt.Errorf("%w: release metadata unavailable (HTTP %d from %s)", ErrUpdate, resp.StatusCode, endpoint)
 	}
 	var rel Release
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&rel); err != nil {
-		return nil, false, fmt.Errorf("%w: release metadata not valid JSON: %v", ErrUpdate, err)
+		return nil, fmt.Errorf("%w: release metadata not valid JSON: %v", ErrUpdate, err)
 	}
 	if rel.TagName == "" {
-		return nil, false, fmt.Errorf("%w: release has no tag name", ErrUpdate)
+		return nil, fmt.Errorf("%w: release has no tag name", ErrUpdate)
 	}
-	for _, a := range rel.Assets {
-		if !assetNameRe.MatchString(a.Name) && a.Name != "checksums.txt" {
-			return nil, false, fmt.Errorf("%w: unexpected asset name %q in release %s (naming contract violated)", ErrUpdate, a.Name, rel.TagName)
+	// A remote tag we cannot parse is unsafe to compare against → fail closed.
+	if _, _, ok := parseSemver(rel.TagName); !ok {
+		return nil, fmt.Errorf("%w: release tag %q is not a valid semantic version", ErrUpdate, rel.TagName)
+	}
+	return &rel, nil
+}
+
+// latestIncludingPrerelease lists releases and returns the highest semantic
+// version, prereleases included (the prerelease channel). Drafts are skipped.
+func (u *Updater) latestIncludingPrerelease() (*Release, error) {
+	endpoint := fmt.Sprintf("%s/repos/%s/releases?per_page=50", u.APIBase, Repo)
+	resp, err := u.Client.Get(endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("%w: release list unavailable: %v", ErrUpdate, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%w: release list unavailable (HTTP %d from %s)", ErrUpdate, resp.StatusCode, endpoint)
+	}
+	var rels []Release
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(&rels); err != nil {
+		return nil, fmt.Errorf("%w: release list not valid JSON: %v", ErrUpdate, err)
+	}
+	var best *Release
+	for i := range rels {
+		if rels[i].Draft {
+			continue
+		}
+		if _, _, ok := parseSemver(rels[i].TagName); !ok {
+			continue
+		}
+		if best == nil {
+			best = &rels[i]
+			continue
+		}
+		if order, ok := CompareVersions(rels[i].TagName, best.TagName); ok && order > 0 {
+			best = &rels[i]
 		}
 	}
-	return &rel, rel.TagName != u.Current, nil
+	if best == nil {
+		return nil, fmt.Errorf("%w: no published release with a valid version", ErrUpdate)
+	}
+	return best, nil
+}
+
+// updateAvailable reports whether remote is a strictly newer version than the
+// running binary. An unparseable running version (a dev/source build) is
+// treated as older than any release, so self-update can still move a dev build
+// onto a real release.
+func (u *Updater) updateAvailable(remote string) bool {
+	order, ok := CompareVersions(u.Current, remote)
+	if !ok {
+		return true
+	}
+	return order < 0
 }
 
 // Apply downloads, verifies and atomically installs the release over the
 // running binary. dryRun discloses the exact paths and writes nothing.
-func (u *Updater) Apply(rel *Release, dryRun bool) error {
+// allowDowngrade permits replacing the running binary with an equal or older
+// release; without it a downgrade is refused fail-closed.
+func (u *Updater) Apply(rel *Release, dryRun, allowDowngrade bool) error {
 	wantName := u.assetName(rel.TagName)
-	binAsset, sumAsset := u.findAssets(rel, wantName)
+	binAsset, sumAsset, err := u.findAssets(rel, wantName)
+	if err != nil {
+		return err
+	}
 	if binAsset == nil {
 		return fmt.Errorf("%w: release %s has no asset %q for this platform", ErrUpdate, rel.TagName, wantName)
 	}
 	if sumAsset == nil {
 		return fmt.Errorf("%w: release %s has no checksums.txt (unverifiable)", ErrUpdate, rel.TagName)
+	}
+	// Never silently move backward: a release older than the running binary is
+	// refused unless the caller explicitly opted into a downgrade.
+	if !allowDowngrade {
+		if order, ok := CompareVersions(u.Current, rel.TagName); ok && order > 0 {
+			return fmt.Errorf("%w: running %s is newer than release %s; refusing downgrade (re-run with --allow-downgrade)", ErrUpdate, u.Current, rel.TagName)
+		}
 	}
 	if err := u.checkSourceURL(binAsset.URL); err != nil {
 		return err
@@ -224,16 +328,26 @@ func (u *Updater) Apply(rel *Release, dryRun bool) error {
 	return nil
 }
 
-func (u *Updater) findAssets(rel *Release, wantName string) (bin, sums *Asset) {
+// findAssets locates exactly the two assets Apply consumes — the current
+// platform binary and checksums.txt — and fails closed if either appears more
+// than once (an ambiguous release must never be silently resolved). Every other
+// asset in the release is ignored.
+func (u *Updater) findAssets(rel *Release, wantName string) (bin, sums *Asset, err error) {
 	for i := range rel.Assets {
 		switch rel.Assets[i].Name {
 		case wantName:
+			if bin != nil {
+				return nil, nil, fmt.Errorf("%w: release %s has more than one %q asset", ErrUpdate, rel.TagName, wantName)
+			}
 			bin = &rel.Assets[i]
 		case "checksums.txt":
+			if sums != nil {
+				return nil, nil, fmt.Errorf("%w: release %s has more than one checksums.txt", ErrUpdate, rel.TagName)
+			}
 			sums = &rel.Assets[i]
 		}
 	}
-	return bin, sums
+	return bin, sums, nil
 }
 
 // checkSourceURL pins download URLs to the release locations of THIS
@@ -325,4 +439,126 @@ func runVersionProbe(path string) (string, error) {
 		return "", fmt.Errorf("version output not valid JSON: %w", err)
 	}
 	return doc.Version, nil
+}
+
+// --- semantic version comparison (security-contract.md §5) ------------------
+//
+// self-update compares versions by SemVer 2.0 precedence rather than string
+// (in)equality, so it offers only genuine upgrades and refuses downgrades. The
+// version space is our own release tags (vMAJOR.MINOR.PATCH[-prerelease]); a
+// small focused comparator keeps the binary dependency-free.
+
+var semverRe = regexp.MustCompile(`^v?([0-9]+)\.([0-9]+)\.([0-9]+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$`)
+
+// parseSemver extracts the MAJOR.MINOR.PATCH core and the prerelease string
+// (build metadata is accepted but ignored, per SemVer). ok is false for any
+// input that is not a recognizable semantic version (e.g. "dev", "main", "").
+func parseSemver(s string) (core [3]int, prerelease string, ok bool) {
+	m := semverRe.FindStringSubmatch(s)
+	if m == nil {
+		return core, "", false
+	}
+	for i := 0; i < 3; i++ {
+		n, err := strconv.Atoi(m[i+1])
+		if err != nil {
+			return core, "", false
+		}
+		core[i] = n
+	}
+	return core, m[4], true
+}
+
+// IsSemver reports whether s is a parseable semantic version (a real release
+// tag) rather than a dev/source build stamp like "dev" or "main". `oma asset
+// install` uses it to decide whether the running binary's version can pin a
+// release to fetch assets from.
+func IsSemver(s string) bool {
+	_, _, ok := parseSemver(s)
+	return ok
+}
+
+// CompareVersions reports -1/0/+1 for a<b / a==b / a>b under SemVer precedence.
+// ok is false when either side is not a valid semantic version, leaving the
+// ordering undefined (callers decide the dev-build policy).
+func CompareVersions(a, b string) (order int, ok bool) {
+	ac, apre, aok := parseSemver(a)
+	bc, bpre, bok := parseSemver(b)
+	if !aok || !bok {
+		return 0, false
+	}
+	for i := 0; i < 3; i++ {
+		if ac[i] != bc[i] {
+			if ac[i] < bc[i] {
+				return -1, true
+			}
+			return 1, true
+		}
+	}
+	return comparePrerelease(apre, bpre), true
+}
+
+// comparePrerelease implements SemVer §11.4: a version carrying a prerelease has
+// lower precedence than the same core without one, and prerelease identifiers
+// compare field-by-field — numeric numerically, alphanumeric lexically, numeric
+// below alphanumeric, and a longer field list winning when all prior fields tie.
+func comparePrerelease(a, b string) int {
+	switch {
+	case a == "" && b == "":
+		return 0
+	case a == "":
+		return 1 // a has no prerelease → higher precedence
+	case b == "":
+		return -1
+	}
+	ai, bi := strings.Split(a, "."), strings.Split(b, ".")
+	for i := 0; i < len(ai) && i < len(bi); i++ {
+		if c := compareIdent(ai[i], bi[i]); c != 0 {
+			return c
+		}
+	}
+	switch {
+	case len(ai) < len(bi):
+		return -1
+	case len(ai) > len(bi):
+		return 1
+	default:
+		return 0
+	}
+}
+
+func compareIdent(a, b string) int {
+	an, aNum := atoiOK(a)
+	bn, bNum := atoiOK(b)
+	switch {
+	case aNum && bNum:
+		switch {
+		case an < bn:
+			return -1
+		case an > bn:
+			return 1
+		default:
+			return 0
+		}
+	case aNum:
+		return -1 // a numeric identifier is lower than an alphanumeric one
+	case bNum:
+		return 1
+	default:
+		switch {
+		case a < b:
+			return -1
+		case a > b:
+			return 1
+		default:
+			return 0
+		}
+	}
+}
+
+func atoiOK(s string) (int, bool) {
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return 0, false
+	}
+	return n, true
 }
