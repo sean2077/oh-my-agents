@@ -54,11 +54,19 @@ build_one darwin arm64
 build_one windows amd64
 build_one windows arm64
 
+# Content-asset bundle: the assets/ tree, fetched + checksum-verified by
+# `oma asset install --ref <tag>` (docs/reference/security-contract.md §5). Named
+# WITHOUT the oma_<ver>_ prefix so the release's "exactly 6 platform binaries"
+# count never sees it; it is, however, listed in checksums.txt below.
+ASSETS_TARBALL="assets-${VERSION}.tar.gz"
+[ -d "$ROOT/assets" ] || { echo "ERR assets/ directory not found at $ROOT/assets" >&2; exit 1; }
+tar -C "$ROOT/assets" -czf "$OUT_DIR/$ASSETS_TARBALL" .
+
 (
   cd "$OUT_DIR"
   if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum oma_"$VERSION"_* > checksums.txt
+    sha256sum oma_"$VERSION"_* "$ASSETS_TARBALL" > checksums.txt
   else
-    shasum -a 256 oma_"$VERSION"_* > checksums.txt
+    shasum -a 256 oma_"$VERSION"_* "$ASSETS_TARBALL" > checksums.txt
   fi
 )

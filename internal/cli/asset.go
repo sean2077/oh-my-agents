@@ -9,6 +9,8 @@ import (
 
 	"github.com/sean2077/oh-my-agents/internal/asset"
 	"github.com/sean2077/oh-my-agents/internal/assetaudit"
+	"github.com/sean2077/oh-my-agents/internal/update"
+	"github.com/sean2077/oh-my-agents/internal/version"
 	"github.com/spf13/cobra"
 )
 
@@ -81,18 +83,22 @@ func newAssetCmd() *cobra.Command {
 
 func newAssetInstallCmd() *cobra.Command {
 	var from string
+	var ref string
+	var repo string
 	var force bool
 	var agents []string
 	cmd := &cobra.Command{
-		Use:   "install <name>...",
+		Use:   "install [--ref <tag> | --from <root>] <name>...",
 		Short: "Install assets to the canonical root and record them in the registry",
-		Args:  cobra.MinimumNArgs(1),
+		Example: "  # clean machine — fetch the assets bundle matching your oma version:\n" +
+			"  oma asset install deep-interview ralph autopilot pair-delivery\n" +
+			"  # pin an explicit release, or install from a local checkout:\n" +
+			"  oma asset install --ref v1.0.0 deep-interview\n" +
+			"  oma asset install --from ./assets deep-interview ralph autopilot pair-delivery",
+		Args: cobra.MinimumNArgs(1),
 		RunE: run(func(cmd *cobra.Command, args []string) error {
 			if err := requireValidNames(args); err != nil {
 				return err
-			}
-			if from == "" {
-				return Errf(ExitState, "no assets source: pass --from <root> (repo assets/ directory)")
 			}
 			eng, err := newEngine()
 			if err != nil {
@@ -106,12 +112,45 @@ func newAssetInstallCmd() *cobra.Command {
 				}
 				requested = cfg.Asset.DefaultAgents
 			}
-			for _, name := range args {
-				src, err := resolveSource(from, name)
+
+			// Resolve the assets source. A local --from wins; otherwise fetch
+			// the pinned release bundle at --ref, defaulting to the running
+			// binary's own version so a clean machine just works. A dev/source
+			// build has no release to pin, so it must pass --ref or --from — we
+			// never fetch an unpinned ref (e.g. main).
+			srcRoot, label := from, "dir"
+			if from == "" {
+				wantRef := ref
+				if wantRef == "" {
+					if !update.IsSemver(version.Version) {
+						return Errf(ExitState, "no assets source: this is a %q build with no release to pin — pass --ref <tag> or --from <root> (a checkout's assets/)", version.Version)
+					}
+					wantRef = version.Version
+				}
+				fetcher := newAssetFetcher(repo, wantRef, cmd.ErrOrStderr())
+				if err := fetcher.validate(); err != nil {
+					return err
+				}
+				if DryRun() {
+					_, _ = fmt.Fprintf(cmd.OutOrStdout(),
+						"[dry-run] would fetch %s\n[dry-run] would verify it against %s/checksums.txt and install: %s\n",
+						fetcher.bundleURL(), fetcher.base(), strings.Join(args, " "))
+					return nil
+				}
+				root, cleanup, err := fetcher.Fetch(os.TempDir())
 				if err != nil {
 					return err
 				}
-				rep, err := eng.Install(src, asset.Options{DryRun: DryRun(), Force: force, Source: "dir", Agents: requested})
+				defer cleanup()
+				srcRoot, label = root, "release"
+			}
+
+			for _, name := range args {
+				src, err := resolveSource(srcRoot, name)
+				if err != nil {
+					return err
+				}
+				rep, err := eng.Install(src, asset.Options{DryRun: DryRun(), Force: force, Source: label, Agents: requested})
 				if err != nil {
 					return Errf(ExitState, "install %s: %v", name, err)
 				}
@@ -120,7 +159,9 @@ func newAssetInstallCmd() *cobra.Command {
 			return nil
 		}),
 	}
-	cmd.Flags().StringVar(&from, "from", "", "assets source root (e.g. a repo assets/ dir)")
+	cmd.Flags().StringVar(&from, "from", "", "local assets source root (a checkout's assets/ dir)")
+	cmd.Flags().StringVar(&ref, "ref", "", "release tag to fetch the assets bundle from (default: this binary's version)")
+	cmd.Flags().StringVar(&repo, "repo", update.Repo, "source repository owner/name (pinned)")
 	cmd.Flags().BoolVar(&force, "force", false, "back up and replace unmanaged destinations")
 	cmd.Flags().StringSliceVar(&agents, "agent", nil, "narrow projection agents (final = manifest targets ∩ this; default from config asset.default_agents)")
 	return cmd
