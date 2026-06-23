@@ -97,14 +97,27 @@ func TestRelayPublishHelperProcess(t *testing.T) {
 	}
 	l := NewLedger(os.Getenv("OMA_RELAY_ROOT"), id)
 	pair := os.Getenv("OMA_RELAY_PAIR")
-	draft, err := l.CreateDraft(pair, "note", nil, nil, false)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(2)
+	deadline = time.Now().Add(4 * time.Minute)
+	var draft string
+	for {
+		var err error
+		draft, err = l.CreateDraft(pair, "note", nil, nil, false)
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, ErrConflict) || time.Now().After(deadline) {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
+		}
+		time.Sleep(time.Duration(20+os.Getpid()%7) * time.Millisecond)
 	}
-	if _, err := l.Publish(draft, PublishInput{Body: author + " checking in", Prompt: "your turn"}, false); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(2)
+	for {
+		if _, err := l.Publish(draft, PublishInput{Body: author + " checking in", Prompt: "your turn"}, false); err == nil {
+			os.Exit(0)
+		} else if !errors.Is(err, ErrConflict) || time.Now().After(deadline) {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
+		}
+		time.Sleep(time.Duration(20+os.Getpid()%7) * time.Millisecond)
 	}
-	os.Exit(0)
 }
