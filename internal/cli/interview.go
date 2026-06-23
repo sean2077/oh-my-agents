@@ -274,7 +274,12 @@ func newInterviewStatusCmd() *cobra.Command {
 				return err
 			}
 			if asJSON {
-				return printJSON(cmd, s)
+				// Embed the persisted state and add the stable terminal
+				// boolean as a query-only field (never written to disk).
+				return printJSON(cmd, struct {
+					*interview.State
+					Terminal bool `json:"terminal"`
+				}{s, s.Terminal()})
 			}
 			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s phase=%s type=%s rounds=%d ambiguity=%.3f threshold=%.2f\n",
 				s.ID, s.Phase, s.Type, len(s.Rounds), s.CurrentAmbiguity, s.Threshold)

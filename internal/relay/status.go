@@ -28,6 +28,7 @@ type HeartbeatInfo struct {
 type PairStatus struct {
 	Pair             string                   `json:"pair"`
 	Session          *Session                 `json:"session"`
+	Terminal         bool                     `json:"terminal"` // stable end-state signal; consumers treat session.status as opaque
 	NextSeq          int                      `json:"next_seq"`
 	Latest           *ArtifactSummary         `json:"latest,omitempty"`
 	Artifacts        []ArtifactSummary        `json:"artifacts,omitempty"`
@@ -48,7 +49,7 @@ func (l *Ledger) Status(slug string, last int) (*PairStatus, error) {
 		return nil, err
 	}
 	pairDir := l.PairDir(s.Pair)
-	st := &PairStatus{Pair: s.Pair, Session: s, Heartbeats: map[string]HeartbeatInfo{}}
+	st := &PairStatus{Pair: s.Pair, Session: s, Terminal: s.Terminal(), Heartbeats: map[string]HeartbeatInfo{}}
 
 	next, err := l.nextSeq(s.Pair)
 	if err != nil {
