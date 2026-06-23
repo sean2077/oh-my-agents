@@ -507,10 +507,28 @@ func TestDevBuildSeesUpdate(t *testing.T) {
 
 func TestMalformedRemoteTagFailsClosed(t *testing.T) {
 	newBin := []byte("NEW")
-	srv := serveRelease(t, fakeRelease{tag: "not-a-version", binary: newBin, sumOf: newBin})
-	u, _ := testUpdater(t, srv, "v0.0.1")
-	if _, _, err := u.Check(); !errors.Is(err, ErrUpdate) || !strings.Contains(err.Error(), "not a valid semantic version") {
-		t.Fatalf("malformed remote tag: err = %v", err)
+	// Non-semver and leading-zero tags both fail closed at the parse gate.
+	for _, tag := range []string{"not-a-version", "v01.2.3", "v1.0.0-rc.01"} {
+		srv := serveRelease(t, fakeRelease{tag: tag, binary: newBin, sumOf: newBin})
+		u, _ := testUpdater(t, srv, "v0.0.1")
+		if _, _, err := u.Check(); !errors.Is(err, ErrUpdate) || !strings.Contains(err.Error(), "not a valid semantic version") {
+			t.Fatalf("malformed remote tag %q: err = %v", tag, err)
+		}
+	}
+}
+
+func TestParseSemverRejectsLeadingZero(t *testing.T) {
+	bad := []string{"v01.2.3", "v1.02.3", "v1.2.03", "v1.2.3-rc.01", "v1.2.3-00", "1.2.3-01.2", "v1.2.3-"}
+	for _, s := range bad {
+		if IsSemver(s) {
+			t.Errorf("IsSemver(%q) = true, want false (invalid per SemVer)", s)
+		}
+	}
+	good := []string{"v1.2.3", "v0.9.1", "v1.0.0-rc.1", "v1.0.0-rc.10", "v1.0.0-0", "v1.0.0-alpha01", "v1.0.0-0a", "1.2.3"}
+	for _, s := range good {
+		if !IsSemver(s) {
+			t.Errorf("IsSemver(%q) = false, want true", s)
+		}
 	}
 }
 

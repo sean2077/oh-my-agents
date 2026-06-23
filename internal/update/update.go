@@ -448,11 +448,14 @@ func runVersionProbe(path string) (string, error) {
 // version space is our own release tags (vMAJOR.MINOR.PATCH[-prerelease]); a
 // small focused comparator keeps the binary dependency-free.
 
-var semverRe = regexp.MustCompile(`^v?([0-9]+)\.([0-9]+)\.([0-9]+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$`)
+// Core identifiers reject leading zeros (SemVer §2). Prerelease numeric
+// identifiers do too (§9) — enforced below, since the regex alone can't.
+var semverRe = regexp.MustCompile(`^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$`)
 
 // parseSemver extracts the MAJOR.MINOR.PATCH core and the prerelease string
 // (build metadata is accepted but ignored, per SemVer). ok is false for any
-// input that is not a recognizable semantic version (e.g. "dev", "main", "").
+// input that is not a recognizable semantic version (e.g. "dev", "main", "",
+// or a tag with leading-zero numeric identifiers like "v01.2.3" / "rc.01").
 func parseSemver(s string) (core [3]int, prerelease string, ok bool) {
 	m := semverRe.FindStringSubmatch(s)
 	if m == nil {
@@ -465,7 +468,28 @@ func parseSemver(s string) (core [3]int, prerelease string, ok bool) {
 		}
 		core[i] = n
 	}
+	if pre := m[4]; pre != "" {
+		for _, id := range strings.Split(pre, ".") {
+			// Empty identifier (a stray/leading/trailing dot) is invalid, and a
+			// purely-numeric identifier must not carry a leading zero (§9).
+			if id == "" {
+				return core, "", false
+			}
+			if isAllDigits(id) && len(id) > 1 && id[0] == '0' {
+				return core, "", false
+			}
+		}
+	}
 	return core, m[4], true
+}
+
+func isAllDigits(s string) bool {
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // IsSemver reports whether s is a parseable semantic version (a real release

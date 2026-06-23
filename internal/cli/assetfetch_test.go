@@ -126,8 +126,20 @@ func TestExtractTarGzRejectsTraversal(t *testing.T) {
 	if err := os.WriteFile(tarPath, tarball, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := extractTarGz(tarPath, filepath.Join(t.TempDir(), "root")); err == nil || !strings.Contains(err.Error(), "unsafe path") {
+	if err := extractTarGz(tarPath, filepath.Join(t.TempDir(), "root"), 1<<20); err == nil || !strings.Contains(err.Error(), "unsafe path") {
 		t.Fatalf("err = %v, want unsafe-path rejection", err)
+	}
+}
+
+func TestExtractTarGzRejectsOversizedEntry(t *testing.T) {
+	// An entry larger than the cap must fail closed, not be silently truncated.
+	tarball := makeTarGz(t, map[string]string{"skills/x/manifest.json": "0123456789"}) // 10 bytes
+	tarPath := filepath.Join(t.TempDir(), "b.tar.gz")
+	if err := os.WriteFile(tarPath, tarball, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := extractTarGz(tarPath, filepath.Join(t.TempDir(), "root"), 4); err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("err = %v, want oversize rejection", err)
 	}
 }
 

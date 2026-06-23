@@ -84,7 +84,6 @@ func newAssetCmd() *cobra.Command {
 func newAssetInstallCmd() *cobra.Command {
 	var from string
 	var ref string
-	var repo string
 	var force bool
 	var agents []string
 	cmd := &cobra.Command{
@@ -127,7 +126,9 @@ func newAssetInstallCmd() *cobra.Command {
 					}
 					wantRef = version.Version
 				}
-				fetcher := newAssetFetcher(repo, wantRef, cmd.ErrOrStderr())
+				// The source repository is compile-time pinned (security-contract
+				// §5): the public CLI never resolves assets from another repo.
+				fetcher := newAssetFetcher(update.Repo, wantRef, cmd.ErrOrStderr())
 				if err := fetcher.validate(); err != nil {
 					return err
 				}
@@ -161,7 +162,6 @@ func newAssetInstallCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&from, "from", "", "local assets source root (a checkout's assets/ dir)")
 	cmd.Flags().StringVar(&ref, "ref", "", "release tag to fetch the assets bundle from (default: this binary's version)")
-	cmd.Flags().StringVar(&repo, "repo", update.Repo, "source repository owner/name (pinned)")
 	cmd.Flags().BoolVar(&force, "force", false, "back up and replace unmanaged destinations")
 	cmd.Flags().StringSliceVar(&agents, "agent", nil, "narrow projection agents (final = manifest targets ∩ this; default from config asset.default_agents)")
 	return cmd

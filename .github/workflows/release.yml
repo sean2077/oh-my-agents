@@ -92,6 +92,13 @@ jobs:
         run: |
           tag="${GITHUB_REF_NAME}"
           if gh release view "$tag" >/dev/null 2>&1; then
+            # An ALREADY-PUBLISHED release must never be reverted to draft (that
+            # would hide a valid public release when the no-clobber upload below
+            # fails on its existing assets). Only an existing *draft* is reused.
+            if [ "$(gh release view "$tag" --json isDraft -q .isDraft)" != "true" ]; then
+              echo "release $tag is already published; refusing to revert it to draft — cut a new version instead" >&2
+              exit 1
+            fi
             gh release edit "$tag" --title "$tag" --notes-file "$RUNNER_TEMP/release-notes.md" --verify-tag --draft
           else
             gh release create "$tag" --title "$tag" --notes-file "$RUNNER_TEMP/release-notes.md" --verify-tag --draft

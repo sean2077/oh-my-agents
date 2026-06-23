@@ -116,7 +116,7 @@ func (f *assetFetcher) Fetch(parent string) (root string, cleanup func(), err er
 		return "", nil, err
 	}
 	root = filepath.Join(tmp, "assets")
-	if err := extractTarGz(tarPath, root); err != nil {
+	if err := extractTarGz(tarPath, root, assetsBundleMaxBytes); err != nil {
 		cleanup()
 		return "", nil, Errf(ExitState, "extract %s: %v", bundle, err)
 	}
@@ -191,8 +191,10 @@ func firstErr(errs ...error) error {
 }
 
 // extractTarGz unpacks a gzip'd tar under root, refusing any entry that would
-// escape root (zip-slip) or is not a plain file/dir (no symlinks/devices).
-func extractTarGz(tarPath, root string) error {
+// escape root (zip-slip), is not a plain file/dir (no symlinks/devices), or
+// exceeds maxBytes (an oversized member fails closed instead of being silently
+// truncated).
+func extractTarGz(tarPath, root string, maxBytes int64) error {
 	fh, err := os.Open(tarPath)
 	if err != nil {
 		return err
@@ -233,6 +235,9 @@ func extractTarGz(tarPath, root string) error {
 				return err
 			}
 		case tar.TypeReg:
+			if hdr.Size > maxBytes {
+				return fmt.Errorf("archive entry %q (%d bytes) exceeds the %d-byte limit", hdr.Name, hdr.Size, maxBytes)
+			}
 			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 				return err
 			}
@@ -240,12 +245,18 @@ func extractTarGz(tarPath, root string) error {
 			if err != nil {
 				return err
 			}
-			if _, err := io.Copy(out, io.LimitReader(tr, assetsBundleMaxBytes)); err != nil {
-				_ = out.Close()
-				return err
+			// Read one byte past the cap so a header under-reporting its size
+			// (streaming more than declared) is still caught as truncation.
+			written, copyErr := io.Copy(out, io.LimitReader(tr, maxBytes+1))
+			closeErr := out.Close()
+			if copyErr != nil {
+				return copyErr
 			}
-			if err := out.Close(); err != nil {
-				return err
+			if closeErr != nil {
+				return closeErr
+			}
+			if written > maxBytes {
+				return fmt.Errorf("archive entry %q exceeds the %d-byte limit (truncation refused)", hdr.Name, maxBytes)
 			}
 		default:
 			return fmt.Errorf("unsupported archive entry %q (type %d): only regular files and directories are allowed", hdr.Name, hdr.Typeflag)
