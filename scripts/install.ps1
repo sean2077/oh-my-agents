@@ -27,6 +27,11 @@
 .PARAMETER Ref
   Source-build git ref. Also $env:OMA_INSTALL_REF.
 
+.PARAMETER File
+  Install a local prebuilt oma.exe at this path instead of downloading (requires
+  -Version <expected tag>; used by CI to smoke-test the just-built asset). Also
+  $env:OMA_INSTALL_FILE.
+
 .EXAMPLE
   # Latest release (default):
   irm https://raw.githubusercontent.com/sean2077/oh-my-agents/main/scripts/install.ps1 | iex
@@ -41,6 +46,7 @@ param(
   [string]$BinDir   = $(if ($env:OMA_INSTALL_BIN_DIR) { $env:OMA_INSTALL_BIN_DIR } else { Join-Path $HOME '.local\bin' }),
   [string]$Repo     = $(if ($env:OMA_INSTALL_REPO) { $env:OMA_INSTALL_REPO } else { 'sean2077/oh-my-agents' }),
   [string]$Ref      = $env:OMA_INSTALL_REF,
+  [string]$File     = $env:OMA_INSTALL_FILE,
   [switch]$FromSource
 )
 
@@ -73,17 +79,43 @@ function Resolve-LatestTag {
   return $null
 }
 
+function Get-BinaryVersion($path) {
+  try { return (& $path version --json | ConvertFrom-Json).version } catch { return $null }
+}
+
+# Validate an artifact BEFORE it is allowed to replace the target, so a wrong or
+# unstartable binary never clobbers a working install (self-update validates the
+# temp binary the same way before swapping).
+function Confirm-ArtifactVersion($path, $version) {
+  $got = Get-BinaryVersion $path
+  if (-not $got)         { Die "downloaded binary did not report a version (wanted $version); target left untouched" }
+  if ($got -ne $version) { Die "version mismatch: downloaded binary reports '$got', expected '$version'; target left untouched" }
+}
+
+# Place an ALREADY-VERIFIED binary at $dest atomically: back up any existing
+# target, move into place, re-check, and roll the previous one back on failure
+# (the install-time analogue of self-update's backup + post-replace self-check).
 function Install-Atomic($srcFile, $version) {
   New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
   $tmp = Join-Path $BinDir (".{0}.tmp.{1}" -f $BinName, $PID)
   Copy-Item -Force $srcFile $tmp
+  $backup = $null
+  if (Test-Path $dest) {
+    $backup = Join-Path $BinDir (".{0}.old.{1}" -f $BinName, $PID)
+    Copy-Item -Force $dest $backup
+  }
   Move-Item -Force $tmp $dest
+  $got = Get-BinaryVersion $dest
+  if ($got -ne $version) {
+    if ($backup) {
+      Move-Item -Force $backup $dest
+      Die "post-install check failed (installed binary reports '$got', expected '$version'); previous binary restored"
+    }
+    Remove-Item -Force $dest -ErrorAction SilentlyContinue
+    Die "post-install check failed (installed binary reports '$got', expected '$version'); removed the bad install"
+  }
+  if ($backup) { Remove-Item -Force $backup -ErrorAction SilentlyContinue }
   Write-Host "installed $dest"
-  # Post-install: the binary must report exactly the version we intended.
-  $got = $null
-  try { $got = (& $dest version --json | ConvertFrom-Json).version } catch { }
-  if (-not $got)            { Die "installed binary did not report a version (wanted $version)" }
-  if ($got -ne $version)    { Die "version mismatch: installed binary reports '$got', expected '$version'" }
   Write-Host "version verified: $got"
 }
 
@@ -124,6 +156,7 @@ function Install-FromRelease {
     if ($got -ne $want) { Die "checksum mismatch for $asset (want $want, got $got)" }
     Write-Host "checksum ok"
 
+    Confirm-ArtifactVersion (Join-Path $work $asset) $tag
     Install-Atomic (Join-Path $work $asset) $tag
     Path-Note
   } finally {
@@ -159,6 +192,7 @@ function Build-FromSource {
       & go build -trimpath -ldflags $ld -o "$work\oma.exe" ./cmd/oma
       if ($LASTEXITCODE -ne 0) { Die "go build failed" }
     } finally { Pop-Location }
+    Confirm-ArtifactVersion "$work\oma.exe" $sv
     Install-Atomic "$work\oma.exe" $sv
     Path-Note
   } finally {
@@ -166,4 +200,15 @@ function Build-FromSource {
   }
 }
 
-if ($FromSource) { Build-FromSource } else { Install-FromRelease }
+function Install-FromFile {
+  if (-not (Test-Path $File)) { Die "file not found: $File" }
+  if ($Version -eq 'latest')  { Die "-File requires -Version <expected tag>" }
+  Write-Host "installing local binary $File ($Version)"
+  Confirm-ArtifactVersion $File $Version
+  Install-Atomic $File $Version
+  Path-Note
+}
+
+if ($File)           { Install-FromFile }
+elseif ($FromSource) { Build-FromSource }
+else                 { Install-FromRelease }

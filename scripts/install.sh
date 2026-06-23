@@ -24,12 +24,18 @@
 #   OMA_INSTALL_REF                           source-build git ref (default: the
 #                                             pinned tag, else the newest
 #                                             release, else main)
+#   OMA_INSTALL_FILE                          install a local prebuilt binary at
+#                                             this path instead of downloading
+#                                             (requires OMA_INSTALL_VERSION=<tag>
+#                                             as the expected version; used by CI
+#                                             to smoke-test the just-built asset)
 set -euo pipefail
 
 REPO="${OMA_INSTALL_REPO:-sean2077/oh-my-agents}"
 VERSION="${OMA_INSTALL_VERSION:-latest}"
 BIN_DIR="${OMA_INSTALL_BIN_DIR:-$HOME/.local/bin}"
 FROM_SOURCE="${OMA_INSTALL_FROM_SOURCE:-0}"
+FILE="${OMA_INSTALL_FILE:-}"
 
 case "$(uname -s 2>/dev/null || true)" in
   MINGW*|MSYS*|CYGWIN*) OS="windows"; EXT=".exe" ;;
@@ -67,36 +73,72 @@ sha256_of() {
 
 tmpdir="$(mktemp -d)"
 tmpbin=""
+backup=""
 cleanup() {
   rm -rf "$tmpdir"
   if [ -n "$tmpbin" ] && [ -e "$tmpbin" ]; then
     rm -f "$tmpbin"
   fi
+  # A backup still set here means we aborted mid-swap: restore the previous
+  # binary so a failed install never leaves the target missing or half-written.
+  if [ -n "$backup" ] && [ -e "$backup" ]; then
+    mv -f "$backup" "$BIN_DIR/$BIN_NAME" 2>/dev/null || rm -f "$backup"
+  fi
 }
 trap cleanup EXIT
 
-install_atomic() {
-  # $1 = a ready binary file; place it at $BIN_DIR/$BIN_NAME atomically.
-  mkdir -p "$BIN_DIR"
-  tmpbin="$BIN_DIR/.${BIN_NAME}.tmp.$$"
-  cp "$1" "$tmpbin"
-  chmod 0755 "$tmpbin"
-  mv "$tmpbin" "$BIN_DIR/$BIN_NAME"
-  tmpbin=""
-  echo "installed $BIN_DIR/$BIN_NAME"
+# Read a binary file's reported version via the --json surface (parsed without
+# jq to keep the installer dependency-free). Prints the version, or nothing.
+probe_version() {
+  "$1" version --json 2>/dev/null \
+    | sed -nE 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' | head -n1
 }
 
-# Assert the freshly installed binary reports exactly the version we intended
-# to install. Closes the gap where a stale, wrong, or partially written asset
-# could land without anyone noticing — the install-time analogue of
-# self-update's post-replace self-check. Uses the --json surface and parses
-# without jq to keep the installer dependency-free.
-verify_installed_version() {
-  local want="$1" got
-  got="$("$BIN_DIR/$BIN_NAME" version --json 2>/dev/null \
-    | sed -nE 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' | head -n1)"
-  [ -n "$got" ] || err "installed binary did not report a version (wanted $want)"
-  [ "$got" = "$want" ] || err "version mismatch: installed binary reports '$got', expected '$want'"
+# Validate a downloaded/built artifact BEFORE it is allowed to replace the
+# target, so a wrong, stale, or unstartable binary can never clobber a working
+# install (self-update validates the temp binary the same way before swapping).
+verify_artifact_version() {
+  local file="$1" want="$2" got
+  got="$(probe_version "$file")"
+  [ -n "$got" ] || err "downloaded binary did not report a version (wanted $want); target left untouched"
+  [ "$got" = "$want" ] || err "version mismatch: downloaded binary reports '$got', expected '$want'; target left untouched"
+}
+
+# Place an ALREADY-VERIFIED binary at $BIN_DIR/$BIN_NAME atomically: back up any
+# existing target, rename into place, re-check the installed binary, and roll
+# the previous one back on failure (the install-time analogue of self-update's
+# backup + post-replace self-check + auto-rollback).
+install_atomic() {
+  local src="$1" want="$2" dest="$BIN_DIR/$BIN_NAME" got
+  mkdir -p "$BIN_DIR"
+  tmpbin="$BIN_DIR/.${BIN_NAME}.tmp.$$"
+  cp "$src" "$tmpbin"
+  chmod 0755 "$tmpbin"
+
+  if [ -e "$dest" ]; then
+    backup="$BIN_DIR/.${BIN_NAME}.old.$$"
+    cp -p "$dest" "$backup"
+  fi
+
+  mv "$tmpbin" "$dest"
+  tmpbin=""
+
+  got="$(probe_version "$dest")"
+  if [ "$got" != "$want" ]; then
+    if [ -n "$backup" ]; then
+      mv -f "$backup" "$dest"
+      backup=""
+      err "post-install check failed (installed binary reports '${got:-none}', expected '$want'); previous binary restored"
+    fi
+    rm -f "$dest"
+    err "post-install check failed (installed binary reports '${got:-none}', expected '$want'); removed the bad install"
+  fi
+
+  if [ -n "$backup" ]; then
+    rm -f "$backup"
+    backup=""
+  fi
+  echo "installed $dest"
   log "version verified: $got"
 }
 
@@ -202,8 +244,8 @@ build_from_source() {
         -X github.com/sean2077/oh-my-agents/internal/version.Commit=$commit" \
       -o "$tmpdir/built" ./cmd/oma
   )
-  install_atomic "$tmpdir/built"
-  verify_installed_version "$source_version"
+  verify_artifact_version "$tmpdir/built" "$source_version"
+  install_atomic "$tmpdir/built" "$source_version"
   path_note
 }
 
@@ -231,12 +273,30 @@ install_from_release() {
   [ "$got" = "$want" ] || err "checksum mismatch for $asset (want $want, got $got)"
   log "checksum ok"
 
-  install_atomic "$tmpdir/$asset"
-  verify_installed_version "$tag"
+  verify_artifact_version "$tmpdir/$asset" "$tag"
+  install_atomic "$tmpdir/$asset" "$tag"
+  path_note
+}
+
+# Install a local prebuilt binary (OMA_INSTALL_FILE) instead of downloading it.
+# The expected version must be given via OMA_INSTALL_VERSION so the same
+# verify-before-replace + rollback contract applies; this is how CI smoke-tests
+# the artifact it just built through the real installer path.
+install_from_file() {
+  [ -f "$FILE" ] || err "OMA_INSTALL_FILE=$FILE is not a file"
+  [ "$VERSION" != "latest" ] || err "OMA_INSTALL_FILE requires OMA_INSTALL_VERSION=<expected tag>"
+  log "installing local binary $FILE ($VERSION)"
+  verify_artifact_version "$FILE" "$VERSION"
+  install_atomic "$FILE" "$VERSION"
   path_note
 }
 
 # --- main ---
+if [ -n "$FILE" ]; then
+  install_from_file
+  exit 0
+fi
+
 if [ "$FROM_SOURCE" = "1" ]; then
   build_from_source
   exit 0
