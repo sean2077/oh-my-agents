@@ -4,6 +4,21 @@
 >
 > Section heading format: `## vX.Y.Z - YYYY-MM-DD` (CI matches the tag by exact prefix; a tag with no matching section fails the release, fail-closed).
 
+## v1.2.0 - 2026-06-24
+
+This minor release polishes the unified statusline marker and stabilizes the
+relay concurrent-draft regression test on slow CI runners. It does not change
+the relay protocol or persisted workflow schemas.
+
+- **Statusline identity**: `oma statusline` now renders a colored
+  `oma:<workflow>` source tag, while idle keeps the quieter `oma · idle`
+  wording. The example status-line script now appends oma's own colored output
+  directly instead of stripping and repainting the prefix in host shell code.
+- **Relay test stability**: the goroutine-level concurrent draft test now
+  retries expected fail-closed lock conflicts and asserts the protocol safety
+  invariant that every successful draft receives a distinct sequence number,
+  preserving race coverage without depending on slow-runner lock timing.
+
 ## v1.1.0 - 2026-06-24
 
 This minor release adds a unified workflow statusline and applies the audited
