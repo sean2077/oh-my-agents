@@ -405,21 +405,40 @@ func TestConcurrentDraftsDistinctSeqs(t *testing.T) {
 	if _, err := codex.Join(s.Pair, false); err != nil {
 		t.Fatal(err)
 	}
+	// Concurrent drafts contend on the pair lock. A lock-acquire timeout
+	// surfaces as ErrConflict — the protocol's expected, retryable fail-closed
+	// outcome under contention, not a failure — so each worker retries until it
+	// wins, exactly as a real agent and the process-level sibling test
+	// (TestConcurrentProcessDraftsProduceDistinctArtifacts) do. We assert only
+	// the safety invariant: every draft is handed a distinct sequence number.
+	// This keeps the goroutine-level -race coverage of the shared *Ledger but no
+	// longer hinges on lock-acquire latency, which starves unpredictably on slow
+	// CI runners (the historical Windows flake).
 	var wg sync.WaitGroup
 	paths := make([]string, 4)
+	deadline := time.Now().Add(90 * time.Second)
 	for i, l := range []*Ledger{claude, codex, claude, codex} {
 		wg.Add(1)
 		go func(i int, l *Ledger) {
 			defer wg.Done()
-			p, err := l.CreateDraft(s.Pair, "note", nil, nil, false)
-			if err != nil {
-				t.Errorf("draft %d: %v", i, err)
-				return
+			for {
+				p, err := l.CreateDraft(s.Pair, "note", nil, nil, false)
+				if err == nil {
+					paths[i] = p
+					return
+				}
+				if !errors.Is(err, ErrConflict) || time.Now().After(deadline) {
+					t.Errorf("draft %d: %v", i, err)
+					return
+				}
+				time.Sleep(5 * time.Millisecond)
 			}
-			paths[i] = p
 		}(i, l)
 	}
 	wg.Wait()
+	if t.Failed() {
+		return // a worker never won the lock; the distinct-seq check below would only add noise
+	}
 	seen := map[int]bool{}
 	for _, p := range paths {
 		seq, _, _, ok := ParseArtifactName(filepath.Base(p))
