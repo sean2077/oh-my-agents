@@ -97,10 +97,14 @@ func activeSegment(rootFlag, pairOverride, preset string) *wfSegment {
 }
 
 func renderUnified(seg *wfSegment, color bool) string {
+	// `oma` is a colored source tag so any host (status bar or terminal) sees at a
+	// glance that the line is oma's. ":" binds the tag tightly to the workflow
+	// name (compact: `oma:ralph …`); idle keeps the looser " · idle".
+	tag := sgr("oma", "1;35", color)
 	if seg == nil {
-		return "oma · idle"
+		return tag + " · idle"
 	}
-	return "oma · " + seg.render(color)
+	return tag + ":" + seg.render(color)
 }
 
 func unifiedJSON(seg *wfSegment) any {

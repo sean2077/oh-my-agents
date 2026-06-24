@@ -100,17 +100,19 @@ if [ -n "$lines_added" ] || [ -n "$lines_removed" ]; then
 fi
 
 # ---- oma workflow segment (fail-quiet, hard-bounded) ----
-#   resolve the active core workflow from the project cwd (oma reads process
-#   cwd, not stdin); gate on .active so idle windows stay clean
-#   `oma` resolved from PATH — the existence guard keeps the line fail-quiet when
-#   it is not installed (no command-not-found spam, segment simply omitted)
+#   gate on .active, then emit oma's OWN colored line — it already renders the
+#   `oma:` source tag + workflow glyph (identical to `oma statusline`); the host
+#   script only gates and appends, no re-styling.
+#   `oma` resolved from PATH; idle / not-installed → segment omitted, exit 0.
 oma_bin=$(command -v oma 2>/dev/null)
 if [ -n "$oma_bin" ] && [ -x "$oma_bin" ]; then
-    oma_json=$( { [ -n "$cwd" ] && cd "$cwd"; } 2>/dev/null; timeout 1 "$oma_bin" statusline --json 2>/dev/null )
-    if [ "$(printf '%s' "$oma_json" | jq -r '.active // false')" = "true" ]; then
-        oma_seg=$(printf '%s' "$oma_json" | jq -r '.text // empty')
-        [ -n "$oma_seg" ] && printf "${SEP}%s" "$oma_seg"
-    fi
+    oma_seg=$(
+        { [ -n "$cwd" ] && cd "$cwd"; } 2>/dev/null
+        if [ "$(timeout 1 "$oma_bin" statusline --json 2>/dev/null | jq -r '.active // false')" = "true" ]; then
+            timeout 1 "$oma_bin" statusline 2>/dev/null
+        fi
+    )
+    [ -n "$oma_seg" ] && printf "${SEP}%s" "$oma_seg"
 fi
 
 # Always succeed: Claude Code hides the status line on a non-zero exit code.
