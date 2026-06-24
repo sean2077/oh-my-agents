@@ -131,6 +131,7 @@ func (l *Ledger) hookStop(p HookPayload) *HookOutput {
 		return nil // dedup: already surfaced this artifact
 	}
 	l.hookFingerprintMark(b.Pair, fp)
+	l.markDelivered(l.PairDir(b.Pair), seq)
 	l.hookTrail(HookStop, fmt.Sprintf("continue on %s seq=%d", peer, seq))
 	return &HookOutput{
 		Decision: "block",
@@ -139,27 +140,65 @@ func (l *Ledger) hookStop(p HookPayload) *HookOutput {
 	}
 }
 
-// stopEscape classifies a host stop reason into an A3 escape valve. It
-// reads the tolerant union of reason fields and matches substrings; an
-// empty or unrecognized reason returns ("", false) so the normal
-// peer-artifact continuation proceeds unchanged. The bias is deliberately
-// toward escaping: a false escape only skips one turn's auto-nudge (the
-// peer artifact stays readable), whereas a missed context/rate/auth stop
-// is the deadlock these valves exist to prevent.
+// stopEscape classifies a host stop reason into an A3 escape valve. The
+// short, host-controlled stop_reason / reason fields are matched on broad
+// stems; last_assistant_message — Codex's only stop-reason channel — is FREE
+// COMPLETION PROSE, so it is matched ONLY against strong anchored signals
+// (HTTP status codes, multi-word error phrases) that do not occur in ordinary
+// summaries. An empty or unrecognized reason returns ("", false) so the
+// normal peer-artifact continuation proceeds unchanged.
+//
+// The bias is deliberately toward CONTINUING when the signal is ambiguous: a
+// false escape on the auto-continue path is a SILENT DEADLOCK (the Stop hook
+// never re-fires on its own), whereas a missed escape self-corrects — the
+// injected continuation runs, the host stops again for the same blocking
+// reason, and the next Stop carries stop_hook_active=true so the anti-loop
+// guard goes silent after a single wasted attempt.
 func stopEscape(p HookPayload) (valve string, escape bool) {
-	r := strings.ToLower(strings.TrimSpace(p.StopReason + " " + p.Reason + " " + p.LastAssistantMessage))
-	switch {
-	case r == "":
-		return "", false
-	case containsAny(r, "context", "compact", "token limit", "token_limit", "max tokens", "max_tokens"):
-		return "context_limit", true
-	case containsAny(r, "429", "rate limit", "rate_limit", "ratelimit", "quota", "overloaded", "throttl"):
-		return "rate_limit", true
-	case containsAny(r, "401", "403", "unauthor", "forbidden", "auth", "expired", "credential", "api key", "api_key"):
-		return "auth_error", true
-	default:
+	// Strong, anchored signals — safe even in free prose.
+	strong := func(s string) (string, bool) {
+		switch {
+		case containsAny(s, "context window", "context length", "context_length",
+			"token limit", "token_limit", "max tokens", "max_tokens",
+			"maximum context", "prompt too long", "prompt is too long"):
+			return "context_limit", true
+		case containsAny(s, "429", "rate limit exceeded", "rate-limited", "rate_limited",
+			"too many requests", "quota exceeded", "quota_exceeded"):
+			return "rate_limit", true
+		case containsAny(s, "401", "403", "invalid api key", "incorrect api key",
+			"invalid_api_key", "token expired", "session expired",
+			"credentials expired", "invalid credentials"):
+			return "auth_error", true
+		}
 		return "", false
 	}
+	// Broad stems — trusted only on the short, host-controlled fields, never
+	// on last_assistant_message (where "auth", "context", "expired" abound).
+	weak := func(s string) (string, bool) {
+		switch {
+		case containsAny(s, "context", "compact"):
+			return "context_limit", true
+		case containsAny(s, "rate limit", "quota", "overloaded", "throttl"):
+			return "rate_limit", true
+		case containsAny(s, "unauthor", "forbidden", "auth", "credential", "expired", "api key", "api_key"):
+			return "auth_error", true
+		}
+		return "", false
+	}
+	if structured := strings.ToLower(strings.TrimSpace(p.StopReason + " " + p.Reason)); structured != "" {
+		if v, ok := strong(structured); ok {
+			return v, true
+		}
+		if v, ok := weak(structured); ok {
+			return v, true
+		}
+	}
+	if prose := strings.ToLower(strings.TrimSpace(p.LastAssistantMessage)); prose != "" {
+		if v, ok := strong(prose); ok {
+			return v, true
+		}
+	}
+	return "", false
 }
 
 func containsAny(s string, subs ...string) bool {

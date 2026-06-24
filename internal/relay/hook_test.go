@@ -295,3 +295,28 @@ func TestHookStateNotInLedgerArtifacts(t *testing.T) {
 		}
 	}
 }
+
+func TestHookStopOrdinaryCompletionProseContinues(t *testing.T) {
+	// Regression: bare tokens (auth/context/expired/forbidden/quota/rate) occur
+	// constantly in ordinary completion prose. last_assistant_message must NOT
+	// be misclassified as an escape valve, or the relay silently deadlocks on
+	// the auto-continue path. These all carry a fresh peer artifact and so must
+	// continue (decision:block), not escape to silence.
+	for _, message := range []string{
+		"I've added the auth middleware and published the plan.",
+		"Updated the request context handling; ready for your review.",
+		"This change makes the empty path forbidden; see the review.",
+		"Fixed the expired session test and published a fix.",
+		"Done — added context propagation across the API layer.",
+		"Added a rate-limiting note to the docs and a quota field.",
+		"Refactored the credentials loader; all tests pass.",
+		"Wired the api_key lookup and noted the 40-char limit.",
+	} {
+		ck := newClock()
+		codex, _ := hookPair(t, ck)
+		out := codex.Hook(HookStop, stopPayloadLastAssistantMessage(message))
+		if out == nil || out.Decision != "block" {
+			t.Fatalf("ordinary completion prose %q must continue, got %+v", message, out)
+		}
+	}
+}

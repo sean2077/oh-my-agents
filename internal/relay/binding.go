@@ -84,7 +84,7 @@ func (l *Ledger) ResolvePair(explicit string, autoBind bool) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	var mine []string
+	var mine, drifted []string
 	for _, slug := range all {
 		s, err := l.LoadSession(slug)
 		if err != nil {
@@ -100,6 +100,7 @@ func (l *Ledger) ResolvePair(explicit string, autoBind bool) (*Session, error) {
 			continue
 		}
 		if existing := s.ParticipantSessions[l.Identity.Author]; existing != "" && existing != l.Identity.SessionKey {
+			drifted = append(drifted, slug) // seat held by another same-author session
 			continue
 		}
 		mine = append(mine, slug)
@@ -140,6 +141,10 @@ func (l *Ledger) ResolvePair(explicit string, autoBind bool) (*Session, error) {
 		}
 		return s, nil
 	case 0:
+		if len(drifted) > 0 {
+			return nil, fmt.Errorf("%w: no active pair for %s with this session, but %d hold your seat under another session — reclaim with `oma relay pair join <slug> --rebind`: %s",
+				ErrRelay, l.Identity.Author, len(drifted), strings.Join(drifted, ", "))
+		}
 		return nil, fmt.Errorf("%w: no active pair for %s (create one with `oma relay pair new <topic>`)", ErrRelay, l.Identity.Author)
 	default:
 		return nil, fmt.Errorf("%w: %d active pairs for %s, cannot disambiguate — pass --pair <slug> or `oma relay pair join <slug>`; candidates: %s",
@@ -186,6 +191,59 @@ func (l *Ledger) Join(slug string, dryRun bool) (*Session, error) {
 			if err := l.saveSession(s); err != nil {
 				return err
 			}
+		}
+		if err := l.writeBinding(slug); err != nil {
+			return err
+		}
+		l.touchHeartbeat(slug)
+		return nil
+	})
+	return s, err
+}
+
+// Rejoin reclaims this author's seat in an active pair when it is held by a
+// DIFFERENT same-author session — the orphaned-seat state a platform session
+// resume under a new id leaves behind. It is the explicit operator override
+// behind `oma relay pair join <slug> --rebind`: unlike Join (which refuses a
+// non-matching seat, fail-closed), Rejoin reassigns it. The seat is a single
+// field, not a destructive overwrite, so no backup is taken; the explicit flag
+// is the safety boundary. Liveness is intentionally NOT gated on the prior
+// heartbeat: a just-resumed session and a live concurrent one both look recent,
+// so the heartbeat cannot distinguish them — the operator asserts the prior
+// session is gone by passing --rebind.
+func (l *Ledger) Rejoin(slug string, dryRun bool) (*Session, error) {
+	if dryRun {
+		s, err := l.LoadSession(slug)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.mutationError(); err != nil {
+			return nil, err
+		}
+		if _, err := s.Peer(l.Identity.Author); err != nil {
+			return nil, err
+		}
+		return s, nil
+	}
+	var s *Session
+	err := l.withPairLock(slug, func() error {
+		var err error
+		s, err = l.LoadSession(slug)
+		if err != nil {
+			return err
+		}
+		if err := s.mutationError(); err != nil {
+			return err
+		}
+		if _, err := s.Peer(l.Identity.Author); err != nil {
+			return err
+		}
+		if s.ParticipantSessions == nil {
+			s.ParticipantSessions = map[string]string{}
+		}
+		s.ParticipantSessions[l.Identity.Author] = l.Identity.SessionKey
+		if err := l.saveSession(s); err != nil {
+			return err
 		}
 		if err := l.writeBinding(slug); err != nil {
 			return err

@@ -48,7 +48,6 @@ func newRelayCmd() *cobra.Command {
 	cmd.AddCommand(
 		newRelayInitCmd(&ledgerRoot),
 		newRelayPreflightCmd(&ledgerRoot),
-		newRelayStatuslineCmd(&ledgerRoot),
 		newRelayHookDispatchCmd(&ledgerRoot),
 		newRelayPairCmd(&ledgerRoot),
 		newRelayDraftCmd(&ledgerRoot),
@@ -175,6 +174,7 @@ func newRelayPairCmd(rootFlag *string) *cobra.Command {
 	ensure.Flags().BoolVar(&ensureJSON, "json", false, "machine-readable output")
 
 	var joinJSON bool
+	var joinRebind bool
 	join := &cobra.Command{
 		Use:   "join <slug>",
 		Short: "Bind this session to an existing active pair",
@@ -184,7 +184,11 @@ func newRelayPairCmd(rootFlag *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			s, err := l.Join(args[0], DryRun())
+			joinFn := l.Join
+			if joinRebind {
+				joinFn = l.Rejoin
+			}
+			s, err := joinFn(args[0], DryRun())
 			if err != nil {
 				return err
 			}
@@ -196,6 +200,7 @@ func newRelayPairCmd(rootFlag *string) *cobra.Command {
 		}),
 	}
 	join.Flags().BoolVar(&joinJSON, "json", false, "machine-readable output")
+	join.Flags().BoolVar(&joinRebind, "rebind", false, "reclaim this author's seat if a prior (gone) session of the same author still holds it")
 
 	var showPair string
 	var showJSON bool

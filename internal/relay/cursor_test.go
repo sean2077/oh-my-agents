@@ -66,3 +66,34 @@ func TestWaitDeliversOutOfOrderPeerArtifact(t *testing.T) {
 		t.Fatalf("after replying, codex.Wait code = %d (%s), want WaitTimeout (claude's 001 already consumed)", res2.Code, res2.Reason)
 	}
 }
+
+// TestWaitNotSkippedAfterOutOfTurnPublish pins the cursor consumption fix:
+// publishing advances the cursor only past peer artifacts actually DELIVERED
+// to this reader, never the global latest peer seq. A reader that publishes
+// WITHOUT first consuming a pending peer artifact must still be delivered that
+// artifact on a later wait, not have it silently skipped.
+func TestWaitNotSkippedAfterOutOfTurnPublish(t *testing.T) {
+	ck := newClock()
+	root, _ := initRoot(t, ck)
+	claude := testLedger(t, root, "claude", ck)
+	codex := testLedger(t, root, "codex", ck)
+	s := mustPair(t, claude, "race")
+	if _, err := codex.Join(s.Pair, false); err != nil {
+		t.Fatal(err)
+	}
+
+	// claude publishes seq 001 addressed to codex.
+	mustPublish(t, claude, s.Pair, "plan", "body", "review")
+	// codex takes its own turn WITHOUT waiting on / consuming claude's 001.
+	mustPublishReview(t, codex, s.Pair, VerdictApprove, 1)
+
+	// claude's 001 was never delivered to codex, so a wait must still surface it
+	// (the old advance-to-latest-peer logic skipped it).
+	res, err := codex.Wait(s.Pair, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Code != WaitNewArtifact || !strings.Contains(res.ArtifactPath, "001-claude") {
+		t.Fatalf("codex.Wait = code %d %q (%s), want claude's seq-001 delivered (not skipped by out-of-turn publish)", res.Code, res.ArtifactPath, res.Reason)
+	}
+}

@@ -175,7 +175,7 @@ func (s *Session) claimParticipant(id Identity) (bool, error) {
 	}
 	if existing := s.ParticipantSessions[id.Author]; existing != "" {
 		if existing != id.SessionKey {
-			return false, fmt.Errorf("%w: participant %s of %s is claimed by session %s, not %s", ErrRelay, id.Author, s.Pair, existing, id.SessionKey)
+			return false, fmt.Errorf("%w: participant %s seat in %s is held by session %s, not this one — reclaim it with `oma relay pair join %s --rebind` if that session is gone", ErrRelay, id.Author, s.Pair, existing, s.Pair)
 		}
 		return false, nil
 	}
@@ -191,7 +191,7 @@ func (s *Session) requireParticipantSession(id Identity) error {
 		if existing == "" {
 			return fmt.Errorf("%w: participant %s has not joined %s with this session; run `oma relay pair join %s`", ErrRelay, id.Author, s.Pair, s.Pair)
 		}
-		return fmt.Errorf("%w: participant %s of %s is claimed by session %s, not %s", ErrRelay, id.Author, s.Pair, existing, id.SessionKey)
+		return fmt.Errorf("%w: participant %s seat in %s is held by session %s, not this one — if that session is gone (e.g. a resumed window under a new id), reclaim it with `oma relay pair join %s --rebind`", ErrRelay, id.Author, s.Pair, existing, s.Pair)
 	}
 	return nil
 }
@@ -513,7 +513,14 @@ func (l *Ledger) Close(slug, outcome, reason string, dryRun bool) error {
 				if wasActive {
 					s.Status = StatusActive
 					s.Closed, s.Outcome, s.Reason = nil, nil, nil
-					_ = l.saveSession(s)
+					// Surface a failed rollback rather than swallowing it: if this
+					// save fails the pair is left `closing` (which refuses
+					// mutations). It is still recoverable — re-run close once the
+					// gate passes, or `close --outcome abandon` — so name that path
+					// instead of leaving an opaque frozen pair.
+					if rbErr := l.saveSession(s); rbErr != nil {
+						return fmt.Errorf("%w: approve gate failed (%v); rolling back to active also failed: %v — pair %s is left %q; re-run close after the gate passes, or `oma relay close --outcome abandon --reason …`", ErrRelay, err, rbErr, slug, StatusClosing)
+					}
 				}
 				return err
 			}

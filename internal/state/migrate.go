@@ -1,6 +1,7 @@
 package state
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -95,12 +96,28 @@ func MigrateSessionScope(projectRoot string, apply bool) ([]ScopeMigration, erro
 			continue
 		}
 		newPath := filepath.Join(dir, newBase+".json")
-		if _, err := os.Stat(newPath); err == nil {
-			return actions, fmt.Errorf("%w: cannot migrate %s -> %s, target already exists; resolve by hand", ErrState, base, newBase)
-		} else if !os.IsNotExist(err) {
-			return actions, err
-		}
-		if err := applyScopeMigration(dir, path, newPath, field, newToken); err != nil {
+		if existing, serr := os.ReadFile(newPath); serr == nil {
+			// Crash-idempotency: a prior run may have written newPath but not
+			// yet removed the old file. If newPath is byte-for-byte this
+			// migration's own output, finish the cleanup instead of failing;
+			// only a genuinely different target is a real collision.
+			raw, rerr := os.ReadFile(path)
+			if rerr != nil {
+				return actions, rerr
+			}
+			want, werr := rewriteScopedField(raw, field, newToken)
+			if werr != nil {
+				return actions, fmt.Errorf("%w: rewrite %s: %v", ErrState, base, werr)
+			}
+			if !bytes.Equal(existing, want) {
+				return actions, fmt.Errorf("%w: cannot migrate %s -> %s, target already exists with different content; resolve by hand", ErrState, base, newBase)
+			}
+			if err := finishScopeMigration(path); err != nil {
+				return actions, err
+			}
+		} else if !os.IsNotExist(serr) {
+			return actions, serr
+		} else if err := applyScopeMigration(dir, path, newPath, field, newToken); err != nil {
 			return actions, err
 		}
 		act.Applied = true
@@ -118,18 +135,9 @@ func applyScopeMigration(dir, oldPath, newPath, field, newToken string) error {
 		if err != nil {
 			return fmt.Errorf("%w: read %s: %v", ErrState, oldPath, err)
 		}
-		var obj map[string]json.RawMessage
-		if err := json.Unmarshal(raw, &obj); err != nil {
-			return fmt.Errorf("%w: %s not valid JSON: %v", ErrState, oldPath, err)
-		}
-		encoded, err := json.Marshal(newToken)
+		out, err := rewriteScopedField(raw, field, newToken)
 		if err != nil {
-			return err
-		}
-		obj[field] = encoded
-		out, err := json.MarshalIndent(obj, "", "  ")
-		if err != nil {
-			return err
+			return fmt.Errorf("%w: %s: %v", ErrState, oldPath, err)
 		}
 		backup := filepath.Join(dir, preMigrationDir)
 		if err := os.MkdirAll(backup, 0o700); err != nil {
@@ -138,9 +146,41 @@ func applyScopeMigration(dir, oldPath, newPath, field, newToken string) error {
 		if err := atomicfile.Write(filepath.Join(backup, filepath.Base(oldPath)), raw, 0o600); err != nil {
 			return fmt.Errorf("%w: back up %s: %v", ErrState, oldPath, err)
 		}
-		if err := atomicfile.Write(newPath, append(out, '\n'), 0o600); err != nil {
+		if err := atomicfile.Write(newPath, out, 0o600); err != nil {
 			return fmt.Errorf("%w: write %s: %v", ErrState, newPath, err)
 		}
+		_ = os.Remove(oldPath)
+		_ = os.Remove(oldPath + ".bak")
+		return nil
+	})
+}
+
+// rewriteScopedField rewrites the embedded scoped field (id|namespace) to
+// newToken, preserving every other (possibly unknown) top-level field. The
+// output is deterministic (MarshalIndent + trailing newline) so a crash-then-
+// re-run can recognize its own prior output byte-for-byte.
+func rewriteScopedField(raw []byte, field, newToken string) ([]byte, error) {
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return nil, fmt.Errorf("not valid JSON: %v", err)
+	}
+	encoded, err := json.Marshal(newToken)
+	if err != nil {
+		return nil, err
+	}
+	obj[field] = encoded
+	out, err := json.MarshalIndent(obj, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(out, '\n'), nil
+}
+
+// finishScopeMigration removes the old file (and its .bak) under its state
+// lock — the cleanup tail an idempotent re-run completes when newPath already
+// holds this migration's own output.
+func finishScopeMigration(oldPath string) error {
+	return withStateLock(oldPath, func() error {
 		_ = os.Remove(oldPath)
 		_ = os.Remove(oldPath + ".bak")
 		return nil

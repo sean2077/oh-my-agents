@@ -111,6 +111,11 @@ func TestWorkflowCLIDryRunSnapshot(t *testing.T) {
 	if code, out := runOma(t, "ralph", "start", "--goal", "g", "--id", "r1"); code != ExitOK {
 		t.Fatalf("ralph start exit %d: %s", code, out)
 	}
+	// Advance one real round so the dry-run check below is a legal transition
+	// (a check needs a round to measure).
+	if code, out := runOma(t, "ralph", "next", "--id", "r1"); code != ExitOK {
+		t.Fatalf("ralph next exit %d: %s", code, out)
+	}
 	mid := treeFingerprint(t, stateDir)
 	if code, out := runOma(t, "--dry-run", "ralph", "next", "--id", "r1"); code != ExitOK || !strings.Contains(out, "would replace") {
 		t.Fatalf("dry-run next exit %d: %s", code, out)

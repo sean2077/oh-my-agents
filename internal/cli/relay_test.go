@@ -215,13 +215,14 @@ func TestRelayPreflightCLI(t *testing.T) {
 	}
 }
 
-func TestRelayStatuslineCLI(t *testing.T) {
+func TestStatuslineCLI(t *testing.T) {
 	setManualRelayIdentity(t, "claude", "statusline")
 
-	// Render path must never error into the status bar: uninitialized
-	// ledger (bad --ledger-root parent) degrades to a line, exit 0.
+	// The unified `oma statusline` (replacing `oma relay statusline`) must never
+	// error into the status bar: an uninitialized ledger degrades to a line,
+	// exit 0, with no active workflow.
 	ledger := filepath.Join(t.TempDir(), "relay")
-	if code, out := runRelay(t, "relay", "statusline", "--ledger-root", ledger); code != ExitOK {
+	if code, out := runRelay(t, "statusline", "--root", ledger); code != ExitOK {
 		t.Fatalf("uninitialized statusline exit %d: %s", code, out)
 	}
 	if code, out := runRelay(t, "relay", "init", "--ledger-root", ledger); code != ExitOK {
@@ -230,11 +231,14 @@ func TestRelayStatuslineCLI(t *testing.T) {
 	if code, out := runRelay(t, "relay", "pair", "new", "demo", "--ledger-root", ledger); code != ExitOK {
 		t.Fatalf("pair new %d: %s", code, out)
 	}
-	code, out := runRelay(t, "relay", "statusline", "--ledger-root", ledger, "--no-color")
-	if code != ExitOK || !strings.Contains(out, "demo") || !strings.Contains(out, "new pair") {
+	// A bound relay pair surfaces as the active workflow, carrying the `oma`
+	// marker and the `relay` label.
+	code, out := runRelay(t, "statusline", "--root", ledger, "--no-color")
+	if code != ExitOK || !strings.Contains(out, "oma") || !strings.Contains(out, "relay") || !strings.Contains(out, "demo") {
 		t.Fatalf("statusline exit %d: %s", code, out)
 	}
-	if code, out := runRelay(t, "relay", "statusline", "--ledger-root", ledger, "--json"); code != ExitOK || !strings.Contains(out, `"oma-relay-statusline/1"`) {
+	if code, out := runRelay(t, "statusline", "--root", ledger, "--json"); code != ExitOK ||
+		!strings.Contains(out, `"oma-statusline/1"`) || !strings.Contains(out, `"workflow": "relay"`) {
 		t.Fatalf("statusline --json exit %d: %s", code, out)
 	}
 }

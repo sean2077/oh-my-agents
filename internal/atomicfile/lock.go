@@ -43,8 +43,8 @@ func AcquireLock(dir string, timeout time.Duration) (*Lock, error) {
 		if !errors.Is(err, os.ErrExist) {
 			return nil, err
 		}
-		if stale, _ := staleLock(dir); stale {
-			_ = reclaimLock(dir)
+		if stale, token, _ := staleLock(dir); stale {
+			reclaimLock(dir, token)
 			continue
 		}
 		if timeout <= 0 || !time.Now().Before(deadline) {
@@ -108,31 +108,52 @@ func randomToken() (string, error) {
 	return hex.EncodeToString(b[:]), nil
 }
 
-func staleLock(dir string) (bool, error) {
+// staleLock reports whether dir is an abandoned lock, plus the owner token the
+// decision was based on ("" when the owner file is missing/corrupt and the
+// mtime fallback was used). reclaimLock uses the token so it only ever removes
+// the exact lock observed as stale — never a fresh lock a concurrent acquirer
+// created in the window between this check and reclamation.
+func staleLock(dir string) (bool, string, error) {
 	owner, err := readOwner(dir)
+	token := ""
 	if err == nil {
+		token = owner["token"]
 		if expires := owner["expires"]; expires != "" {
-			t, err := time.Parse(time.RFC3339Nano, expires)
-			if err == nil {
-				return time.Now().UTC().After(t), nil
+			t, perr := time.Parse(time.RFC3339Nano, expires)
+			if perr == nil {
+				return time.Now().UTC().After(t), token, nil
 			}
 		}
 	}
 	info, statErr := os.Stat(dir)
 	if statErr != nil {
-		return false, statErr
+		return false, "", statErr
 	}
-	return time.Since(info.ModTime()) > defaultLockLease, err
+	return time.Since(info.ModTime()) > defaultLockLease, token, err
 }
 
-func reclaimLock(dir string) error {
+// reclaimLock removes a lock previously observed as stale (carrying
+// observedToken). Renaming dir away is the serialization point: only one
+// caller can move a given lock, so the rest get an error and loop. After
+// winning the rename it deletes the lock only if the owner still matches what
+// was observed; otherwise a fresh acquirer slipped in during the
+// check→reclaim window, so it restores the lock unharmed (that owner keeps
+// it). If dir was re-taken meanwhile the staged copy is dropped and the fresh
+// owner detects the loss at Release via ErrLockNotOwned.
+func reclaimLock(dir, observedToken string) {
 	parent := filepath.Dir(dir)
 	staleName := fmt.Sprintf(".%s.stale.%d.%s", filepath.Base(dir), os.Getpid(), time.Now().UTC().Format("20060102150405.000000000"))
 	staleDir := filepath.Join(parent, staleName)
 	if err := os.Rename(dir, staleDir); err != nil {
-		return err
+		return // lost the race: another caller already moved it — loop and retry
 	}
-	return os.RemoveAll(staleDir)
+	if tok, _ := readOwnerToken(staleDir); tok == observedToken {
+		_ = os.RemoveAll(staleDir)
+		return
+	}
+	if err := os.Rename(staleDir, dir); err != nil {
+		_ = os.RemoveAll(staleDir)
+	}
 }
 
 func readOwnerToken(dir string) (string, error) {

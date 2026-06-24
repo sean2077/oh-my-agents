@@ -110,7 +110,7 @@ oma doctor
 
 Exit `0` all-green, `1` has warnings, `4` has a fail-level item.
 
-> _(Optional, host-specific)_ Wire the relay statusline and the auto-continue
+> _(Optional, host-specific)_ Wire the statusline and the auto-continue
 > hooks into your own `~/.claude/settings.json` / `~/.codex/hooks.json`. `oma`
 > never writes host config — the copy-paste snippets are in the README
 > ["Wire the statusline and hooks"](../README.md#wire-the-statusline-and-hooks-optional)

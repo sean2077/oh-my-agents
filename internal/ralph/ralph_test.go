@@ -327,6 +327,23 @@ func TestScoreImprovementStrictAndPlateau(t *testing.T) {
 	}
 }
 
+func TestCheckRefusedBeforeFirstNext(t *testing.T) {
+	// A check measures a round's work; recording one before the first `next`
+	// (round 0) is refused. This keeps round-based plateau accounting honest —
+	// a best score can never anchor at round 0 and defeat the plateau stop.
+	e := testEngine(t)
+	mustStartScore(t, e, 10, 2)
+	if _, _, err := e.RecordCheck("r1", 1, fptr(5), "", false); !errors.Is(err, ErrRalph) {
+		t.Fatalf("check before first next must be refused, got err = %v", err)
+	}
+	// pass_only loops too: no round-0 check.
+	e2 := testEngine(t)
+	mustStartLoop(t, e2, 10, 3)
+	if _, _, err := e2.RecordCheck("r1", 1, nil, "boom", false); !errors.Is(err, ErrRalph) {
+		t.Fatalf("pass_only check before first next must be refused, got err = %v", err)
+	}
+}
+
 func TestScoreValidationFailClosed(t *testing.T) {
 	e := testEngine(t)
 	mustStartScore(t, e, 10, 3)

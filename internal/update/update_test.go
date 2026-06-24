@@ -374,7 +374,7 @@ func TestDryRunDisclosesPathsWritesNothing(t *testing.T) {
 	if err := u.Apply(rel, true, false); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"would download", "would backup", bin + ".old", bin + ".oma-update-tmp"} {
+	for _, want := range []string{"would download", "would backup", bin + ".old", "would write a private temp dir"} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("dry-run output missing %q:\n%s", want, out.String())
 		}

@@ -404,6 +404,13 @@ func (e *Engine) RecordCheck(id string, verifierExit int, score *float64, note s
 		if s.Terminal() {
 			return fmt.Errorf("%w: loop %s is %s; check is not legal on a terminal loop", ErrRalph, s.ID, s.Phase)
 		}
+		// A check measures a round's work: recording one before the first
+		// `next` (round 0) is refused. This keeps round-based plateau
+		// accounting honest — a best score can never anchor at round 0 and
+		// defeat the plateau stop.
+		if s.Round == 0 {
+			return fmt.Errorf("%w: loop %s has no round to check yet — run `oma ralph next` before the first check", ErrRalph, s.ID)
+		}
 		// Score/policy validation is fail-closed: score_improvement demands a
 		// finite score on every check; pass_only forbids one (it would be inert).
 		switch s.KeepPolicy {
@@ -490,11 +497,13 @@ func (e *Engine) stalled(s *State) bool {
 // plateaued reports that no strict score improvement has landed in the last
 // plateau_window rounds. BestRound is the round of the last strict best, so
 // round-current minus BestRound is the run of non-improving rounds. A tie
-// (== best) is not an improvement and counts toward the plateau. Round-based
-// to honor the "N rounds without improvement" contract (one improvement
-// judgment per round).
+// (== best) is not an improvement and counts toward the plateau. The "no
+// scored check yet" guard keys on BestScore==nil (the genuine sentinel — a nil
+// pointer until the first scored check), NOT BestRound==0: a best landing at
+// round 0 would otherwise falsely trip that guard and disable the plateau stop
+// forever (the round-0 check guard in RecordCheck closes that door too).
 func plateaued(s *State) bool {
-	if s.PlateauWindow <= 0 || s.BestRound == 0 {
+	if s.PlateauWindow <= 0 || s.BestScore == nil {
 		return false
 	}
 	return s.Round-s.BestRound >= s.PlateauWindow

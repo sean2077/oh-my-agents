@@ -219,10 +219,12 @@ func (l *Ledger) publishLocked(pairDir string, seq int, kind, draftPath string, 
 			}
 		}
 	}
-	// The reader has taken its turn: record that it has consumed the peer's
-	// artifacts up to the latest ready seq, so wait/status stop treating them
-	// as new. Best-effort, under the pair lock the caller already holds.
-	l.advanceCursorToLatestPeer(pairDir)
+	// The reader has taken its turn: advance the consumption cursor to the
+	// peer artifacts actually DELIVERED to it (not the global latest peer seq,
+	// which would skip an unconsumed out-of-order artifact), so wait/status
+	// stop treating those as new. Best-effort, under the pair lock the caller
+	// already holds.
+	l.advanceCursorToConsumed(pairDir)
 	return formal, nil
 }
 

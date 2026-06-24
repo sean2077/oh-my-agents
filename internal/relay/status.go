@@ -24,6 +24,18 @@ type HeartbeatInfo struct {
 	Stale      bool       `json:"stale"`
 }
 
+// SeatDriftInfo reports that this author's participant seat is held by a
+// different platform session than the caller's — the orphaned-seat state a
+// session resume under a new id leaves behind. The read-only status REPORTS it
+// (rather than refusing) so the drift is diagnosable; `pair join <slug>
+// --rebind` reclaims the seat.
+type SeatDriftInfo struct {
+	Author      string `json:"author"`
+	HeldBy      string `json:"held_by"`
+	ThisSession string `json:"this_session"`
+	Hint        string `json:"hint"`
+}
+
 // PairStatus is the `oma relay status --json` document.
 type PairStatus struct {
 	Pair             string                   `json:"pair"`
@@ -37,6 +49,7 @@ type PairStatus struct {
 	PeerReservations []int                    `json:"peer_reservations,omitempty"` // from .seq only; peer .draft/ is never read
 	Residue          []string                 `json:"residue,omitempty"`           // cleanup warnings for doctor
 	LegacyV1         string                   `json:"legacy_v1,omitempty"`         // v1 tree present (archival; oma never touches it)
+	SeatDrift        *SeatDriftInfo           `json:"seat_drift,omitempty"`        // this author's seat held by a different same-author session
 }
 
 // Status assembles the diagnostic view of one pair (read-only).
@@ -45,11 +58,24 @@ func (l *Ledger) Status(slug string, last int) (*PairStatus, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := s.requireParticipantSession(l.Identity); err != nil {
-		return nil, err
-	}
 	pairDir := l.PairDir(s.Pair)
 	st := &PairStatus{Pair: s.Pair, Session: s, Terminal: s.Terminal(), Heartbeats: map[string]HeartbeatInfo{}}
+	// A read-only diagnostic must be able to DIAGNOSE a drifted seat, not
+	// refuse it: when this author's seat is held by a different same-author
+	// session (a resumed window under a new id), report the drift instead of
+	// failing closed, so the user sees the held-by id and the recovery command.
+	if err := s.requireParticipantSession(l.Identity); err != nil {
+		held := s.participantSession(l.Identity.Author)
+		if held == "" || held == l.Identity.SessionKey {
+			return nil, err // genuinely not a participant / unjoined — keep refusing
+		}
+		st.SeatDrift = &SeatDriftInfo{
+			Author:      l.Identity.Author,
+			HeldBy:      held,
+			ThisSession: l.Identity.SessionKey,
+			Hint:        fmt.Sprintf("reclaim with `oma relay pair join %s --rebind` if that session is gone", s.Pair),
+		}
+	}
 
 	next, err := l.nextSeq(s.Pair)
 	if err != nil {
@@ -105,12 +131,12 @@ func (l *Ledger) Status(slug string, last int) (*PairStatus, error) {
 	for _, seq := range l.reservations(s.Pair, peer, peerSession) {
 		st.PeerReservations = append(st.PeerReservations, seq)
 		if l.hasReadyAt(s.Pair, seq, peer) {
-			st.Residue = append(st.Residue, fmt.Sprintf(".seq/%03d.%s has a published counterpart (post-publish leftover; doctor cleans)", seq, peer))
+			st.Residue = append(st.Residue, fmt.Sprintf(".seq/%03d (reserved by %s) has a published counterpart (post-publish leftover; doctor cleans)", seq, peer))
 		}
 	}
 	for _, seq := range l.reservations(s.Pair, l.Identity.Author, l.Identity.SessionKey) {
 		if l.hasReadyAt(s.Pair, seq, l.Identity.Author) {
-			st.Residue = append(st.Residue, fmt.Sprintf(".seq/%03d.%s has a published counterpart (post-publish leftover; doctor cleans)", seq, l.Identity.Author))
+			st.Residue = append(st.Residue, fmt.Sprintf(".seq/%03d (reserved by %s) has a published counterpart (post-publish leftover; doctor cleans)", seq, l.Identity.Author))
 		}
 	}
 

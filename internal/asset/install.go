@@ -75,7 +75,7 @@ func (e *Engine) Install(srcDir string, opts Options) (*Report, error) {
 	if err := e.Layout.checkRootEscape(); err != nil {
 		return nil, err
 	}
-	if err := checkParentWritable(filepath.Dir(dest)); err != nil {
+	if err := checkAncestorWritable(filepath.Dir(dest)); err != nil {
 		return nil, err
 	}
 	reg, err := LoadRegistry(e.Layout.RegistryPath())

@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 )
 
 // CleanStale removes safe residue from one pair (protocol §6/§8, surfaced
@@ -154,10 +153,11 @@ func (l *Ledger) ReservationCount(slug string) int {
 	}
 	n := 0
 	for _, ent := range entries {
-		if num, _, found := strings.Cut(ent.Name(), "."); found {
-			if _, err := strconv.Atoi(num); err == nil {
-				n++
-			}
+		// Reservation files are bare NNN (ownership lives in the content, not
+		// the name); match that format exactly — a Cut on "." never matched, so
+		// this count was always 0 and the leak-detection tests passed vacuously.
+		if _, err := strconv.Atoi(ent.Name()); err == nil {
+			n++
 		}
 	}
 	return n

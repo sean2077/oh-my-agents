@@ -63,6 +63,9 @@ func (l *Ledger) Wait(slug string, timeout time.Duration) (*WaitResult, error) {
 		if path, ok, err := l.newPeerArtifact(l.PairDir(s.Pair), peer); err != nil {
 			return nil, err
 		} else if ok {
+			if seq, _, _, ok := ParseArtifactName(filepath.Base(path)); ok {
+				l.markDelivered(l.PairDir(s.Pair), seq)
+			}
 			return &WaitResult{Code: WaitNewArtifact, ArtifactPath: path, Reason: "new artifact from " + peer}, nil
 		}
 		cur, err := l.LoadSession(s.Pair)
@@ -161,7 +164,7 @@ func (l *Ledger) archivedResult(dir, peer string) (*WaitResult, error) {
 // artifact with a lower seq than the reader's own, but published after it, is
 // still delivered instead of being silently skipped. Delivering the lowest
 // such seq keeps delivery in order; the cursor advances when the reader takes
-// its own turn (see advanceCursorToLatestPeer), so re-running wait before then
+// its own turn (see advanceCursorToConsumed), so re-running wait before then
 // re-delivers the same unconsumed artifact (idempotent).
 func (l *Ledger) newPeerArtifact(pairDir, peer string) (string, bool, error) {
 	names, err := publishedArtifacts(pairDir, true)

@@ -133,7 +133,7 @@ func checkAncestorWritable(dir string) error {
 func checkProjection(p plannedProjection) error {
 	info, err := os.Lstat(p.target.Path)
 	if errors.Is(err, os.ErrNotExist) {
-		return checkParentWritable(filepath.Dir(p.target.Path))
+		return checkAncestorWritable(filepath.Dir(p.target.Path))
 	}
 	if err != nil {
 		return err

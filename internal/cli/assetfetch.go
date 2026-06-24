@@ -259,7 +259,7 @@ func extractTarGz(tarPath, root string, limits assetFetchLimits) error {
 		return err
 	}
 	defer func() { _ = gz.Close() }()
-	if err := os.MkdirAll(root, 0o755); err != nil {
+	if err := os.MkdirAll(root, 0o700); err != nil {
 		return err
 	}
 	cleanRoot := filepath.Clean(root)
@@ -291,7 +291,7 @@ func extractTarGz(tarPath, root string, limits assetFetchLimits) error {
 		}
 		switch hdr.Typeflag {
 		case tar.TypeDir:
-			if err := os.MkdirAll(target, 0o755); err != nil {
+			if err := os.MkdirAll(target, 0o700); err != nil {
 				return err
 			}
 		case tar.TypeReg:
@@ -305,10 +305,10 @@ func extractTarGz(tarPath, root string, limits assetFetchLimits) error {
 				return fmt.Errorf("archive extracted size exceeds the %d-byte limit", limits.ExtractedBytes)
 			}
 			totalBytes += hdr.Size
-			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
 				return err
 			}
-			out, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+			out, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 			if err != nil {
 				return err
 			}

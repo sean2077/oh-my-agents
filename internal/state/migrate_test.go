@@ -117,6 +117,32 @@ func TestMigrateSessionScope(t *testing.T) {
 	}
 }
 
+func TestMigrateSessionScopeCrashIdempotent(t *testing.T) {
+	// Simulate a crash AFTER the migration wrote the new file but BEFORE it
+	// removed the old one: a re-run must recognize its own output and finish
+	// the cleanup, not fail closed with "target already exists".
+	root := t.TempDir()
+	dir := filepath.Join(root, ".oma", "state")
+	old := `{"schema":"oma-state/1","namespace":"app-codex-0123456789ab","revision":3,"data":{"phase":"plan"},"updated":"2026-06-20T00:00:00Z"}`
+	writeStateFixture(t, dir, "app-codex-0123456789ab.json", old)
+	want, err := rewriteScopedField([]byte(old), "namespace", "app--s-codex-0123456789ab")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeStateFixture(t, dir, "app--s-codex-0123456789ab.json", string(want))
+
+	applied, err := MigrateSessionScope(root, true)
+	if err != nil {
+		t.Fatalf("crash-idempotent re-apply must finish cleanly, got %v", err)
+	}
+	if len(applied) != 1 || !applied[0].Applied {
+		t.Fatalf("expected 1 applied (cleanup) action, got %+v", applied)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "app-codex-0123456789ab.json")); !os.IsNotExist(err) {
+		t.Errorf("old file must be removed on idempotent finish: %v", err)
+	}
+}
+
 func TestMigrateSessionScopeFailsClosedOnConflict(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, ".oma", "state")

@@ -118,6 +118,86 @@ func mustPublish(t *testing.T, l *Ledger, slug, kind, body, prompt string) strin
 	return formal
 }
 
+// TestSeatDriftReportedAndRebindRecovers pins the session-drift recovery: a
+// resume under a new id orphans the participant seat; mutating ops fail closed
+// with an actionable --rebind hint, the read-only status REPORTS the drift
+// (rather than refusing), and `pair join --rebind` (Rejoin) reclaims the seat.
+func TestSeatDriftReportedAndRebindRecovers(t *testing.T) {
+	ck := newClock()
+	root, _ := initRoot(t, ck)
+	claude := testLedger(t, root, "claude", ck)
+	codex := testLedger(t, root, "codex", ck) // session hash H1 holds the codex seat
+	s := mustPair(t, claude, "drift")
+	if _, err := codex.Join(s.Pair, false); err != nil {
+		t.Fatal(err)
+	}
+
+	// codex resumes under a NEW platform id (H2): same author, different hash.
+	id2, err := makeIdentity("codex", "session-codex-resumed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	codex2 := NewLedger(root, id2)
+	codex2.Now = ck.now
+	codex2.Getenv = func(string) string { return "" }
+	codex2.PollInterval = time.Millisecond
+
+	// A mutating op fails closed with an actionable --rebind hint.
+	if _, err := codex2.Join(s.Pair, false); err == nil || !strings.Contains(err.Error(), "--rebind") {
+		t.Fatalf("drifted Join must fail-closed with a --rebind hint, got %v", err)
+	}
+	// ...but read-only status REPORTS the drift instead of refusing.
+	st, err := codex2.Status(s.Pair, 0)
+	if err != nil {
+		t.Fatalf("status on a drifted seat must report, not refuse: %v", err)
+	}
+	if st.SeatDrift == nil || st.SeatDrift.HeldBy != codex.Identity.SessionKey || st.SeatDrift.ThisSession != id2.SessionKey {
+		t.Fatalf("status must report seat drift, got %+v", st.SeatDrift)
+	}
+
+	// Rebind reclaims the seat; afterwards the new session is a full participant.
+	if _, err := codex2.Rejoin(s.Pair, false); err != nil {
+		t.Fatalf("rebind: %v", err)
+	}
+	st2, err := codex2.Status(s.Pair, 0)
+	if err != nil || st2.SeatDrift != nil {
+		t.Fatalf("after rebind, no drift expected: drift=%+v err=%v", st2.SeatDrift, err)
+	}
+	// The reclaimed session can now act: it receives claude's freshly published plan.
+	mustPublish(t, claude, s.Pair, "plan", "body", "review")
+	res, err := codex2.Wait(s.Pair, 0)
+	if err != nil || res.Code != WaitNewArtifact {
+		t.Fatalf("reclaimed session must wait/deliver, got code %d err=%v", res.Code, err)
+	}
+}
+
+// TestReservationCountMatchesBareSeqFiles pins the doctor leak-count fix:
+// reservation files are bare NNN, so the old Cut-on-"." count was always 0 and
+// the leak-detection asserts passed vacuously. A live draft reservation must
+// now be counted, and a published one cleaned back to zero.
+func TestReservationCountMatchesBareSeqFiles(t *testing.T) {
+	ck := newClock()
+	root, _ := initRoot(t, ck)
+	claude := testLedger(t, root, "claude", ck)
+	s := mustPair(t, claude, "count")
+	if n := claude.ReservationCount(s.Pair); n != 0 {
+		t.Fatalf("no reservations yet, count = %d, want 0", n)
+	}
+	draft, err := claude.CreateDraft(s.Pair, "plan", nil, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := claude.ReservationCount(s.Pair); n != 1 {
+		t.Fatalf("one live draft reservation, count = %d, want 1", n)
+	}
+	if _, err := claude.Publish(draft, PublishInput{Body: "b", Prompt: "review"}, false); err != nil {
+		t.Fatal(err)
+	}
+	if n := claude.ReservationCount(s.Pair); n != 0 {
+		t.Fatalf("after publish the reservation is cleaned, count = %d, want 0", n)
+	}
+}
+
 // --- matrix 1 + 10: v1 trees are refused, zero writes ---
 
 func TestV1TreeRefusedZeroWrites(t *testing.T) {

@@ -3,12 +3,12 @@
 #   model · ctx% (tok) · rate↺reset  |  cwd  branch ●dirty  (wt:name) ← from orig · +/-
 #
 # Reference example shipped with oma. Copy to ~/.claude/statusline-command.sh
-# and tweak to taste. Everything above the "oma relay segment" block is generic
-# Claude Code status-line rendering; the relay segment at the bottom is the only
-# oma-specific part — it calls `oma relay statusline --json` and shows the bound
-# pair's "whose turn" state, staying silent (fail-quiet, exit 0) when oma isn't
-# installed or no pair is bound. `oma` is resolved from PATH, so there is no
-# absolute path to edit.
+# and tweak to taste. Everything above the "oma workflow segment" block is generic
+# Claude Code status-line rendering; the oma segment at the bottom is the only
+# oma-specific part — it calls `oma statusline --json` and shows the active core
+# workflow's state (relay/ralph/interview/autopilot), staying silent (fail-quiet,
+# exit 0) when oma isn't installed or no workflow is active. `oma` is resolved
+# from PATH, so there is no absolute path to edit.
 input=$(cat)
 
 # Never leak to stderr — Claude Code hides the whole status line if the script
@@ -99,17 +99,17 @@ if [ -n "$lines_added" ] || [ -n "$lines_removed" ]; then
     printf "${SEP}${C_ADD}+%s${R}/${C_DEL}-%s${R}" "${lines_added:-0}" "${lines_removed:-0}"
 fi
 
-# ---- oma relay segment (fail-quiet, hard-bounded) ----
-#   resolve binding from the project cwd (oma reads process cwd, not stdin);
-#   gate on .bound so non-pair windows stay clean (oma prints "relay: —" otherwise)
+# ---- oma workflow segment (fail-quiet, hard-bounded) ----
+#   resolve the active core workflow from the project cwd (oma reads process
+#   cwd, not stdin); gate on .active so idle windows stay clean
 #   `oma` resolved from PATH — the existence guard keeps the line fail-quiet when
 #   it is not installed (no command-not-found spam, segment simply omitted)
 oma_bin=$(command -v oma 2>/dev/null)
 if [ -n "$oma_bin" ] && [ -x "$oma_bin" ]; then
-    relay_json=$( { [ -n "$cwd" ] && cd "$cwd"; } 2>/dev/null; timeout 1 "$oma_bin" relay statusline --json 2>/dev/null )
-    if [ "$(printf '%s' "$relay_json" | jq -r '.bound // false')" = "true" ]; then
-        relay_seg=$(printf '%s' "$relay_json" | jq -r '.text // empty')
-        [ -n "$relay_seg" ] && printf "${SEP}%s" "$relay_seg"
+    oma_json=$( { [ -n "$cwd" ] && cd "$cwd"; } 2>/dev/null; timeout 1 "$oma_bin" statusline --json 2>/dev/null )
+    if [ "$(printf '%s' "$oma_json" | jq -r '.active // false')" = "true" ]; then
+        oma_seg=$(printf '%s' "$oma_json" | jq -r '.text // empty')
+        [ -n "$oma_seg" ] && printf "${SEP}%s" "$oma_seg"
     fi
 fi
 

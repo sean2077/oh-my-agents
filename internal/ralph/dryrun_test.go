@@ -32,9 +32,15 @@ func TestDryRunMutatorsValidateButNeverWrite(t *testing.T) {
 	// review 060 blocker 1.
 	e := testEngine(t)
 	mustStartLoop(t, e, 3, 3)
+	// A real next advances to round 1 so the dry-run check below is a legal
+	// transition (a check needs a round to measure); the digest baseline is
+	// taken AFTER it, so the dry-run ops must leave the tree byte-identical.
+	if _, _, err := e.Next("r1", false); err != nil {
+		t.Fatal(err)
+	}
 	before := dirDigest(t, e.Dir)
 
-	if st, v, err := e.Next("r1", true); err != nil || !v.Continue || !v.Mutated || st.Round != 1 {
+	if st, v, err := e.Next("r1", true); err != nil || !v.Continue || !v.Mutated || st.Round != 2 {
 		t.Fatalf("dry-run next: %+v err=%v", v, err)
 	}
 	if _, v, err := e.RecordCheck("r1", 1, nil, "sig", true); err != nil || !v.Mutated {
@@ -49,9 +55,9 @@ func TestDryRunMutatorsValidateButNeverWrite(t *testing.T) {
 	if got := dirDigest(t, e.Dir); got != before {
 		t.Fatal("dry-run mutators wrote state (review 060 blocker 1)")
 	}
-	// Persisted state is untouched: round still 0.
+	// Persisted state is untouched by the dry-run ops: round still 1.
 	s, err := e.Load("r1")
-	if err != nil || s.Round != 0 || s.Phase != PhaseRunning {
+	if err != nil || s.Round != 1 || s.Phase != PhaseRunning {
 		t.Fatalf("persisted state = %+v err=%v", s, err)
 	}
 }

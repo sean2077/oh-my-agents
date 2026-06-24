@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -82,13 +83,15 @@ type readyArtifact struct {
 	FM     *Frontmatter
 }
 
-func hashFile(path string) (string, error) {
-	raw, err := os.ReadFile(path)
+// readVerifiedHash returns the artifact's content hash as "sha256:<hex>",
+// read from the .sha256 sidecar that ReadArtifact has just verified against
+// the content — avoiding a second read-and-hash of the artifact body.
+func readVerifiedHash(path string) (string, error) {
+	raw, err := os.ReadFile(path + ".sha256")
 	if err != nil {
 		return "", err
 	}
-	sum := sha256.Sum256(raw)
-	return "sha256:" + hex.EncodeToString(sum[:]), nil
+	return "sha256:" + strings.TrimSpace(string(raw)), nil
 }
 
 // readyArtifacts lists this pair's published artifacts (sidecar-verified),
@@ -106,7 +109,7 @@ func (l *Ledger) readyArtifacts(slug string) ([]readyArtifact, error) {
 		if err != nil {
 			return nil, err
 		}
-		h, err := hashFile(path)
+		h, err := readVerifiedHash(path) // reuse the sidecar ReadArtifact just verified
 		if err != nil {
 			return nil, err
 		}
@@ -190,6 +193,14 @@ func (l *Ledger) verifyApproveClose(slug string) error {
 		}
 	}
 	if decision == nil {
+		// A decision-with-receipt by a non-current-lead author is the tell-tale
+		// of a lead swap after approval: name it so the user knows to republish
+		// (or restore the lead) rather than seeing a bare "needs a decision".
+		for i := range arts {
+			if a := &arts[i]; a.Kind == "decision" && a.FM.ReceiptID != "" && a.Author != lead {
+				return fmt.Errorf("%w: the lead is now %s but the latest completion receipt was published by %s (decision seq %d) — the lead changed after approval; republish a kind:decision as %s, or restore the prior lead with `oma relay pair set-lead %s`", ErrGate, lead, a.Author, a.Seq, lead, a.Author)
+			}
+		}
 		return fmt.Errorf("%w: close --outcome approve needs a lead kind:decision with a completion receipt (publish one after a non-lead approve review of the latest work)", ErrGate)
 	}
 	fm := decision.FM

@@ -95,7 +95,6 @@ oma workflow list [--all-sessions] [--json]
 ```
 oma relay init [--ledger-root <path>]
 oma relay preflight [--json]
-oma relay statusline [--json] [--watch] [--no-color] [--preset minimal|focused|full] [--pair <slug>]
 # (hidden) oma relay hook <event>   — machine-invoked dispatcher; not a public group
 oma relay pair new <topic-slug> [--peer <name>] [--json]
 oma relay pair ensure [--json]
@@ -110,8 +109,8 @@ oma relay status [--last N] [--pair <slug>] [--json]
 oma relay close --outcome <approve|reject|abandon> --reason <text> [--pair <slug>] [--allow-worktree-change]
 ```
 
-- `preflight` exit codes = `0` all-pass / `1` has warnings / `3` fail-stop (environment/state, per the §1 convention; `2` is not used — `2` remains cobra usage error); a legacy `.shared/` at the project root is only a warning, and only an explicit `--ledger-root` pointing at a v1 tree fails. `statusline` is the render command; the hidden dispatcher `hook <event>` is machine-invoked (not counted in the public group, not used in refcheck examples).
-- The host-write commands `statusline install/uninstall/doctor` and the whole `hooks install/uninstall/doctor` group (which wrote to the host's `settings.json`/`hooks.json`) are not part of the surface — the user manages host config themselves, and an install wizard would overwrite their custom statusline/hooks. What remains is `oma relay statusline` (render) and the hidden `hook <event>` (dispatcher); the manual-wiring convention is in relay-v2-protocol.md §12.4. The **public relay group is exactly 9** (init/pair/draft/publish/wait/status/close/preflight/statusline; the dispatcher is hidden).
+- `preflight` exit codes = `0` all-pass / `1` has warnings / `3` fail-stop (environment/state, per the §1 convention; `2` is not used — `2` remains cobra usage error); a legacy `.shared/` at the project root is only a warning, and only an explicit `--ledger-root` pointing at a v1 tree fails. The hidden dispatcher `hook <event>` is machine-invoked (not counted in the public group, not used in refcheck examples).
+- The host-write commands `statusline install/uninstall/doctor` and the whole `hooks install/uninstall/doctor` group (which wrote to the host's `settings.json`/`hooks.json`) are not part of the surface — the user manages host config themselves, and an install wizard would overwrite their custom statusline/hooks. The compact status line moved to the top-level `oma statusline` (§7), which renders whichever core workflow the session is in (relay/ralph/interview/autopilot), superseding the relay-only `oma relay statusline`; what remains relay-specific is the hidden `hook <event>` (dispatcher), with the manual-wiring convention in relay-v2-protocol.md §12.4. The **public relay group is exactly 8** (init/pair/draft/publish/wait/status/close/preflight; the dispatcher is hidden).
 - `pair set-lead` updates `session.json.roles.lead` — the confirmation that workflows §4.1 requires after a role swap.
 - `pair new` is the entry point for creating a pair (`ensure`/`join` carry only binding semantics); the creator becomes `roles.lead` by default (protocol §4), and `--peer` defaults to the claude↔codex counterpart. `draft` carries `--corrects <seq>` for the protocol §5 `corrects` field, mandatory when kind=correction.
 - The global workflow `--session` flag does not scope relay. A pair is deliberately cross-session: Codex and Claude Code each resolve their own platform author-session, claim their author slot in `session.json.participant_sessions`, then bind to the same pair under `.oma/relay/_bindings/`. Multiple pair workflows run in parallel as multiple Codex/Claude session pairs, not as multiple bindings for one author-session.
@@ -125,6 +124,8 @@ oma relay close --outcome <approve|reject|abandon> --reason <text> [--pair <slug
 ## 7. Other
 
 ```
+oma statusline [--json] [--watch] [--no-color] [--preset minimal|focused|full] [--pair <slug>] [--root <path>]
+                               # compact one-line state of the active core workflow (relay/ralph/interview/autopilot), each tagged `oma`; pure-read + fail-soft (never errors into the host bar); --json schema oma-statusline/1, gate a custom script on .active; supersedes `oma relay statusline`
 oma config show [--json]       # prints the effective config + per-key source (flag/env/project/user/default); read-only
 oma config path [--json]       # prints the resolved user/project config file locations; read-only
 oma self-update [--check] [--channel stable|prerelease] [--version <tag>] [--allow-downgrade]

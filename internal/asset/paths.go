@@ -70,6 +70,12 @@ func (l Layout) SafeCanonicalTarget(e *Entry) (string, error) {
 	if e.Manifest.Name != e.Name {
 		return "", fmt.Errorf("%w: registry entry %q carries manifest for %q", ErrInvalid, e.Name, e.Manifest.Name)
 	}
+	// The top-level entry.Type drives projection-path recomputation (Remove /
+	// Rollback) while canonical deletion uses the validated Manifest; cross-check
+	// them so a tampered Type cannot diverge the two halves of one operation.
+	if e.Type != e.Manifest.Type {
+		return "", fmt.Errorf("%w: registry entry %q type %q disagrees with its manifest type %q (corrupt or tampered registry)", ErrInvalid, e.Name, e.Type, e.Manifest.Type)
+	}
 	expected, err := l.CanonicalPath(&e.Manifest)
 	if err != nil {
 		return "", err
@@ -84,7 +90,7 @@ func (l Layout) SafeCanonicalTarget(e *Entry) (string, error) {
 	if err := l.checkRootEscape(); err != nil {
 		return "", err
 	}
-	if err := checkParentWritable(filepath.Dir(expected)); err != nil {
+	if err := checkAncestorWritable(filepath.Dir(expected)); err != nil {
 		return "", err
 	}
 	return expected, nil
@@ -116,24 +122,14 @@ func (l Layout) checkRootEscape() error {
 	return nil
 }
 
-// checkParentWritable refuses world-writable parent directories on POSIX
-// platforms. On Windows, os.FileMode permission bits are an approximation over
-// ACLs and commonly report user-owned directories as 0777, so ACL hardening is
-// left to the Windows sandbox and the existing trusted-root checks.
-func checkParentWritable(dir string) error {
-	info, err := os.Stat(dir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil // will be created 0700
-		}
-		return err
-	}
-	if rejectsWorldWritable(info) {
-		return fmt.Errorf("%w: parent directory %s is world-writable", ErrInvalid, dir)
-	}
-	return nil
-}
-
+// rejectsWorldWritable reports a world-writable directory on POSIX. On Windows,
+// os.FileMode permission bits are an approximation over ACLs and commonly
+// report user-owned directories as 0777, so ACL hardening is left to the
+// Windows sandbox and the existing trusted-root checks. Both install
+// (canonical placement) and projection feed their parents through
+// checkAncestorWritable so the canonical store gets the same bar as the host
+// projection dirs — no asymmetry where one walks ancestors and the other does
+// not.
 func rejectsWorldWritable(info os.FileInfo) bool {
 	return runtime.GOOS != "windows" && info.Mode().Perm()&0o002 != 0
 }

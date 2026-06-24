@@ -207,6 +207,28 @@ func TestProjectionRootWorldWritableRefused(t *testing.T) {
 	}
 }
 
+func TestCanonicalRootWorldWritableRefused(t *testing.T) {
+	// Symmetry with TestProjectionRootWorldWritableRefused: a world-writable
+	// CANONICAL store (~/.agents) must be refused too, even on a fresh install
+	// where the skills/ subdir does not exist yet. The old checkParentWritable
+	// returned nil for a missing immediate parent and never inspected ~/.agents.
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX world-writable mode bits do not model Windows ACLs")
+	}
+	e := newTestEngine(t)
+	agentsRoot := filepath.Join(e.Layout.Home, ".agents")
+	if err := os.MkdirAll(agentsRoot, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(agentsRoot, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	src := writeSkillSource(t, t.TempDir(), "x", "body")
+	if _, err := e.Install(src, Options{Agents: []string{"claude"}}); err == nil || !strings.Contains(err.Error(), "world-writable") {
+		t.Fatalf("world-writable canonical store: err = %v, want refusal", err)
+	}
+}
+
 func TestNestedProjectionSymlinkEscapeRefused(t *testing.T) {
 	e := newTestEngine(t)
 	outside := t.TempDir()

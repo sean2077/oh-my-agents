@@ -263,7 +263,6 @@ func (u *Updater) Apply(rel *Release, dryRun, allowDowngrade bool) error {
 	}
 
 	dir := filepath.Dir(u.BinaryPath)
-	tmp := u.BinaryPath + ".oma-update-tmp"
 	old := u.BinaryPath + ".old"
 	// Zero-write validation path, shared by dry-run and real execution
 	// (review 064 blocker 1: the old probe-file check WROTE during
@@ -301,14 +300,22 @@ func (u *Updater) Apply(rel *Release, dryRun, allowDowngrade bool) error {
 		if err := u.prepareCandidate(validationPath, binAsset.URL, wantSum, rel.TagName); err != nil {
 			return err
 		}
-		_, _ = fmt.Fprintf(u.Out, "would download %s\nwould verify against %s\nwould write %s\nwould backup %s -> %s (rotating any previous backup)\nwould replace %s\n",
-			binAsset.URL, sumAsset.URL, tmp, u.BinaryPath, old, u.BinaryPath)
+		_, _ = fmt.Fprintf(u.Out, "would download %s\nwould verify against %s\nwould write a private temp dir under %s\nwould backup %s -> %s (rotating any previous backup)\nwould replace %s\n",
+			binAsset.URL, sumAsset.URL, dir, u.BinaryPath, old, u.BinaryPath)
 		return nil
 	}
 
-	// Download to a same-directory temp so the final rename is atomic.
+	// Download into a same-directory PRIVATE temp dir (0700, unique name) so the
+	// final rename stays atomic AND no predictable path in a shared bin dir can
+	// be pre-created or symlinked by another user (the fixed `<bin>.oma-update-tmp`
+	// was both predictable and shared across concurrent runs).
+	tmpDir, err := os.MkdirTemp(dir, ".oma-update-")
+	if err != nil {
+		return fmt.Errorf("%w: create update temp dir in %s: %v", ErrUpdate, dir, err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+	tmp := filepath.Join(tmpDir, wantName)
 	if err := u.prepareCandidate(tmp, binAsset.URL, wantSum, rel.TagName); err != nil {
-		_ = os.Remove(tmp)
 		return err
 	}
 
@@ -376,11 +383,19 @@ func (u *Updater) findAssets(rel *Release, wantName string) (bin, sums *Asset, e
 // repository (or GitHub's asset CDN).
 func (u *Updater) checkSourceURL(raw string) error {
 	parsed, err := url.Parse(raw)
-	if err != nil || parsed.Scheme != "https" && u.APIBase == "https://api.github.com" {
-		return fmt.Errorf("%w: asset URL %q is not https", ErrUpdate, raw)
+	if err != nil {
+		return fmt.Errorf("%w: asset URL %q is not parseable", ErrUpdate, raw)
 	}
+	// The injected APIBase prefix is the one trusted non-https-checked source
+	// (api.github.com in production, the httptest server under test); the
+	// trailing "/" blocks prefix-confusion (e.g. api.github.com.evil.com). EVERY
+	// other URL must be https — unconditionally, no longer coupled to whether
+	// APIBase happens to be the production default.
 	if strings.HasPrefix(raw, u.APIBase+"/") {
-		return nil // test servers and api.github.com asset endpoints
+		return nil
+	}
+	if parsed.Scheme != "https" {
+		return fmt.Errorf("%w: asset URL %q is not https", ErrUpdate, raw)
 	}
 	host := parsed.Hostname()
 	switch {

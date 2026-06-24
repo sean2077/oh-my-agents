@@ -112,28 +112,30 @@ npx skills add sean2077/oh-my-agents -g --agent claude-code codex
 
 ## Wire the statusline and hooks (optional)
 
-`oma` never writes your host config. The relay statusline and the auto-continue
+`oma` never writes your host config. The statusline and the auto-continue
 hooks are **opt-in**: you add them to your own `~/.claude/settings.json` (or
 `~/.codex/hooks.json`) by hand. Use the absolute path to your binary (`which oma`)
 behind an existence guard so a missing binary degrades silently instead of
 spamming command-not-found.
 
-**Statusline** (a compact "which pair / whose turn" line) — add to
+**Statusline** (a compact one-line view of the core workflow you're currently
+in — relay / ralph / interview / autopilot, each tagged `oma`) — add to
 `~/.claude/settings.json`:
 
 ```json
 {
   "statusLine": {
     "type": "command",
-    "command": "[ -x '/ABS/PATH/oma' ] || exit 0; exec '/ABS/PATH/oma' relay statusline"
+    "command": "[ -x '/ABS/PATH/oma' ] || exit 0; exec '/ABS/PATH/oma' statusline"
   }
 }
 ```
 
-Already have a custom statusline script? Don't replace it — call
-`oma relay statusline --json` from inside it and gate on `.bound` (so non-pair
-windows stay clean). See [`docs/examples/statusline-command.sh`](docs/examples/statusline-command.sh)
-for a complete working example — the relay segment is the last block.
+`oma statusline` supersedes the older relay-only `oma relay statusline`. Already
+have a custom statusline script? Don't replace it — call `oma statusline --json`
+from inside it and gate on `.active` (so idle windows stay clean). See
+[`docs/examples/statusline-command.sh`](docs/examples/statusline-command.sh)
+for a complete working example.
 
 **Auto-continue hooks** (drive the pair-delivery loop without manual nudging) —
 add to the top-level `hooks` key in `~/.claude/settings.json`. For Codex, the

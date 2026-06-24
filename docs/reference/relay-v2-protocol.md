@@ -135,11 +135,11 @@ A human troubleshooting gate: it diagnoses identity, ledger root/sentinel/schema
 - `--json`: schema `oma-relay-preflight/1`, with stable fields for reuse by B13/B14.
 - SessionStart (B14) **does not run a full preflight** — it uses a lightweight, bounded stale/residue/status check (FS probes are expensive on shared mounts); the full preflight is human-triggered only.
 
-### 12.2 `oma relay statusline` (B13, rendering command)
+### 12.2 statusline (B13, rendering command — now the top-level `oma statusline`)
 
-A compact "which pair / whose turn / latest seq·kind·status" line + a `--watch` dashboard. Safety properties (hard acceptance criteria): **pure read** (no GC, no last_seen/heartbeat mutation, zero ledger writes), **binding-scoped** (an unbound window does not display orphan active pairs), and self-bounded rendering/subprocesses (a hung mount does not drag down the UI). `--json` schema `oma-relay-statusline/1`, for consumption by a host status-line script.
+The compact status line is the top-level **`oma statusline`** (command-tree.md §7): it renders whichever core workflow the session is currently in — relay / ralph / interview / autopilot — each tagged `oma`, showing the single most-recently-active one. It supersedes the relay-only `oma relay statusline`. The relay segment keeps the same safety properties (hard acceptance criteria): **pure read** (no GC, no last_seen/heartbeat mutation, zero ledger writes), **binding-scoped** (an unbound window does not display orphan active pairs), **fail-soft** (any setup problem degrades to a line, exit 0), and self-bounded rendering/subprocesses (a hung mount does not drag down the UI). `--json` schema `oma-statusline/1` (the relay engine's own snapshot stays `oma-relay-statusline/1`), for consumption by a host status-line script.
 
-oma does not write host configuration; the rendering command and the dispatcher below are wired in by hand (§12.4). A host that already runs a rich status-line script calls `oma relay statusline --json` from within that script and filters on `.bound`, rather than handing the whole status line to oma.
+oma does not write host configuration; the rendering command and the dispatcher below are wired in by hand (§12.4). A host that already runs a rich status-line script calls `oma statusline --json` from within that script and filters on `.active`, rather than handing the whole status line to oma.
 
 ### 12.3 `oma relay hook <event>` (B14, hidden dispatcher)
 
@@ -161,10 +161,10 @@ oma does not write host configuration; the following are the canonical shapes fo
 
   ```json
   { "statusLine": { "type": "command",
-    "command": "[ -x '/abs/path/oma' ] || exit 0; exec '/abs/path/oma' relay statusline" } }
+    "command": "[ -x '/abs/path/oma' ] || exit 0; exec '/abs/path/oma' statusline" } }
   ```
 
-  A user who already has a rich status-line script instead calls `oma relay statusline --json` from within the script and filters on `.bound` (see `docs/examples/statusline-command.sh`).
+  A user who already has a rich status-line script instead calls `oma statusline --json` from within the script and filters on `.active` (see `docs/examples/statusline-command.sh`).
 
 - **hooks shape (real-host evidence)**: both host ends are a nested matcher group wrapped by a top-level `hooks` key (claude `settings.json`, codex `hooks.json` — codex's sibling `state` trust table is preserved byte-for-byte). One `{type:"command", command, timeout}` entry per event.
 - **matcher scope / timeout**: SessionStart `startup|resume|clear` (10s); PreToolUse claude `^(Edit|Write|MultiEdit)$`, codex `^(apply_patch|Edit|Write)$` (5s); Stop with no matcher (5s). A PreToolUse with no matcher makes the dispatcher spawn once per tool call — always carry a matcher.

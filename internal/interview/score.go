@@ -375,7 +375,8 @@ func stabilityRatio(prev, cur []Entity) float64 {
 	count := 0
 	for _, c := range cur {
 		if _, ok := prevByName[c.Name]; ok {
-			count++ // stable
+			matched[c.Name] = true // consume the prev entity so it cannot ALSO be claimed as a rename source
+			count++                // stable
 			continue
 		}
 		for _, p := range prev {

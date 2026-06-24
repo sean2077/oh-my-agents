@@ -622,11 +622,11 @@ func TestParticipantSessionClaimRejectsSameAuthorDifferentSession(t *testing.T) 
 	if got := joined.ParticipantSessions["codex"]; got != codex.Identity.SessionKey {
 		t.Fatalf("codex participant session = %s, want %s", got, codex.Identity.SessionKey)
 	}
-	if _, err := otherCodex.Join(s.Pair, false); err == nil || !strings.Contains(err.Error(), "claimed") {
-		t.Fatalf("same-author second session join err = %v, want claimed refusal", err)
+	if _, err := otherCodex.Join(s.Pair, false); err == nil || !strings.Contains(err.Error(), "--rebind") {
+		t.Fatalf("same-author second session join err = %v, want actionable --rebind refusal", err)
 	}
-	if _, err := otherCodex.CreateDraft(s.Pair, "note", nil, nil, false); err == nil || !strings.Contains(err.Error(), "claimed") {
-		t.Fatalf("same-author second session draft err = %v, want claimed refusal", err)
+	if _, err := otherCodex.CreateDraft(s.Pair, "note", nil, nil, false); err == nil || !strings.Contains(err.Error(), "--rebind") {
+		t.Fatalf("same-author second session draft err = %v, want actionable --rebind refusal", err)
 	}
 }
 
