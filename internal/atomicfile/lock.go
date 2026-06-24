@@ -43,9 +43,13 @@ func AcquireLock(dir string, timeout time.Duration) (*Lock, error) {
 		if !errors.Is(err, os.ErrExist) {
 			return nil, err
 		}
-		if stale, token, _ := staleLock(dir); stale {
-			reclaimLock(dir, token)
-			continue
+		if stale, _ := staleLock(dir); stale {
+			if token, ok := takeOverStale(dir); ok {
+				return &Lock{dir: dir, token: token}, nil
+			}
+			// Takeover aborted (the lock was re-acquired in the meantime, or
+			// another reclaimer holds the election) — fall through to the
+			// bounded wait and retry.
 		}
 		if timeout <= 0 || !time.Now().Before(deadline) {
 			return nil, fmt.Errorf("%w: %s", ErrLockHeld, dir)
@@ -108,52 +112,58 @@ func randomToken() (string, error) {
 	return hex.EncodeToString(b[:]), nil
 }
 
-// staleLock reports whether dir is an abandoned lock, plus the owner token the
-// decision was based on ("" when the owner file is missing/corrupt and the
-// mtime fallback was used). reclaimLock uses the token so it only ever removes
-// the exact lock observed as stale — never a fresh lock a concurrent acquirer
-// created in the window between this check and reclamation.
-func staleLock(dir string) (bool, string, error) {
+// staleLock reports whether dir is an abandoned lock (lease expired, or — when
+// the owner file is missing/corrupt — older than the lease by mtime).
+func staleLock(dir string) (bool, error) {
 	owner, err := readOwner(dir)
-	token := ""
 	if err == nil {
-		token = owner["token"]
 		if expires := owner["expires"]; expires != "" {
 			t, perr := time.Parse(time.RFC3339Nano, expires)
 			if perr == nil {
-				return time.Now().UTC().After(t), token, nil
+				return time.Now().UTC().After(t), nil
 			}
 		}
 	}
 	info, statErr := os.Stat(dir)
 	if statErr != nil {
-		return false, "", statErr
+		return false, statErr
 	}
-	return time.Since(info.ModTime()) > defaultLockLease, token, err
+	return time.Since(info.ModTime()) > defaultLockLease, err
 }
 
-// reclaimLock removes a lock previously observed as stale (carrying
-// observedToken). Renaming dir away is the serialization point: only one
-// caller can move a given lock, so the rest get an error and loop. After
-// winning the rename it deletes the lock only if the owner still matches what
-// was observed; otherwise a fresh acquirer slipped in during the
-// check→reclaim window, so it restores the lock unharmed (that owner keeps
-// it). If dir was re-taken meanwhile the staged copy is dropped and the fresh
-// owner detects the loss at Release via ErrLockNotOwned.
-func reclaimLock(dir, observedToken string) {
-	parent := filepath.Dir(dir)
-	staleName := fmt.Sprintf(".%s.stale.%d.%s", filepath.Base(dir), os.Getpid(), time.Now().UTC().Format("20060102150405.000000000"))
-	staleDir := filepath.Join(parent, staleName)
-	if err := os.Rename(dir, staleDir); err != nil {
-		return // lost the race: another caller already moved it — loop and retry
+// takeOverStale reclaims a lock observed as stale by transferring ownership IN
+// PLACE. It NEVER renames or removes dir, so the canonical lock path is never
+// observably free and no concurrent Mkdir-acquire can create a second holder —
+// the double-holder window that a rename-away/restore reclaim leaves open.
+//
+// Reclaimers are serialized by a sibling election lock (`dir+".reclaim"`,
+// atomic Mkdir). The single winner re-confirms staleness UNDER the election —
+// while it holds the claim no one else can take over, and dir still exists so
+// no Mkdir-acquire can occur, so the owner cannot change out from under the
+// check — meaning a lock re-acquired since it was observed stale is never
+// stolen. It then overwrites the owner file with a fresh token (atomic
+// temp+rename; dir untouched). Returns (token, true) only when this caller
+// became the owner.
+func takeOverStale(dir string) (string, bool) {
+	claim := dir + ".reclaim"
+	if err := os.Mkdir(claim, 0o700); err != nil {
+		// Another reclaimer holds the election, or one crashed mid-reclaim and
+		// left an abandoned claim — clear only a clearly-abandoned one (older
+		// than the lease) and let the caller retry.
+		if info, statErr := os.Stat(claim); statErr == nil && time.Since(info.ModTime()) > defaultLockLease {
+			_ = os.RemoveAll(claim)
+		}
+		return "", false
 	}
-	if tok, _ := readOwnerToken(staleDir); tok == observedToken {
-		_ = os.RemoveAll(staleDir)
-		return
+	defer func() { _ = os.RemoveAll(claim) }()
+	if stale, _ := staleLock(dir); !stale {
+		return "", false // re-acquired since we observed it stale — do not steal
 	}
-	if err := os.Rename(staleDir, dir); err != nil {
-		_ = os.RemoveAll(staleDir)
+	token, err := writeLockMetadata(dir) // atomic owner-file replace; dir is never removed
+	if err != nil {
+		return "", false
 	}
+	return token, true
 }
 
 func readOwnerToken(dir string) (string, error) {
