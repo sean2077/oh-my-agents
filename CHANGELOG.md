@@ -4,6 +4,43 @@
 >
 > Section heading format: `## vX.Y.Z - YYYY-MM-DD` (CI matches the tag by exact prefix; a tag with no matching section fails the release, fail-closed).
 
+## v1.1.0 - 2026-06-24
+
+This minor release adds a unified workflow statusline and applies the audited
+P0-P3 hardening pass across relay, atomic file locking, state migration,
+assets, ralph, interview scoring, and self-update.
+
+- **Unified statusline**: add top-level `oma statusline`, which renders the
+  most recently active core workflow (`relay`, `ralph`, `interview`, or
+  `autopilot`) with an `oma` marker, JSON output, watch mode, and fail-soft
+  status-bar behavior. The former relay-only statusline is superseded by this
+  top-level command, and the README, command tree, relay protocol, tutorial,
+  and example statusline script now point at it.
+- **Relay delivery hardening**: Stop-hook escape detection no longer treats
+  ordinary completion prose containing words like `auth`, `context`, or
+  `quota` as an escape valve; wait and Stop-hook delivery now split
+  "delivered" from "consumed" cursor marks so out-of-order peer artifacts are
+  not skipped; session drift is diagnosable through `status` and recoverable
+  with explicit `pair join --rebind`.
+- **Locking and workflow correctness**: stale atomic-file locks are reclaimed
+  by an in-place owner takeover serialized through a sibling `.reclaim`
+  election, avoiding the double-holder window from rename-away reclamation;
+  ralph now refuses checks before the first round and uses `BestScore == nil`
+  as the plateau sentinel; interview stability scoring consumes exact-name
+  matches before rename matching.
+- **Asset and update security**: canonical asset installs now apply the same
+  world-writable ancestor checks as projections, registry entry type is
+  cross-checked against the embedded manifest, fetched asset archives extract
+  with private `0600`/`0700` permissions, and self-update uses private
+  same-directory temp directories while keeping release asset URL validation
+  HTTPS- and repo-pinned.
+- **State, receipt, and docs repairs**: relay reservation counting matches bare
+  sequence reservation names, completion receipt hashing reuses the verified
+  sidecar hash, close rollback errors are surfaced, session-scope migration is
+  crash-idempotent, and the reference docs now record the ralph receipt schema,
+  budget-counting behavior, top-level statusline, and `--rebind` command
+  surface.
+
 ## v1.0.0 - 2026-06-23
 
 First stable release: `oma` now freezes the CLI, JSON, disk-schema, release-channel, and core4 skill contracts under the compatibility rules in [`STABILITY.md`](STABILITY.md).
