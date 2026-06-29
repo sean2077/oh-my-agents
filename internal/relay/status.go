@@ -52,7 +52,9 @@ type PairStatus struct {
 	SeatDrift        *SeatDriftInfo           `json:"seat_drift,omitempty"`        // this author's seat held by a different same-author session
 }
 
-// Status assembles the diagnostic view of one pair (read-only).
+// Status assembles the diagnostic view of one pair. It is read-only w.r.t.
+// ledger CONTENT (artifacts/sessions) but refreshes the CALLER's own heartbeat
+// per protocol §8 — the pure-read path is Statusline, not Status.
 func (l *Ledger) Status(slug string, last int) (*PairStatus, error) {
 	s, err := l.ResolvePair(slug, false)
 	if err != nil {
@@ -76,6 +78,11 @@ func (l *Ledger) Status(slug string, last int) (*PairStatus, error) {
 			Hint:        fmt.Sprintf("reclaim with `oma relay pair join %s --rebind` if that session is gone", s.Pair),
 		}
 	}
+
+	// Per protocol §8, `oma relay status` refreshes the caller's own heartbeat
+	// (statusline is the separate pure-read path). Genuine non-participants are
+	// returned above, so only a real or seat-drifted caller touches here.
+	l.touchHeartbeat(s.Pair)
 
 	next, err := l.nextSeq(s.Pair)
 	if err != nil {

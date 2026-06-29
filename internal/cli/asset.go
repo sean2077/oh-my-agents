@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -53,7 +52,7 @@ func resolveSource(root, name string) (string, error) {
 			return dir, nil
 		}
 	}
-	return "", Errf(ExitState, "asset %q not found under %s/{skills,agents,hooks,prompts}", name, root)
+	return "", failClosed(fmt.Sprintf("asset %q not found under %s/{skills,agents,hooks,prompts}", name, root), "check the asset name, or point --from at the assets/ root that defines it")
 }
 
 func printOps(cmd *cobra.Command, rep *asset.Report) {
@@ -125,7 +124,7 @@ func newAssetInstallCmd() *cobra.Command {
 				wantRef := ref
 				if wantRef == "" {
 					if !update.IsSemver(version.Version) {
-						return Errf(ExitState, "no assets source: this is a %q build with no release to pin — pass --ref <tag> or --from <root> (a checkout's assets/)", version.Version)
+						return failClosed(fmt.Sprintf("no assets source: %q build has no release to pin", version.Version), "pass --ref <tag> or --from <root> (a checkout's assets/)")
 					}
 					wantRef = version.Version
 				}
@@ -204,9 +203,7 @@ func newAssetListCmd() *cobra.Command {
 				rows = append(rows, r)
 			}
 			if asJSON {
-				enc := json.NewEncoder(cmd.OutOrStdout())
-				enc.SetIndent("", "  ")
-				return enc.Encode(map[string]any{"schema": "oma-cli/1", "assets": rows})
+				return printJSON(cmd, map[string]any{"schema": "oma-cli/1", "assets": rows})
 			}
 			for _, r := range rows {
 				status := ""
@@ -298,9 +295,7 @@ func newAssetCatalogCmd() *cobra.Command {
 				return Errf(ExitState, "%v", err)
 			}
 			if asJSON {
-				enc := json.NewEncoder(cmd.OutOrStdout())
-				enc.SetIndent("", "  ")
-				return enc.Encode(map[string]any{"schema": "oma-cli/1", "catalog": entries})
+				return printJSON(cmd, map[string]any{"schema": "oma-cli/1", "catalog": entries})
 			}
 			for _, e := range entries {
 				line := fmt.Sprintf("%-24s %-9s %-10s %s", e.Name, e.Type, e.Status, strings.Join(e.Targets, ","))
@@ -333,9 +328,7 @@ func newAssetAuditCmd() *cobra.Command {
 				return Errf(ExitState, "%v", err)
 			}
 			if asJSON {
-				enc := json.NewEncoder(cmd.OutOrStdout())
-				enc.SetIndent("", "  ")
-				return enc.Encode(map[string]any{"schema": "oma-cli/1", "audit": entries})
+				return printJSON(cmd, map[string]any{"schema": "oma-cli/1", "audit": entries})
 			}
 			for _, e := range entries {
 				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%-24s %-8s %-10s %-10s loc=%-4d tok=%-4d refs=%-3d  %s\n",

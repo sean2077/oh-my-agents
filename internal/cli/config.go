@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"sort"
@@ -67,9 +66,7 @@ func newConfigShowCmd() *cobra.Command {
 				"asset.default_agents":       strings.Join(cfg.Asset.DefaultAgents, ","),
 			}
 			if asJSON {
-				enc := json.NewEncoder(cmd.OutOrStdout())
-				enc.SetIndent("", "  ")
-				return enc.Encode(map[string]any{
+				return printJSON(cmd, map[string]any{
 					"schema":           "oma-cli/1",
 					"values":           values,
 					"sources":          cfg.Sources,
@@ -104,9 +101,7 @@ func newConfigPathCmd() *cobra.Command {
 				return err
 			}
 			if asJSON {
-				enc := json.NewEncoder(cmd.OutOrStdout())
-				enc.SetIndent("", "  ")
-				return enc.Encode(map[string]any{
+				return printJSON(cmd, map[string]any{
 					"schema":  "oma-cli/1",
 					"user":    cfg.UserPath,
 					"project": cfg.ProjectPath,

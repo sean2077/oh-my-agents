@@ -23,6 +23,9 @@ func runRelay(t *testing.T, args ...string) (int, string) {
 
 func setManualRelayIdentity(t *testing.T, author, session string) {
 	t.Helper()
+	// Isolate the config layer that relayLedger now consumes: a temp HOME means
+	// no stray ~/.config/oma/config.toml leaks into relay behavior.
+	t.Setenv("OMA_HOME", t.TempDir())
 	t.Setenv("OMA_RELAY_AUTHOR", author)
 	t.Setenv("OMA_RELAY_SESSION_ID", session)
 	t.Setenv("CLAUDE_CODE_SESSION_ID", "")

@@ -10,34 +10,76 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sean2077/oh-my-agents/internal/config"
 	"github.com/sean2077/oh-my-agents/internal/relay"
 	"github.com/spf13/cobra"
 )
 
 // relayLedger resolves root + identity and opens the ledger (every
-// subcommand except init requires an initialized v2 root).
+// subcommand except init requires an initialized v2 root). It consumes the
+// config layer (docs/reference/config.md §7) for the ledger root and staleness
+// window instead of re-reading env itself; relay identity stays separate and
+// fail-closed (it is platform/env-only, never config).
 func relayLedger(ledgerRoot string, open bool) (*relay.Ledger, error) {
-	root := ledgerRoot
-	if root == "" {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return nil, err
+	l, _, err := relayLedgerWithConfig(ledgerRoot, open)
+	return l, err
+}
+
+// relayLedgerWithConfig is relayLedger plus the loaded config, so a caller that
+// also needs a config-driven value (the wait timeout) loads the layer once.
+func relayLedgerWithConfig(ledgerRoot string, open bool) (*relay.Ledger, *config.Config, error) {
+	cfg, err := loadConfig()
+	if err != nil {
+		return nil, nil, err
+	}
+	if ledgerRoot != "" {
+		if err := cfg.ApplyFlags(config.FlagOverrides{LedgerRoot: &ledgerRoot}); err != nil {
+			return nil, nil, err
 		}
-		if root, err = relay.DefaultRoot(cwd); err != nil {
-			return nil, err
-		}
+	}
+	root, err := resolveLedgerRoot(cfg)
+	if err != nil {
+		return nil, nil, err
 	}
 	id, err := relay.ResolveIdentity(os.Getenv)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	l := relay.NewLedger(root, id)
+	l.StaleAfter = cfg.Relay.StaleAfter
 	if open {
 		if err := l.Open(); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
-	return l, nil
+	return l, cfg, nil
+}
+
+// resolveLedgerRoot turns the configured relay.ledger_root into an absolute
+// path. The default ".oma/relay" means "<project root>/.oma/relay" (DefaultRoot
+// anchors linked worktrees to the primary checkout); an explicit env/config/flag
+// value is used as given, made absolute against the cwd when relative.
+func resolveLedgerRoot(cfg *config.Config) (string, error) {
+	if cfg.Sources["relay.ledger_root"] == config.SourceDefault {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return "", err
+		}
+		return relay.DefaultRoot(cwd)
+	}
+	if filepath.IsAbs(cfg.Relay.LedgerRoot) {
+		return cfg.Relay.LedgerRoot, nil
+	}
+	return filepath.Abs(cfg.Relay.LedgerRoot)
+}
+
+// relayWaitTimeout resolves the wait window: an explicit --timeout flag wins;
+// otherwise the configured relay.wait_timeout (docs/reference/config.md §4).
+func relayWaitTimeout(cmd *cobra.Command, cfg *config.Config, timeoutSec int) time.Duration {
+	if cmd.Flags().Changed("timeout") {
+		return time.Duration(timeoutSec) * time.Second
+	}
+	return cfg.Relay.WaitTimeout
 }
 
 func newRelayCmd() *cobra.Command {
@@ -70,11 +112,25 @@ func newRelayPreflightCmd(rootFlag *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// Resolve the config/env ledger root so preflight honors the same
+			// relay.ledger_root precedence as every other relay command. A
+			// malformed config is a fail-closed CLI error (config.md §6) — the
+			// relay package must not import the config layer, so this resolution
+			// stays in the CLI and is consistent with relayLedger.
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			configuredRoot, err := resolveLedgerRoot(cfg)
+			if err != nil {
+				return err
+			}
 			rep := relay.Preflight(relay.PreflightInput{
-				ExplicitRoot: *rootFlag,
-				Cwd:          cwd,
-				ProjectRoot:  findProjectRoot(),
-				Getenv:       os.Getenv,
+				ExplicitRoot:   *rootFlag,
+				ConfiguredRoot: configuredRoot,
+				Cwd:            cwd,
+				ProjectRoot:    findProjectRoot(),
+				Getenv:         os.Getenv,
 			})
 			out := cmd.OutOrStdout()
 			if asJSON {
@@ -393,11 +449,11 @@ func newRelayWaitCmd(rootFlag *string) *cobra.Command {
 		Short: "Block until the peer publishes, the pair ends, or the timeout elapses",
 		Args:  cobra.NoArgs,
 		RunE: run(func(cmd *cobra.Command, _ []string) error {
-			l, err := relayLedger(*rootFlag, true)
+			l, cfg, err := relayLedgerWithConfig(*rootFlag, true)
 			if err != nil {
 				return err
 			}
-			res, err := l.Wait(pairSlug, time.Duration(timeoutSec)*time.Second)
+			res, err := l.Wait(pairSlug, relayWaitTimeout(cmd, cfg, timeoutSec))
 			if err != nil {
 				return err
 			}
@@ -414,7 +470,7 @@ func newRelayWaitCmd(rootFlag *string) *cobra.Command {
 			return nil
 		}),
 	}
-	cmd.Flags().IntVar(&timeoutSec, "timeout", 3600, "wait window in seconds")
+	cmd.Flags().IntVar(&timeoutSec, "timeout", 0, "wait window in seconds (default: config relay.wait_timeout, 60m)")
 	cmd.Flags().StringVar(&pairSlug, "pair", "", "pair slug (default: resolved binding)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable output")
 	return cmd

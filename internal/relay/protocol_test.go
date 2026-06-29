@@ -48,7 +48,6 @@ func testLedger(t *testing.T, root, author string, ck *clock) *Ledger {
 	}
 	l := NewLedger(root, id)
 	l.Now = ck.now
-	l.Getenv = func(string) string { return "" }
 	l.PollInterval = time.Millisecond
 	return l
 }
@@ -139,7 +138,6 @@ func TestSeatDriftReportedAndRebindRecovers(t *testing.T) {
 	}
 	codex2 := NewLedger(root, id2)
 	codex2.Now = ck.now
-	codex2.Getenv = func(string) string { return "" }
 	codex2.PollInterval = time.Millisecond
 
 	// A mutating op fails closed with an actionable --rebind hint.

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/sean2077/oh-my-agents/internal/jsonmerge"
+	"github.com/sean2077/oh-my-agents/internal/schemaver"
 )
 
 const (
@@ -97,7 +98,7 @@ func (s *Session) mutationError() error {
 // participant; every known role value must be a participant; exactly two
 // distinct participants.
 func (s *Session) Validate() error {
-	if major, ok := schemaMajor(s.Schema, "oma-relay"); !ok || major != 2 {
+	if major, ok := schemaver.Major(s.Schema, "oma-relay"); !ok || major != 2 {
 		return fmt.Errorf("%w: session schema %q, want %s", ErrRelay, s.Schema, Schema)
 	}
 	if !pairSlugRe.MatchString(s.Pair) {
@@ -234,25 +235,6 @@ func (l *Ledger) saveSession(s *Session) error {
 		return err
 	}
 	return writeFileAtomic(filepath.Join(l.PairDir(s.Pair), "session.json"), append(raw, '\n'), 0o600)
-}
-
-// ActivePairs lists non-terminal pairs (sorted).
-func (l *Ledger) ActivePairs() ([]string, error) {
-	all, err := l.AllPairs()
-	if err != nil {
-		return nil, err
-	}
-	var active []string
-	for _, slug := range all {
-		s, err := l.LoadSession(slug)
-		if err != nil {
-			continue // corrupt pairs surface via status/doctor, not listing
-		}
-		if s.Status == StatusActive {
-			active = append(active, slug)
-		}
-	}
-	return active, nil
 }
 
 // AllPairs lists every pair directory (active and terminal, not archived).
@@ -503,6 +485,9 @@ func (l *Ledger) Close(slug, outcome, reason string, dryRun bool) error {
 			if err := l.saveSession(s); err != nil {
 				return err
 			}
+			if err := l.step("close-closing"); err != nil {
+				return err
+			}
 		}
 
 		// A2 quality gate: `approve` is fail-closed unless the lead's
@@ -539,6 +524,9 @@ func (l *Ledger) Close(slug, outcome, reason string, dryRun bool) error {
 			if err := l.saveSession(s); err != nil {
 				return err
 			}
+			if err := l.step("close-closed"); err != nil {
+				return err
+			}
 		}
 		closedAt := l.Now().UTC()
 		if s.Closed != nil {
@@ -547,7 +535,13 @@ func (l *Ledger) Close(slug, outcome, reason string, dryRun bool) error {
 		if err := writeFileAtomic(closedPath, []byte(closedAt.Format(time.RFC3339)+"\n"), 0o600); err != nil {
 			return err
 		}
+		if err := l.step("close-marker"); err != nil {
+			return err
+		}
 		if err := os.Rename(l.PairDir(slug), dest); err != nil {
+			return err
+		}
+		if err := l.step("close-archived"); err != nil {
 			return err
 		}
 		return nil

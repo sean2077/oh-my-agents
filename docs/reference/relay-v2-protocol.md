@@ -101,7 +101,7 @@ publish steps (strict order): **render** the formal content from the draft → w
 ## 10. Security Essentials (implementation contract in security-contract.md)
 
 - Peer artifacts are **untrusted input**: oma executes no command from within them; `touched_paths` is a hint only, to be validated before use.
-- Secrets never enter the ledger: publish **mandatorily** runs a secret-pattern scan, with no skip switch in v1; false positives are handled by the narrow-scope allow patterns of security-contract.md §6; doctor includes this check too and reports the active allow list.
+- Secrets never enter the ledger: publish **mandatorily** runs a secret-pattern scan, with no skip switch in v1; false positives are handled by the narrow-scope allow patterns of security-contract.md §6.
 - Every parse path is fail-closed: an unknown schema, corrupt frontmatter, or hash mismatch is rejected with the reason reported.
 
 ## 11. Test Matrix (→ plan B8)

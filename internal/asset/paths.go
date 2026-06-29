@@ -122,6 +122,34 @@ func (l Layout) checkRootEscape() error {
 	return nil
 }
 
+// checkCanonicalParent enforces the resolved trusted-root constraints for a
+// canonical mutation target's PARENT — the canonical analog of
+// checkProjectionRoot. SafeCanonicalTarget / checkRootEscape only resolve the
+// canonical root itself, so an intermediate component such as .agents/skills
+// swapped to a symlink elsewhere is NOT caught by them; this resolves the
+// target's existing parent components and refuses any that escape the resolved
+// canonical root, plus the world-writable bar. Run immediately before each
+// destructive canonical write/delete so a parent swapped in after the plan-time
+// check cannot redirect the mutation outside the root.
+func (l Layout) checkCanonicalParent(target string) error {
+	if err := l.checkRootEscape(); err != nil {
+		return err
+	}
+	root, err := resolveExisting(l.CanonicalRoot())
+	if err != nil {
+		return err
+	}
+	resolvedParent, err := resolveExisting(filepath.Dir(target))
+	if err != nil {
+		return err
+	}
+	if resolvedParent != root && !strings.HasPrefix(resolvedParent+string(filepath.Separator), root+string(filepath.Separator)) {
+		return fmt.Errorf("%w: canonical path %s resolves outside canonical root %s (intermediate symlink escape)",
+			ErrInvalid, filepath.Join(resolvedParent, filepath.Base(target)), root)
+	}
+	return checkAncestorWritable(filepath.Dir(target))
+}
+
 // rejectsWorldWritable reports a world-writable directory on POSIX. On Windows,
 // os.FileMode permission bits are an approximation over ACLs and commonly
 // report user-owned directories as 0777, so ACL hardening is left to the

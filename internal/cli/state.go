@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -32,7 +31,7 @@ func newStateBindWorktreeCmd() *cobra.Command {
 			}
 			info, err := currentProjectInfo()
 			if err != nil {
-				return Errf(ExitState, "not inside a git checkout (state lives in <root>/.oma/state)")
+				return failClosed("not inside a git checkout", "cd into a project git checkout — state lives in <root>/.oma/state")
 			}
 			path, err := state.New(info.ProjectRoot).BindWorktree(ns, "", info.ProjectRoot, info.WorktreeRoot, DryRun())
 			if err != nil {
@@ -62,7 +61,7 @@ func newStateCheckWorktreeCmd() *cobra.Command {
 			}
 			info, err := currentProjectInfo()
 			if err != nil {
-				return Errf(ExitState, "not inside a git checkout (state lives in <root>/.oma/state)")
+				return failClosed("not inside a git checkout", "cd into a project git checkout — state lives in <root>/.oma/state")
 			}
 			if allow {
 				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "worktree check skipped (--allow-worktree-change)")
@@ -97,12 +96,10 @@ func newStateGetCmd() *cobra.Command {
 				return Errf(ExitState, "%v", err)
 			}
 			if !ok {
-				return Errf(ExitState, "key %q not set", key)
+				return failClosed(fmt.Sprintf("key %q not set", key), "list existing keys with `oma state list`")
 			}
 			if asJSON {
-				enc := json.NewEncoder(cmd.OutOrStdout())
-				enc.SetIndent("", "  ")
-				return enc.Encode(map[string]any{"schema": "oma-cli/1", "key": key, "value": value, "revision": revision})
+				return printJSON(cmd, map[string]any{"schema": "oma-cli/1", "key": key, "value": value, "revision": revision})
 			}
 			_, _ = fmt.Fprintln(cmd.OutOrStdout(), value)
 			return nil
@@ -164,7 +161,7 @@ func newStatePatchCmd() *cobra.Command {
 			for _, item := range sets {
 				field, value, ok := strings.Cut(item, "=")
 				if !ok {
-					return Errf(ExitState, "--set %q must be field=value", item)
+					return failClosed(fmt.Sprintf("--set %q must be field=value", item), "pass each field as name=value, e.g. --set status=done")
 				}
 				values[field] = value
 			}
@@ -213,9 +210,7 @@ func newStateListCmd() *cobra.Command {
 				return err
 			}
 			if asJSON {
-				enc := json.NewEncoder(cmd.OutOrStdout())
-				enc.SetIndent("", "  ")
-				return enc.Encode(map[string]any{"schema": "oma-cli/1", "states": entries})
+				return printJSON(cmd, map[string]any{"schema": "oma-cli/1", "states": entries})
 			}
 			for _, ent := range entries {
 				keys := make([]string, 0, len(ent.Data))

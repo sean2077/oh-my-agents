@@ -20,7 +20,7 @@
     "type": "skill",
     "version": "v0.3.0",
     "installed_at": "ISO-8601",
-    "source": "release|dev-link",
+    "source": "release|dir",
     "canonical_path": "~/.agents/skills/deep-interview",
     "projections": [{"agent": "claude", "path": "~/.claude/skills/deep-interview", "kind": "symlink"}],
     "backups": [{"id": "20260611T150000", "path": "~/.config/oma/backups/20260611T150000/..."}]

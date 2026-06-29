@@ -141,7 +141,7 @@ func (f *assetFetcher) Fetch(parent string) (root string, cleanup func(), err er
 	}
 	wantSHA, ok := sums[bundle]
 	if !ok {
-		return "", nil, Errf(ExitState, "release %s ships no %s (no asset bundle); install with --from <checkout>/assets instead", f.Ref, bundle)
+		return "", nil, failClosed(fmt.Sprintf("release %s ships no %s (no asset bundle)", f.Ref, bundle), "install from a checkout instead: --from <checkout>/assets")
 	}
 
 	tmp, err := os.MkdirTemp(parent, "oma-assets-")

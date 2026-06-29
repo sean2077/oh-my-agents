@@ -44,11 +44,15 @@ const PreflightSchema = "oma-relay-preflight/1"
 // diagnoses whether a ledger CAN be constructed, so it never depends on a
 // successfully-opened Ledger.
 type PreflightInput struct {
-	ExplicitRoot string // --ledger-root; "" = default <project root>/.oma/relay
-	Cwd          string
-	ProjectRoot  string // for the legacy .shared/ check; "" skips it
-	Getenv       func(string) string
-	Now          func() time.Time
+	ExplicitRoot string // --ledger-root; "" = use ConfiguredRoot
+	// ConfiguredRoot is the config/env-resolved relay.ledger_root the CLI passes
+	// so preflight honors the same precedence as every other relay command. ""
+	// falls back to DefaultRoot(Cwd) for direct callers/tests that set neither.
+	ConfiguredRoot string
+	Cwd            string
+	ProjectRoot    string // for the legacy .shared/ check; "" skips it
+	Getenv         func(string) string
+	Now            func() time.Time
 }
 
 // ExitCode maps the report to the oma-native relay preflight contract.
@@ -97,15 +101,21 @@ func Preflight(in PreflightInput) *PreflightReport {
 		r.add("identity.author", PFOk, "%s (session %s)", id.Author, id.SessionKey)
 	}
 
-	// 2. Ledger root.
+	// 2. Ledger root. --ledger-root is the explicit override; otherwise the CLI
+	// passes the config/env-resolved root (ConfiguredRoot) so preflight honors
+	// the same relay.ledger_root precedence as every other relay command. A bare
+	// DefaultRoot fallback keeps direct callers/tests that set neither working.
 	root := in.ExplicitRoot
 	explicit := root != ""
 	if !explicit {
-		var err error
-		if root, err = DefaultRoot(in.Cwd); err != nil {
-			r.add("ledger.root", PFFail, "%v", err)
-			r.Root = ""
-			return r // without a root, the remaining checks cannot run
+		root = in.ConfiguredRoot
+		if root == "" {
+			var err error
+			if root, err = DefaultRoot(in.Cwd); err != nil {
+				r.add("ledger.root", PFFail, "%v", err)
+				r.Root = ""
+				return r // without a root, the remaining checks cannot run
+			}
 		}
 	}
 	r.Root = root
@@ -150,7 +160,6 @@ func Preflight(in PreflightInput) *PreflightReport {
 	// 5. Binding + peer derivation (best-effort; needs a valid identity).
 	if idErr == nil {
 		l := NewLedger(root, id)
-		l.Getenv = getenv
 		if b, err := l.loadBinding(); err == nil {
 			if s, serr := l.LoadSession(b.Pair); serr != nil {
 				r.add("pair.binding", PFWarn, "bound to %s but it is missing/invalid (rebind with `oma relay pair join <slug>`): %v", b.Pair, serr)

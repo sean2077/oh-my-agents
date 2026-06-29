@@ -12,12 +12,12 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/sean2077/oh-my-agents/internal/atomicfile"
 	"github.com/sean2077/oh-my-agents/internal/jsonmerge"
+	"github.com/sean2077/oh-my-agents/internal/schemaver"
 )
 
 // Schema is the persisted state-file schema (docs/reference/schemas.md §3).
@@ -114,7 +114,7 @@ func load(path, ns string) (*File, error) {
 	if err := json.Unmarshal(raw, &f); err != nil {
 		return nil, fmt.Errorf("%w: %s not valid JSON: %v", ErrState, path, err)
 	}
-	if major, ok := schemaMajor(f.Schema, "oma-state"); !ok || major != 1 {
+	if major, ok := schemaver.Major(f.Schema, "oma-state"); !ok || major != 1 {
 		return nil, fmt.Errorf("%w: %s schema %q, want %s", ErrState, path, f.Schema, Schema)
 	}
 	// namespace and updated are part of the oma-state/1 contract: a file
@@ -351,22 +351,4 @@ func (s *Store) CheckWorktree(ns, override, worktreeRoot string) error {
 		return fmt.Errorf("%w: namespace %q is bound to worktree %s, not %s (pass --allow-worktree-change to override)", ErrState, ns, f.WorktreeRoot, worktreeRoot)
 	}
 	return nil
-}
-
-// schemaMajor mirrors the strict parser used elsewhere (digits only, >= 1).
-func schemaMajor(schema, wantDomain string) (int, bool) {
-	domain, ver, found := strings.Cut(schema, "/")
-	if !found || domain != wantDomain || ver == "" || ver[0] == '0' {
-		return 0, false
-	}
-	for i := 0; i < len(ver); i++ {
-		if ver[i] < '0' || ver[i] > '9' {
-			return 0, false
-		}
-	}
-	major, err := strconv.Atoi(ver)
-	if err != nil || major < 1 {
-		return 0, false
-	}
-	return major, true
 }

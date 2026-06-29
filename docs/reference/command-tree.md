@@ -7,25 +7,22 @@
 - **`--dry-run`**: a **global persistent flag**, inherited by every mutating command (the whole asset family, state set, relay draft/publish/close, self-update, etc.); it prints the exact absolute paths to be created/modified/deleted and the operation type, without changing persistent target state (zero backups, registry/state/ledger writes, host-config writes, or target-directory changes). Remote validation may use an auto-cleaned private temp directory so the same fetch/verify/manifest checks run before paths are reported. Query commands accept it but ignore it.
 - **`--session <slug|current>`**: a **global workflow-state scope** used by `state`, `interview`, and `ralph`; it defaults to `current`. `current` resolves `CODEX_THREAD_ID`, `CLAUDE_CODE_SESSION_ID`, or `OMA_SESSION_ID` into a path-safe suffix and fails closed when none is available. Pass an explicit slug only to override the platform session boundary. Relay commands accept the global flag as part of the root command surface but do not use it for pair isolation; relay uses platform author-session bindings instead.
 - **Error-message convention**: a single-line first sentence stating the reason for refusal plus a one-line suggested action (`hint:` prefix); a fail-closed refusal must name the check that triggered it.
-- Single asset namespace: **no `oma skill *` alias**. `oma update` is a documented alias for `oma asset update` (noted in help).
+- Single asset namespace: **no `oma skill *` alias**. There is no `oma asset update` / `oma update` command — `self-update` updates the binary, and re-running `oma asset install` refreshes an installed asset to the current bundle.
 
 ## 2. `oma asset` — content asset management
 
 ```
 oma asset install [--ref <tag>|--from <root>] <name>... [--agent claude,codex] [--dry-run] [--force]
 oma asset list [--installed] [--json]
-oma asset update [<name>...] [--dry-run]        # alias: oma update
 oma asset remove <name>... [--dry-run]
 oma asset rollback <name> [--to <backup-id>]
 oma asset catalog [--from <root>] [--json]      # catalog view generated from the manifest (status lifecycle)
 oma asset audit [--from <root>] [--json]        # advisory bloat audit: LOC/resident-tokens/ref-count + classification (KEEP/ORPHAN/OVERSIZED/RETIRE), never auto-deletes
-oma asset link --dev [--repo <path>]            # dogfood: symlink the local checkout
 ```
 
 - `install`: asset files → canonical location `~/.agents/{skills,agents,hooks}/<name>/` → platform projection into each agent directory per the manifest's `targets` (`symlink` on Unix-like hosts; `junction` for native-Windows directory assets when available, managed `copy` fallback/file assets otherwise). By default all targets are projected; `--agent` narrows them. Hook assets are canonical-only (placed only in the canonical location, never injected into host config; the user wires them by hand — see relay-v2-protocol.md §12.4). Source resolution: exactly one of `--from <root>` (a local checkout's `assets/`) or `--ref <tag>` (the pinned release's `assets-<tag>.tar.gz`, fetched over https and verified against that release's `checksums.txt`), else default = the running binary's own version, so a clean machine installs the version-matched bundle and never an unpinned ref; a `dev` build with neither flag fails closed (`ExitState`). Remote `--dry-run` still downloads, checksum-verifies, safely extracts, validates every requested asset, and then reports the engine's exact dry-run paths while leaving no persistent writes.
 - Overwrite semantics: target already exists and is not oma-managed → refuse; `--force` backs up first, then overwrites (see security-contract.md §2).
 - `rollback`: restores from `~/.config/oma/backups/`; when `--to` is omitted, the most recent backup is used.
-- `link --dev`: rewrites the canonical entry to a symlink pointing at the repo checkout; the registry is marked `dev: true`.
 - `catalog`: scans `<root>/{skills,agents,hooks,prompts}/*/manifest.json` to produce a name-sorted catalog (name/type/status/targets/canonical), defaulting to `--from ./assets`; it shares its source with install/registry and introduces no second source of truth; a duplicate name, or a name that disagrees with its directory, is fail-closed. A manifest may optionally carry `status(active|deprecated|merged|alias)` plus `canonical`.
 
 ## 3. `oma state` — general project-level state
@@ -72,9 +69,9 @@ oma interview complete [--id <id>]
 oma interview abort [--id <id>]
 oma interview status [--id <id>] [--json]
 
-oma ralph start --goal <text> [--max-rounds N] [--stall-window N] [--id <id>]
+oma ralph start --goal <text> [--keep-policy pass_only|score_improvement] [--max-rounds N] [--stall-window N] [--plateau-window N] [--id <id>]
 oma ralph next [--id <id>] [--json]
-oma ralph check --verifier-exit <code> [--note <text>] [--id <id>] [--json]
+oma ralph check --verifier-exit <code> [--score <float>] [--note <text>] [--id <id>] [--json]
 oma ralph abort [--id <id>]
 oma ralph status [--id <id>] [--allow-worktree-change] [--json]
 oma ralph rebind-worktree [--id <id>]
@@ -87,6 +84,7 @@ oma workflow list [--all-sessions] [--json]
 - The verdict output of `gate`/`next` must contain: the verdict, the numbers it rests on, and the suggested next step (both machine-readable and human-readable forms).
 - **No `oma autopilot *` surface** (autopilot is pure markdown, using general `oma state`; changing this requires reopening the spec).
 - **ralph start ambiguity gate (advisory)**: if `--goal` is too vague (≤15 words and lacking a file/issue/symbol/test-runner anchor), a suggestion is printed to stderr (clarify with deep-interview first, or plan with ralplan) — it does **not** block startup.
+- **ralph keep-policy**: `--keep-policy score_improvement` (default `pass_only`) switches the loop from "stop when the verifier passes" to score-plateau stopping; `check` then requires `--score <float>` and `--plateau-window N` bounds the plateau (semantics in workflows.md §2).
 - `oma workflow list` is a read-only project view: it lists every workflow instance under `.oma/state` (session, workflow type, id, phase, worktree, revision). It defaults to the current session; `--all-sessions` is the project-admin view and does not change the per-session isolation model.
 - The migration entry points the state machine requires are present: interview carries `crystallize` (gate_passed|gate_waived → crystallized, recording the spec path), `complete`, `abort`, and `gate --waive` (an early exit recording a caution, corresponding to the gate_waived state); ralph carries `abort`. Topology lock (topology_pending → interviewing) is carried by the round-0 input of `score` (schemas.md §5) rather than a standalone command.
 

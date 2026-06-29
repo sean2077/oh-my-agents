@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/sean2077/oh-my-agents/internal/schemaver"
 )
 
 // Artifact kinds and statuses (protocol §5).
@@ -85,7 +87,7 @@ type Frontmatter struct {
 
 // Validate enforces the §5 contract on a parsed or about-to-render header.
 func (f *Frontmatter) Validate() error {
-	if major, ok := schemaMajor(f.Schema, "oma-relay"); !ok || major != 4 {
+	if major, ok := schemaver.Major(f.Schema, "oma-relay"); !ok || major != 4 {
 		return fmt.Errorf("%w: artifact schema %q, want %s", ErrRelay, f.Schema, ArtifactSchema)
 	}
 	if f.Seq < 1 || f.Seq > 999 {

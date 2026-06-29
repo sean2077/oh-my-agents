@@ -26,6 +26,18 @@
       "manifest": {"schema": "oma-asset/1", "name": "shared-only", "type": "skill", "targets": ["shared"]},
       "payload_file": "SKILL.md",
       "want_rel_home": ""
+    },
+    {
+      "manifest": {"schema": "oma-asset/1", "name": "sample-skill-copy", "type": "skill", "targets": ["claude", "codex"]},
+      "payload_file": "SKILL.md",
+      "want_rel_home": ".claude/skills/sample-skill-copy",
+      "want_kind": "copy"
+    },
+    {
+      "manifest": {"schema": "oma-asset/1", "name": "sample-skill-junction", "type": "skill", "targets": ["claude", "codex"]},
+      "payload_file": "SKILL.md",
+      "want_rel_home": ".claude/skills/sample-skill-junction",
+      "want_kind": "junction"
     }
   ]
 }

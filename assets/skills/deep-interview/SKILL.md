@@ -91,7 +91,7 @@ Never ask the user for something you can read. **Cadence guard**: after 2 consec
 
 **Challenge modes**: when the report lists a suggestion (`contrarian` ≥ round 4, `simplifier` ≥ 6, `ontologist` ≥ 8 while ambiguity > 0.3), you decide whether the next question should adopt that stance — contrarian attacks assumptions, simplifier hunts for scope cuts, ontologist re-asks what the core thing IS. If you use one, set `challenge_mode_used` in that round's input so it is not re-suggested.
 
-**Stall escalation**: if ambiguity has not moved more than 0.05 across the last 3 rounds, the next question MUST adopt the ontologist stance — a stuck score usually means a mislabeled or wrongly-scoped component, not one more missing detail.
+**Stall escalation**: when the report sets `stall_escalation: true` (the CLI computes it from the persisted per-round ambiguity — never recompute the window yourself), the next question MUST adopt the ontologist stance — a stuck score usually means a mislabeled or wrongly-scoped component, not one more missing detail.
 
 ### Scoring rubric (reuse verbatim every round)
 

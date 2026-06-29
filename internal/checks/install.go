@@ -25,6 +25,9 @@ func InstallChecks(home, projectRoot string, commands CommandSet) []Check {
 		{Name: "refcheck-installed", Run: func() []Finding {
 			return Refcheck(filepath.Join(eng.Layout.CanonicalRoot(), "skills"), commands)
 		}},
+		{Name: "default-path-conformance", Run: func() []Finding {
+			return DefaultPathConformance(filepath.Join(eng.Layout.CanonicalRoot(), "skills"))
+		}},
 	}
 }
 

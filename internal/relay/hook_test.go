@@ -142,7 +142,6 @@ func TestHookStopUnboundSilent(t *testing.T) {
 	otherID, _ := makeIdentity("codex", "unbound-window")
 	unbound := NewLedger(root, otherID)
 	unbound.Now = ck.now
-	unbound.Getenv = func(string) string { return "" }
 	if out := unbound.Hook(HookStop, stopPayload(false)); out != nil {
 		t.Fatalf("unbound session must stay silent, got %+v", out)
 	}

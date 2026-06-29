@@ -9,8 +9,9 @@ import (
 	"fmt"
 	"os"
 	"regexp"
-	"strconv"
 	"strings"
+
+	"github.com/sean2077/oh-my-agents/internal/schemaver"
 )
 
 // ManifestSchema is the persisted schema this package writes and the only
@@ -90,7 +91,7 @@ func ParseManifest(raw []byte) (*Manifest, error) {
 
 // Validate enforces the oma-asset/1 contract.
 func (m *Manifest) Validate() error {
-	major, ok := schemaMajor(m.Schema, "oma-asset")
+	major, ok := schemaver.Major(m.Schema, "oma-asset")
 	if !ok || major != 1 {
 		return fmt.Errorf("%w: got %q, want %s", ErrUnknownSchema, m.Schema, ManifestSchema)
 	}
@@ -153,26 +154,4 @@ func (m *Manifest) HasTarget(target string) bool {
 		}
 	}
 	return false
-}
-
-// schemaMajor parses "oma-<domain>/<major>" and returns the major version.
-// The major must be a plain ASCII digit sequence with value >= 1 (no signs,
-// no leading zeros): persisted-schema readers across registry/state/relay
-// reuse this, and a permissive parse here would weaken their fail-closed
-// guarantee (B2 review finding 1).
-func schemaMajor(schema, wantDomain string) (int, bool) {
-	domain, ver, found := strings.Cut(schema, "/")
-	if !found || domain != wantDomain || ver == "" || ver[0] == '0' {
-		return 0, false
-	}
-	for i := 0; i < len(ver); i++ {
-		if ver[i] < '0' || ver[i] > '9' {
-			return 0, false
-		}
-	}
-	major, err := strconv.Atoi(ver)
-	if err != nil || major < 1 {
-		return 0, false
-	}
-	return major, true
 }

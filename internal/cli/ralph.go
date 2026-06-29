@@ -15,7 +15,7 @@ import (
 func ralphEngine() (*ralph.Engine, error) {
 	info, err := currentProjectInfo()
 	if err != nil {
-		return nil, fmt.Errorf("not inside a git checkout (ralph state lives in <root>/.oma/state)")
+		return nil, failClosed("not inside a git checkout", "cd into a project git checkout — ralph state lives in <root>/.oma/state")
 	}
 	suffix, err := workflowScope().Suffix()
 	if err != nil {

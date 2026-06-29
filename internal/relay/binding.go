@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/sean2077/oh-my-agents/internal/schemaver"
 )
 
 // Binding pins one author-session to one pair (protocol §4a).
@@ -46,7 +48,7 @@ func (l *Ledger) loadBinding() (*Binding, error) {
 	if err := json.Unmarshal(raw, &b); err != nil {
 		return nil, fmt.Errorf("%w: binding not valid JSON: %v", ErrRelay, err)
 	}
-	if major, ok := schemaMajor(b.Schema, "oma-relay-binding"); !ok || major != 1 {
+	if major, ok := schemaver.Major(b.Schema, "oma-relay-binding"); !ok || major != 1 {
 		return nil, fmt.Errorf("%w: binding schema %q, want %s", ErrRelay, b.Schema, BindingSchema)
 	}
 	return &b, nil
@@ -241,6 +243,7 @@ func (l *Ledger) Rejoin(slug string, dryRun bool) (*Session, error) {
 		if s.ParticipantSessions == nil {
 			s.ParticipantSessions = map[string]string{}
 		}
+		oldSession := s.ParticipantSessions[l.Identity.Author]
 		s.ParticipantSessions[l.Identity.Author] = l.Identity.SessionKey
 		if err := l.saveSession(s); err != nil {
 			return err
@@ -248,8 +251,56 @@ func (l *Ledger) Rejoin(slug string, dryRun bool) (*Session, error) {
 		if err := l.writeBinding(slug); err != nil {
 			return err
 		}
+		// COR-1/COR-3: the replaced session's sequence reservations (and their
+		// paired drafts / incomplete formals) become invisible to the normal
+		// session-scoped doctor/status scans once the seat moves, so clean them
+		// here under the same pair lock. Only (this author, oldSession) markers
+		// are touched — never the peer's, never the new session's.
+		if oldSession != "" && oldSession != l.Identity.SessionKey {
+			if err := l.cleanReplacedReservations(slug, l.Identity.Author, oldSession); err != nil {
+				return err
+			}
+		}
 		l.touchHeartbeat(slug)
 		return nil
 	})
 	return s, err
+}
+
+// cleanReplacedReservations removes the sequence reservations a now-replaced
+// author-session left behind in slug, plus their paired drafts. After `pair
+// join --rebind` reassigns the author seat (Rejoin), these orphans are
+// invisible to the session-scoped doctor/status scans, and the operator has
+// asserted the old session is gone — so they are cleaned here under the pair
+// lock. Formal-aware, mirroring CleanStale: a seq with a ready same-author
+// formal (post-publish residue) or no formal at all is removed outright; a
+// formal WITHOUT .ready is an interrupted publish from the dead session that
+// nothing can still resume, so its incomplete formal is quarantined (renamed
+// *.stale, like doctor) BEFORE the draft and reservation are removed — never
+// leaving a hidden unready formal. Only (author, oldSession) markers match, so
+// the peer's and the new session's reservations are never touched.
+func (l *Ledger) cleanReplacedReservations(slug, author, oldSession string) error {
+	pairDir := l.PairDir(slug)
+	for _, seq := range l.reservations(slug, author, oldSession) {
+		if l.hasFormalAt(slug, seq, author) && !l.hasReadyAt(slug, seq, author) {
+			formals, _ := filepath.Glob(filepath.Join(pairDir, fmt.Sprintf("%03d-%s-*.md", seq, author)))
+			for _, f := range formals {
+				if err := os.Rename(f, f+".stale"); err != nil && !errors.Is(err, os.ErrNotExist) {
+					return err
+				}
+				_ = os.Remove(f + ".sha256")
+			}
+		}
+		seqPath := filepath.Join(pairDir, ".seq", fmt.Sprintf("%03d", seq))
+		if err := os.Remove(seqPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		drafts, _ := filepath.Glob(filepath.Join(pairDir, ".draft", fmt.Sprintf("%03d-%s-*.md", seq, author)))
+		for _, d := range drafts {
+			if err := os.Remove(d); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
+		}
+	}
+	return nil
 }

@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sean2077/oh-my-agents/internal/schemaver"
 	"github.com/spf13/viper"
 )
 
@@ -166,7 +167,7 @@ func readFileLayer(path string) (*viper.Viper, bool, error) {
 	}
 	if v.IsSet("schema") {
 		schema := v.GetString("schema")
-		if major, ok := schemaMajor(schema, "oma-config"); !ok || major != 1 {
+		if major, ok := schemaver.Major(schema, "oma-config"); !ok || major != 1 {
 			return nil, false, fmt.Errorf("%w: %s schema %q, want %s", ErrConfig, path, schema, ConfigSchema)
 		}
 	}
@@ -469,23 +470,4 @@ func splitCSV(raw string) []string {
 		}
 	}
 	return out
-}
-
-// schemaMajor mirrors the strict parser in internal/asset (digit-sequence
-// only, no signs/leading zeros, major >= 1).
-func schemaMajor(schema, wantDomain string) (int, bool) {
-	domain, ver, found := strings.Cut(schema, "/")
-	if !found || domain != wantDomain || ver == "" || ver[0] == '0' {
-		return 0, false
-	}
-	for i := 0; i < len(ver); i++ {
-		if ver[i] < '0' || ver[i] > '9' {
-			return 0, false
-		}
-	}
-	major, err := strconv.Atoi(ver)
-	if err != nil || major < 1 {
-		return 0, false
-	}
-	return major, true
 }

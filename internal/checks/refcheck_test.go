@@ -15,7 +15,7 @@ func fixtureSet() CommandSet {
 		"oma": false, "oma asset": false, "oma relay": false,
 		"oma relay pair": false, "oma state": false,
 		// runnables ("oma doctor" is both runnable and a parent of budget)
-		"oma asset install": true, "oma asset list": true, "oma asset link": true,
+		"oma asset install": true, "oma asset list": true,
 		"oma doctor": true, "oma doctor budget": true,
 		"oma relay pair ensure": true, "oma relay publish": true,
 		"oma state get": true, "oma state set": true,
@@ -45,7 +45,7 @@ func TestInvalidLeafAfterValidPrefixFails(t *testing.T) {
 }
 
 func TestFlagsStopTheWalk(t *testing.T) {
-	md := "`oma asset link --dev` and `oma doctor budget --agent claude --max-resident-tokens 2000`"
+	md := "`oma asset list --installed` and `oma doctor budget --agent claude --max-resident-tokens 2000`"
 	for _, ref := range refsFrom(md) {
 		if bad := validateRef(ref, fixtureSet()); bad != "" {
 			t.Fatalf("flag-stopped ref rejected: %v -> %q", ref, bad)

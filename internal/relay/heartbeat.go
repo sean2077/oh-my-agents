@@ -3,27 +3,33 @@ package relay
 import (
 	"os"
 	"path/filepath"
-	"strconv"
 	"time"
 )
 
-// defaultStaleAfter is the heartbeat staleness threshold (protocol §8);
-// OMA_RELAY_STALE_AFTER (seconds) overrides.
+// defaultStaleAfter is the heartbeat staleness threshold (protocol §8) used when
+// the config layer does not supply relay.stale_after.
 const defaultStaleAfter = 15 * time.Minute
 
-// staleAfter resolves the configured staleness window.
+// staleAfter resolves the staleness window: the config-injected value
+// (relay.stale_after, via Ledger.StaleAfter) when set, else the built-in
+// default. The config layer (internal/config) owns duration parsing — "15m"
+// and bare seconds both work there — so relay no longer re-parses env itself.
 func (l *Ledger) staleAfter() time.Duration {
-	if v := l.Getenv("OMA_RELAY_STALE_AFTER"); v != "" {
-		if secs, err := strconv.Atoi(v); err == nil && secs > 0 {
-			return time.Duration(secs) * time.Second
-		}
+	if l.StaleAfter > 0 {
+		return l.StaleAfter
 	}
 	return defaultStaleAfter
 }
 
 // touchHeartbeat refreshes this author's liveness marker; every relay
 // subcommand calls it (heartbeat is an internal mechanism, protocol §8).
-// Best-effort: a failed touch never blocks the command.
+// Best-effort by design: a failed touch never blocks the command, and the
+// dirent is intentionally NOT fsync'd. Heartbeat is fail-safe liveness state —
+// a heartbeat lost to a crash reads as MISSING, and missing is not stale
+// (heartbeatStale), so the next relay command simply recreates it. The durable
+// ledger writes (sessions, bindings, artifacts, .seq reservations) already go
+// through atomicfile's file+directory sync; heartbeat deliberately does not, to
+// keep this hot path cheap (COR-5).
 func (l *Ledger) touchHeartbeat(slug string) {
 	dir := filepath.Join(l.PairDir(slug), ".heartbeat")
 	path := filepath.Join(dir, ownerName(l.Identity.Author, l.Identity.SessionKey))

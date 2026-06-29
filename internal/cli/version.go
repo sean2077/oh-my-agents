@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/sean2077/oh-my-agents/internal/version"
@@ -16,9 +15,7 @@ func newVersionCmd() *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: run(func(cmd *cobra.Command, _ []string) error {
 			if asJSON {
-				enc := json.NewEncoder(cmd.OutOrStdout())
-				enc.SetIndent("", "  ")
-				return enc.Encode(map[string]any{
+				return printJSON(cmd, map[string]any{
 					"schema":     "oma-cli/1",
 					"version":    version.Version,
 					"commit":     version.Commit,

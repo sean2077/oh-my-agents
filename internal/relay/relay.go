@@ -19,6 +19,7 @@ import (
 
 	"github.com/sean2077/oh-my-agents/internal/atomicfile"
 	"github.com/sean2077/oh-my-agents/internal/projectroot"
+	"github.com/sean2077/oh-my-agents/internal/schemaver"
 )
 
 // Schema constants (docs/reference/schemas.md §4).
@@ -44,14 +45,17 @@ var (
 const pairLockTimeout = 30 * time.Second
 
 // Ledger is a v2 ledger rooted at Root. Now and StepHook are injected
-// for deterministic tests; StepHook fires between publish transaction
-// steps so the interruption matrix (protocol §11 test 8) can simulate a
-// kill at every boundary — it is nil in production.
+// for deterministic tests; StepHook fires between publish AND close
+// transaction steps so the interruption matrix (protocol §11 test 8) can
+// simulate a kill at every boundary — it is nil in production.
 type Ledger struct {
-	Root         string
-	Identity     Identity
-	Now          func() time.Time
-	Getenv       func(string) string
+	Root     string
+	Identity Identity
+	Now      func() time.Time
+	// StaleAfter is the heartbeat staleness window, injected from the config
+	// layer by the CLI (docs/reference/config.md §4 relay.stale_after). Zero
+	// means "use the built-in default" (tests and bare NewLedger).
+	StaleAfter   time.Duration
 	StepHook     func(step string) error
 	PollInterval time.Duration // wait poll cadence; tests shrink it
 	GitContext   GitContext    // optional checkout identity injected by the CLI
@@ -70,7 +74,7 @@ type GitContext struct {
 
 // NewLedger builds a Ledger for the given root and identity.
 func NewLedger(root string, id Identity) *Ledger {
-	return &Ledger{Root: root, Identity: id, Now: time.Now, Getenv: os.Getenv, PollInterval: time.Second}
+	return &Ledger{Root: root, Identity: id, Now: time.Now, PollInterval: time.Second}
 }
 
 // sentinel is the v2 root marker content.
@@ -140,7 +144,7 @@ func validateSentinel(raw []byte) error {
 	if err := json.Unmarshal(raw, &s); err != nil {
 		return fmt.Errorf("%w: sentinel not valid JSON: %v", ErrRelay, err)
 	}
-	if major, ok := schemaMajor(s.Schema, "oma-relay"); !ok || major != 2 {
+	if major, ok := schemaver.Major(s.Schema, "oma-relay"); !ok || major != 2 {
 		return fmt.Errorf("%w: sentinel schema %q, want %s (upgrade oma or check the directory)", ErrRelay, s.Schema, Schema)
 	}
 	return nil
@@ -234,24 +238,4 @@ func (l *Ledger) step(name string) error {
 		return nil
 	}
 	return l.StepHook(name)
-}
-
-// schemaMajor parses "oma-<domain>/<major>" with the strict digit-only
-// rule shared by every persisted-schema reader (per-package copy by
-// convention; B2 review finding 1).
-func schemaMajor(schema, wantDomain string) (int, bool) {
-	domain, ver, found := strings.Cut(schema, "/")
-	if !found || domain != wantDomain || ver == "" || ver[0] == '0' {
-		return 0, false
-	}
-	for i := 0; i < len(ver); i++ {
-		if ver[i] < '0' || ver[i] > '9' {
-			return 0, false
-		}
-	}
-	major, err := strconv.Atoi(ver)
-	if err != nil || major < 1 {
-		return 0, false
-	}
-	return major, true
 }

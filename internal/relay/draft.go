@@ -40,9 +40,16 @@ func (l *Ledger) reserveSeq(slug string) (int, error) {
 			return 0, err
 		}
 		_, werr := fmt.Fprintf(f, "%s %s\n", ownerToken(l.Identity.Author, l.Identity.SessionKey), l.Now().UTC().Format(time.RFC3339))
+		serr := f.Sync() // COR-3: durable reservation marker for crash recovery
 		cerr := f.Close()
-		if werr != nil || cerr != nil {
-			return 0, errors.Join(werr, cerr)
+		if werr != nil || serr != nil || cerr != nil {
+			return 0, errors.Join(werr, serr, cerr)
+		}
+		// Sync the .seq directory so the new marker's dirent is durable too
+		// (best-effort; mirrors atomicfile's parent-dir sync).
+		if d, derr := os.Open(filepath.Dir(marker)); derr == nil {
+			_ = d.Sync()
+			_ = d.Close()
 		}
 		return seq, nil
 	}

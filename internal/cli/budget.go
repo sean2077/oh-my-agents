@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/sean2077/oh-my-agents/internal/budget"
@@ -36,9 +35,7 @@ func newDoctorBudgetCmd() *cobra.Command {
 				return Errf(ExitState, "%v", err)
 			}
 			if asJSON {
-				enc := json.NewEncoder(cmd.OutOrStdout())
-				enc.SetIndent("", "  ")
-				if err := enc.Encode(map[string]any{"schema": "oma-cli/1", "budget": rep}); err != nil {
+				if err := printJSON(cmd, map[string]any{"schema": "oma-cli/1", "budget": rep}); err != nil {
 					return err
 				}
 			} else {

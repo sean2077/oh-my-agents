@@ -55,6 +55,12 @@ func (e *Engine) planProjections(m *Manifest, canonical, managedDigest string, r
 			skips = append(skips, Skip{Agent: agent, Reason: reason})
 			continue
 		}
+		// Test seam (forceProjectionKind, "" in production): conformance tests
+		// force copy/junction so those projection kinds are exercisable off their
+		// native platform; production keeps agentdir's per-platform choice.
+		if e.forceProjectionKind != "" {
+			tgt.Kind = e.forceProjectionKind
+		}
 		if !pathWithin(tgt.Path, agentdir.AgentRoot(e.Layout.Home, agent)) {
 			return nil, nil, fmt.Errorf("%w: projection %q escapes agent root", ErrInvalid, tgt.Path)
 		}
@@ -197,6 +203,16 @@ func checkCopyProjection(p plannedProjection, _ os.FileInfo) error {
 
 // applyProjection creates (or refreshes) the projection.
 func (e *Engine) applyProjection(p plannedProjection) (actualKind, warn string, err error) {
+	e.beforeWrite("projection")
+	// Re-validate the resolved trusted-root + writable-ancestor constraints
+	// immediately before the write. planProjections checked them at plan time,
+	// but the gap to here (canonical place + two registry saves) is a TOCTOU
+	// window: an intermediate component such as .claude/skills could be swapped
+	// to an escaping symlink after the plan-time check. Re-resolving here narrows
+	// that window to the few syscalls before the symlink/mkdir below.
+	if err := e.checkProjectionRoot(p.target.Agent, p.target.Path); err != nil {
+		return "", "", err
+	}
 	if err := os.MkdirAll(filepath.Dir(p.target.Path), 0o700); err != nil {
 		return "", "", err
 	}

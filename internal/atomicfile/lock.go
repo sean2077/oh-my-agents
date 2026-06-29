@@ -20,6 +20,13 @@ var ErrLockNotOwned = errors.New("file lock not owned")
 
 const defaultLockLease = 15 * time.Minute
 
+// reclaimTimeout bounds how long an abandoned `.reclaim` election claim may
+// block the next reclaimer. It is much shorter than the lock lease: a reclaimer
+// only holds the claim briefly to rewrite the owner file, so a `.reclaim` older
+// than this is a crashed reclaimer and is cleared without waiting the full
+// lease (COR-6).
+const reclaimTimeout = 2 * time.Minute
+
 // Lock is a cross-process directory lock acquired with atomic mkdir.
 type Lock struct {
 	dir   string
@@ -150,7 +157,7 @@ func takeOverStale(dir string) (string, bool) {
 		// Another reclaimer holds the election, or one crashed mid-reclaim and
 		// left an abandoned claim — clear only a clearly-abandoned one (older
 		// than the lease) and let the caller retry.
-		if info, statErr := os.Stat(claim); statErr == nil && time.Since(info.ModTime()) > defaultLockLease {
+		if info, statErr := os.Stat(claim); statErr == nil && time.Since(info.ModTime()) > reclaimTimeout {
 			_ = os.RemoveAll(claim)
 		}
 		return "", false

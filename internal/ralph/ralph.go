@@ -23,6 +23,7 @@ import (
 
 	"github.com/sean2077/oh-my-agents/internal/atomicfile"
 	"github.com/sean2077/oh-my-agents/internal/jsonmerge"
+	"github.com/sean2077/oh-my-agents/internal/schemaver"
 	"github.com/sean2077/oh-my-agents/internal/session"
 )
 
@@ -227,7 +228,7 @@ func (e *Engine) Load(id string) (*State, error) {
 	if err := json.Unmarshal(raw, &s); err != nil {
 		return nil, fmt.Errorf("%w: state not valid JSON (backup at %s.bak): %v", ErrRalph, e.path(id), err)
 	}
-	if major, ok := schemaMajor(s.Schema, "oma-ralph"); !ok || major != 2 {
+	if major, ok := schemaver.Major(s.Schema, "oma-ralph"); !ok || major != 2 {
 		return nil, fmt.Errorf("%w: state schema %q, want %s", ErrRalph, s.Schema, Schema)
 	}
 	if s.ID != id {
@@ -639,22 +640,4 @@ func (e *Engine) withInstanceLock(id string, fn func() error) error {
 	}
 	defer func() { _ = lock.Release() }()
 	return fn()
-}
-
-// schemaMajor: strict digit-only parse (per-package copy by convention).
-func schemaMajor(schema, wantDomain string) (int, bool) {
-	domain, ver, found := strings.Cut(schema, "/")
-	if !found || domain != wantDomain || ver == "" || ver[0] == '0' {
-		return 0, false
-	}
-	for i := 0; i < len(ver); i++ {
-		if ver[i] < '0' || ver[i] > '9' {
-			return 0, false
-		}
-	}
-	major, err := strconv.Atoi(ver)
-	if err != nil || major < 1 {
-		return 0, false
-	}
-	return major, true
 }

@@ -23,6 +23,8 @@ var Schemas = map[string]string{
 	"ralph":            "oma-ralph/2",
 	"asset":            "oma-asset/1",
 	"config":           "oma-config/1",
+	"relay_receipt":    "oma-completion-receipt/2",
+	"relay_evidence":   "oma-review-evidence/1",
 }
 
 // Algorithms registers pinned algorithm versions that affect reproducible

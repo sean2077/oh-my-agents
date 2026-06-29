@@ -33,6 +33,14 @@ func Errf(code int, format string, a ...any) error {
 	return &codedError{code: code, err: fmt.Errorf(format, a...)}
 }
 
+// failClosed builds a fail-closed CLI refusal (ExitState) in the documented
+// error convention (docs/reference/command-tree.md §1, docs/design-philosophy.md
+// §3.4): a one-line reason naming what was refused, then a one-line `hint:` with
+// the action to take. S8b migrates the remaining command families to it.
+func failClosed(reason, hint string) error {
+	return Errf(ExitState, "%s\nhint: %s", reason, hint)
+}
+
 // run wraps a RunE handler so any uncoded error it returns maps to
 // ExitState. Cobra parse/arg/unknown-command failures never enter RunE,
 // so ExitUsage stays exclusive to them (B1 review finding 1).

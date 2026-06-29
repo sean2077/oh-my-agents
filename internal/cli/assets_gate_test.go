@@ -78,6 +78,12 @@ func TestRealAssetsPassReleaseGates(t *testing.T) {
 		t.Errorf("refcheck: %s", f.Message)
 	}
 
+	// default-path conformance (adapter-conformance §6): codex-targeted skills
+	// must not reference Claude-only affordances outside a CC-acceleration block.
+	for _, f := range checks.DefaultPathConformance(filepath.Join(eng.Layout.CanonicalRoot(), "skills")) {
+		t.Errorf("default-path conformance: %s", f.Message)
+	}
+
 	// core4 resident budget (missing members are fine pre-completion;
 	// installed ones must measure and stay inside the gate).
 	rep, err := budget.Measure(eng, "claude", "core4", 2000)

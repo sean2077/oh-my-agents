@@ -9,6 +9,12 @@ import (
 	"strings"
 )
 
+// renameFn is the same-directory rename used to atomically swap the temp file
+// into place. It is a package var only so tests can inject a rename failure at
+// the final commit step (e.g. to prove WriteWithBackup preserves an existing
+// .bak when the main write fails); production always uses os.Rename.
+var renameFn = os.Rename
+
 // Write replaces path with data using a unique temp file in the same
 // directory, then fsyncs the written file and best-effort syncs the parent.
 func Write(path string, data []byte, mode os.FileMode) error {
@@ -25,7 +31,7 @@ func Write(path string, data []byte, mode os.FileMode) error {
 			_ = os.Remove(tmp)
 		}
 	}()
-	if err := os.Rename(tmp, path); err != nil {
+	if err := renameFn(tmp, path); err != nil {
 		return err
 	}
 	keep = true

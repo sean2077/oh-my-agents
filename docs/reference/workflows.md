@@ -59,6 +59,7 @@ Fields: `id, revision, phase, type(greenfield|brownfield), threshold, threshold_
   - appends the round record, updates state, and returns the full report (--json)
 - `gate`: `current_ambiguity ≤ threshold` → exit code 0; otherwise 4, emitting the weakest component × dimension and the gap. Round guardrails are surfaced through the gate output: a soft warning at round ≥ 10, a hard cap at ≥ 20 (the gate still decides by the numeric value; the override decision is left to the user).
 - Challenge modes: at round ≥ 4/6/8 (and where each mode is unused, and at round 8 only when ambiguity > 0.3) `score` prompts contrarian/simplifier/ontologist; once the agent adopts one it marks `challenge_mode_used` in the next round's `score` input.
+- Stall escalation: `score` sets `stall_escalation` in the report when the ambiguity spread across the last 3 rounds is ≤ 0.05 (a plateaued score, computed from the persisted per-round ambiguity); the agent must then adopt the ontologist stance for the next question. The window/threshold math lives in the CLI, not the skill prompt.
 
 ### 1.4 Errors and recovery
 

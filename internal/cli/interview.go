@@ -12,7 +12,7 @@ import (
 func interviewEngine() (*interview.Engine, error) {
 	root := findProjectRoot()
 	if root == "" {
-		return nil, fmt.Errorf("not inside a git checkout (interview state lives in <root>/.oma/state)")
+		return nil, failClosed("not inside a git checkout", "cd into a project git checkout — interview state lives in <root>/.oma/state")
 	}
 	suffix, err := workflowScope().Suffix()
 	if err != nil {

@@ -32,7 +32,7 @@ type Op struct {
 type Options struct {
 	DryRun bool
 	Force  bool
-	Source string   // registry source label: dir | dev-link | release
+	Source string   // registry source label: dir | release
 	Agents []string // requested projection agents; final = manifest.targets ∩ Agents (docs/reference/config.md §4b)
 }
 
@@ -50,11 +50,28 @@ type Report struct {
 type Engine struct {
 	Layout Layout
 	Now    func() time.Time // injected for deterministic backup IDs in tests
+	// beforeWriteHook, when non-nil, runs immediately before each guarded
+	// canonical/projection mutation, tagged by a stage string — a test seam for
+	// exercising the check-to-write revalidations that narrow the asset TOCTOU
+	// windows. Nil in production.
+	beforeWriteHook func(stage string)
+	// forceProjectionKind, when non-empty, overrides the per-platform projection
+	// kind agentdir picks — a test-only seam so conformance tests can exercise
+	// copy/junction off their native platform. "" (production) changes nothing.
+	forceProjectionKind string
 }
 
 // NewEngine builds an Engine for the given home directory.
 func NewEngine(home string) *Engine {
 	return &Engine{Layout: Layout{Home: home}, Now: time.Now}
+}
+
+// beforeWrite fires the test seam (if any) immediately before a guarded
+// mutation. Production builds never set the hook, so this is a no-op there.
+func (e *Engine) beforeWrite(stage string) {
+	if e.beforeWriteHook != nil {
+		e.beforeWriteHook(stage)
+	}
 }
 
 // Install validates the asset at srcDir (manifest.json + payload) and
@@ -151,6 +168,14 @@ func (e *Engine) Install(srcDir string, opts Options) (*Report, error) {
 
 	if opts.DryRun {
 		return rep, nil
+	}
+	// Re-validate the canonical parent immediately before the write: the
+	// plan-time checks (above) are separated from this mutation by projection
+	// planning and registry work, a TOCTOU window where an intermediate
+	// component such as .agents/skills could be swapped to an escaping symlink.
+	e.beforeWrite("canonical-place")
+	if err := e.Layout.checkCanonicalParent(dest); err != nil {
+		return nil, err
 	}
 	if err := place(payload, dest, destExists, e.backupID()); err != nil {
 		return nil, err
@@ -263,6 +288,14 @@ func (e *Engine) Remove(name string, opts Options) (*Report, error) {
 			rep.Warnings = append(rep.Warnings, warn)
 		}
 	}
+	// Re-validate the canonical parent immediately before the destructive
+	// delete: SafeCanonicalTarget ran early, but projection prechecks/removals
+	// since then are a TOCTOU window where an intermediate canonical parent
+	// could be swapped to a symlink, redirecting RemoveAll outside the root.
+	e.beforeWrite("canonical-delete")
+	if err := e.Layout.checkCanonicalParent(target); err != nil {
+		return nil, err
+	}
 	if err := os.RemoveAll(target); err != nil {
 		return nil, err
 	}
@@ -344,6 +377,14 @@ func (e *Engine) Rollback(name, backupID string, opts Options) (*Report, error) 
 	if opts.DryRun {
 		return rep, nil
 	}
+	// Re-validate the canonical parent immediately before the restore write:
+	// SafeCanonicalTarget ran before backup selection / copy-refresh precheck /
+	// report construction, a TOCTOU window where an intermediate canonical
+	// parent could be swapped to an escaping symlink.
+	e.beforeWrite("canonical-place")
+	if err := e.Layout.checkCanonicalParent(target); err != nil {
+		return nil, err
+	}
 	if err := place(b.Path, target, destExists, e.backupID()); err != nil {
 		return nil, err
 	}
@@ -398,6 +439,14 @@ func (e *Engine) refreshCopyProjections(entry *Entry, canonical string) error {
 		if _, err := os.Lstat(expected.Path); errors.Is(err, os.ErrNotExist) {
 			destExists = false
 		} else if err != nil {
+			return err
+		}
+		// Re-validate the projection root immediately before the copy write:
+		// precheckCopyProjectionRefresh ran earlier, but the canonical restore
+		// since then is a TOCTOU window where the projection parent could be
+		// swapped to an escaping symlink (same class as applyProjection).
+		e.beforeWrite("copy-refresh")
+		if err := e.checkProjectionRoot(pr.Agent, expected.Path); err != nil {
 			return err
 		}
 		if err := replaceCopyTreeAtomic(canonical, expected.Path, destExists, e.backupID()); err != nil {

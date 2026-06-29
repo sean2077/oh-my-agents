@@ -26,6 +26,14 @@ func assertProjectionMatches(t *testing.T, path, canonical, kind string) {
 			t.Fatalf("projection %s -> %q err=%v, want junction to %s", path, dest, err, canonical)
 		}
 	case agentdir.KindCopy:
+		// A copy must be a real file/dir, never a symlink — otherwise the
+		// DigestTree check below would also pass for a symlink (it follows the
+		// link to the canonical tree), masking a wrong kind.
+		if info, lerr := os.Lstat(path); lerr != nil {
+			t.Fatalf("copy projection %s: %v", path, lerr)
+		} else if info.Mode()&os.ModeSymlink != 0 {
+			t.Fatalf("copy projection %s must be a real copy, not a symlink", path)
+		}
 		got, err := DigestTree(path)
 		if err != nil {
 			t.Fatalf("copy projection %s: %v", path, err)
@@ -442,7 +450,18 @@ func TestConformanceFixtures(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%s fixture manifest: %v", agent, err)
 			}
+			// Junctions can only be created on Windows; honestly skip the
+			// junction case off-platform rather than assert a faked kind.
+			if c.WantKind == agentdir.KindJunction && runtime.GOOS != "windows" {
+				t.Logf("conformance %s/%s: skipping junction case on %s (junctions are Windows-only)", agent, m.Name, runtime.GOOS)
+				continue
+			}
 			e := newTestEngine(t)
+			// Test seam: force copy/junction so those kinds are exercised on any
+			// platform (production leaves forceProjectionKind == "").
+			if c.WantKind != "" {
+				e.forceProjectionKind = c.WantKind
+			}
 			dir := t.TempDir()
 			if err := os.WriteFile(filepath.Join(dir, "manifest.json"), c.Manifest, 0o600); err != nil {
 				t.Fatal(err)

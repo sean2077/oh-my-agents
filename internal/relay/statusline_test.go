@@ -22,7 +22,6 @@ func TestStatuslineBindingScopedAndPureRead(t *testing.T) {
 	}
 	unbound := NewLedger(root, otherID)
 	unbound.Now = ck.now
-	unbound.Getenv = func(string) string { return "" }
 	if unbound.bindingPath() == creator.bindingPath() {
 		t.Fatal("test bug: sessions must differ")
 	}

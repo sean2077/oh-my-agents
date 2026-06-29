@@ -44,7 +44,7 @@
 - Verdict: the longest non-flag prefix must **exactly equal** a registered runnable command (or a command group declared in the docs for use in prose examples) to count as a valid reference; a case like `oma relay pair typo` — a "valid prefix + invalid leaf" — fails.
 - Reference table: reflected from the cobra command tree (including full nested paths).
 - Failure condition: any invalid reference → fail (exit code 4). Exemptions: none (terminal-state principle).
-- Required fixtures: `oma relay pair ensure` (valid three-level), `oma relay pair typo` (invalid leaf), `oma doctor budget` (valid two-level + flags), `oma asset link --dev` (flag truncation), and a multi-line shell snippet.
+- Required fixtures: `oma relay pair ensure` (valid three-level), `oma relay pair typo` (invalid leaf), `oma doctor budget` (valid two-level + flags), `oma asset list --installed` (flag truncation), and a multi-line shell snippet.
 
 ## 5. Budget injection surface model (`oma doctor budget`)
 

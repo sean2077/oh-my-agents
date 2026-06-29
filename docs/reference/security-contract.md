@@ -43,7 +43,7 @@
 
 - All fields of a peer artifact are treated as untrusted: the frontmatter passes strict schema validation (unknown kind/status refused); the body is rendered as text only, and oma **never** parses or executes any command within it; `touched_paths` is passed through for display only.
 - `.sha256` verification fails / `.ready` missing → the content is not returned to the caller (fail-closed).
-- Secret-leak prevention: before publishing, run a pattern scan over the body, `prompt_for_next`, and any frontmatter fields that may contain user text (a regex set for common token/key shapes); this is **enforced, with no bypass switch in v1**; a hit → refuse to publish and point at the line number. Handling a false positive = edit the artifact, or register a **narrow-scope allow pattern** in the appendix of this contract (`oma doctor` reports the effective allow list). doctor includes a ledger sweep using the same rule.
+- Secret-leak prevention: before publishing, run a pattern scan over the body, `prompt_for_next`, and any frontmatter fields that may contain user text (a regex set for common token/key shapes); this is **enforced, with no bypass switch in v1**; a hit → refuse to publish and point at the line number. Handling a false positive = edit the artifact, or register a **narrow-scope allow pattern** in the appendix of this contract.
 - Test: tampered ledger refused-read, unknown schema refused, secret pattern refused-publish.
 
 ## 7. Threat matrix

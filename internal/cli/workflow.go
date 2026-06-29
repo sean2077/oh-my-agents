@@ -37,7 +37,7 @@ func newWorkflowListCmd() *cobra.Command {
 		RunE: run(func(cmd *cobra.Command, _ []string) error {
 			root := findProjectRoot()
 			if root == "" {
-				return Errf(ExitState, "not inside a git project (workflow state lives in <root>/.oma/state)")
+				return failClosed("not inside a git project", "cd into a project git checkout — workflow state lives in <root>/.oma/state")
 			}
 			rows, err := scanWorkflows(root)
 			if err != nil {
@@ -57,9 +57,7 @@ func newWorkflowListCmd() *cobra.Command {
 				rows = kept
 			}
 			if asJSON {
-				enc := json.NewEncoder(cmd.OutOrStdout())
-				enc.SetIndent("", "  ")
-				return enc.Encode(map[string]any{"schema": "oma-cli/1", "workflows": rows})
+				return printJSON(cmd, map[string]any{"schema": "oma-cli/1", "workflows": rows})
 			}
 			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%-22s %-10s %-16s %-13s %-8s %s\n", "SESSION", "WORKFLOW", "ID", "PHASE", "REVISION", "WORKTREE")
 			for _, r := range rows {
@@ -137,8 +135,8 @@ func scanWorkflows(root string) ([]workflowRow, error) {
 // splitScopedName splits "name--s-session" into (name, session). A bare suffix
 // (the session's default instance) has no separator and reports id "default".
 func splitScopedName(scoped string) (id, sess string) {
-	if i := strings.Index(scoped, session.ScopeSeparator); i >= 0 {
-		return scoped[:i], scoped[i+len(session.ScopeSeparator):]
+	if before, after, found := strings.Cut(scoped, session.ScopeSeparator); found {
+		return before, after
 	}
 	return "default", scoped
 }

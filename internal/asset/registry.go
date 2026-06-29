@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"time"
+
+	"github.com/sean2077/oh-my-agents/internal/atomicfile"
+	"github.com/sean2077/oh-my-agents/internal/schemaver"
 )
 
 // RegistrySchema is the persisted registry schema (docs/reference/schemas.md §2).
@@ -34,7 +36,7 @@ type Entry struct {
 	Type          string       `json:"type"`
 	Version       string       `json:"version,omitempty"`
 	InstalledAt   time.Time    `json:"installed_at"`
-	Source        string       `json:"source"` // release | dev-link | dir
+	Source        string       `json:"source"` // release | dir
 	CanonicalPath string       `json:"canonical_path"`
 	Digest        string       `json:"digest"`                  // DigestTree of canonical content; drift = non-managed
 	RestoredFrom  string       `json:"restored_from,omitempty"` // backup ID of the last rollback, provenance for list/doctor
@@ -64,32 +66,24 @@ func LoadRegistry(path string) (*Registry, error) {
 	if err := json.Unmarshal(raw, &r); err != nil {
 		return nil, fmt.Errorf("%w: registry not valid JSON: %v", ErrInvalid, err)
 	}
-	if major, ok := schemaMajor(r.Schema, "oma-registry"); !ok || major != 1 {
+	if major, ok := schemaver.Major(r.Schema, "oma-registry"); !ok || major != 1 {
 		return nil, fmt.Errorf("%w: registry schema %q, want %s", ErrUnknownSchema, r.Schema, RegistrySchema)
 	}
 	return &r, nil
 }
 
-// Save writes the registry atomically (tmp+rename, 0600, dirs 0700) with a
-// single-generation .bak of the previous version (docs/reference/schemas.md §1).
+// Save writes the registry durably via atomicfile.WriteWithBackup: an atomic
+// same-directory temp+rename with fsync (0600, dirs 0700), refreshing a
+// single-generation .bak of the previous version first (docs/reference/schemas.md §1).
 func (r *Registry) Save(path string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return fmt.Errorf("create registry dir: %w", err)
-	}
-	if prev, err := os.ReadFile(path); err == nil {
-		if err := os.WriteFile(path+".bak", prev, 0o600); err != nil {
-			return fmt.Errorf("write registry backup: %w", err)
-		}
-	}
 	raw, err := json.MarshalIndent(r, "", "  ")
 	if err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, append(raw, '\n'), 0o600); err != nil {
+	if err := atomicfile.WriteWithBackup(path, append(raw, '\n'), 0o600); err != nil {
 		return fmt.Errorf("write registry: %w", err)
 	}
-	return os.Rename(tmp, path)
+	return nil
 }
 
 // Find returns the entry for name, or nil.

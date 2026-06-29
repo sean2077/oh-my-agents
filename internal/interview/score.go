@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"sort"
+
+	"github.com/sean2077/oh-my-agents/internal/schemaver"
 )
 
 // Dimension weight tables (docs/reference/workflows.md §1.3): ambiguity =
@@ -60,6 +62,10 @@ type Report struct {
 	OntologyStability    *float64           `json:"ontology_stability,omitempty"`
 	ChallengeSuggestions []string           `json:"challenge_suggestions,omitempty"`
 	Warnings             []string           `json:"warnings,omitempty"`
+	// StallEscalation is true when ambiguity has plateaued (spread across the
+	// last 3 rounds ≤ 0.05): the agent must adopt the ontologist stance next.
+	// The threshold/window math lives here, not in the skill prompt.
+	StallEscalation bool `json:"stall_escalation,omitempty"`
 }
 
 // Target names the weakest (component, dimension) pair.
@@ -79,7 +85,7 @@ func ParseScoresInput(path string) (*ScoresInput, error) {
 	if err := json.Unmarshal(raw, &in); err != nil {
 		return nil, fmt.Errorf("%w: scores input not valid JSON: %v", ErrInterview, err)
 	}
-	if major, ok := schemaMajor(in.Schema, "oma-interview-scores"); !ok || major != 1 {
+	if major, ok := schemaver.Major(in.Schema, "oma-interview-scores"); !ok || major != 1 {
 		return nil, fmt.Errorf("%w: scores schema %q, want %s", ErrInterview, in.Schema, ScoresSchema)
 	}
 	return &in, nil
@@ -279,6 +285,7 @@ func (e *Engine) scoreRound(s *State, in *ScoresInput, dryRun bool) (*Report, er
 		OntologyStability:    stability,
 		ChallengeSuggestions: s.challengeSuggestions(len(s.Rounds), ambiguity),
 		Warnings:             roundWarnings(len(s.Rounds)),
+		StallEscalation:      s.stalled(),
 	}
 	return rep, nil
 }
@@ -359,6 +366,36 @@ func roundWarnings(roundCount int) []string {
 		out = append(out, fmt.Sprintf("soft warning: %d rounds without passing the gate", roundCount))
 	}
 	return out
+}
+
+// Stall escalation (deep-interview): a plateaued ambiguity usually means a
+// mislabeled or wrongly-scoped component, not one more missing detail. The
+// window/threshold math lives here so the skill consumes a verdict instead of
+// re-deriving it from the prompt.
+const (
+	stallWindow  = 3    // rounds inspected
+	stallEpsilon = 0.05 // max ambiguity spread that still counts as stalled
+)
+
+// stalled reports whether ambiguity has plateaued: the spread (max-min) across
+// the last stallWindow rounds is within stallEpsilon. Fewer than stallWindow
+// scored rounds is never stalled (insufficient data).
+func (s *State) stalled() bool {
+	n := len(s.Rounds)
+	if n < stallWindow {
+		return false
+	}
+	lo := s.Rounds[n-stallWindow].Ambiguity
+	hi := lo
+	for _, r := range s.Rounds[n-stallWindow+1:] {
+		if r.Ambiguity < lo {
+			lo = r.Ambiguity
+		}
+		if r.Ambiguity > hi {
+			hi = r.Ambiguity
+		}
+	}
+	return hi-lo <= stallEpsilon
 }
 
 // stabilityRatio = (stable + changed) / total current entities; stable =

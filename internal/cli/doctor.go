@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/sean2077/oh-my-agents/internal/checks"
@@ -44,9 +43,7 @@ func newDoctorCmd() *cobra.Command {
 			res := checks.RunAll(checks.InstallChecks(home, findProjectRoot(), set))
 
 			if asJSON {
-				enc := json.NewEncoder(cmd.OutOrStdout())
-				enc.SetIndent("", "  ")
-				if err := enc.Encode(map[string]any{"schema": "oma-cli/1", "worst": res.Worst, "findings": res.Findings}); err != nil {
+				if err := printJSON(cmd, map[string]any{"schema": "oma-cli/1", "worst": res.Worst, "findings": res.Findings}); err != nil {
 					return err
 				}
 			} else {
@@ -78,11 +75,11 @@ func newDoctorStateCmd() *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: run(func(cmd *cobra.Command, _ []string) error {
 			if !migrateScope {
-				return fmt.Errorf("nothing to do: pass --migrate-session-scope")
+				return failClosed("nothing to do", "pass --migrate-session-scope")
 			}
 			root := findProjectRoot()
 			if root == "" {
-				return Errf(ExitState, "not inside a git project (workflow state lives in <root>/.oma/state)")
+				return failClosed("not inside a git project", "cd into a project git checkout — workflow state lives in <root>/.oma/state")
 			}
 			actions, err := state.MigrateSessionScope(root, apply)
 			if err != nil {
@@ -124,7 +121,7 @@ func newDoctorRelayCmd() *cobra.Command {
 			if !cleanStale && restore == "" && !migrate {
 				// Plain error → ExitState: ExitUsage is reserved for cobra
 				// parse failures (B1 review finding 1).
-				return fmt.Errorf("nothing to do: pass --clean-stale, --restore <slug>, and/or --migrate")
+				return failClosed("nothing to do", "pass --clean-stale, --restore <slug>, and/or --migrate")
 			}
 			l, err := relayLedger(ledgerRoot, true)
 			if err != nil {

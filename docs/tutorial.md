@@ -498,11 +498,11 @@ oma doctor relay --migrate --apply                # apply it
 `oma doctor relay` also restores an archived pair (`--restore <slug>`) and cleans
 stale relay residue (`--clean-stale`).
 
-**Update or roll back assets.** Refresh installed skills, and undo a bad update
-from the automatic backups:
+**Refresh or roll back assets.** Re-running `oma asset install` refreshes an
+installed asset to the current bundle; the automatic backups undo a bad change:
 
 ```bash
-oma asset update                          # update all installed assets (alias: oma update)
+oma asset install ralph                   # refresh ralph to the current bundle
 oma asset rollback ralph                  # restore ralph from its most recent backup
 oma asset rollback ralph --to <backup-id> # or a specific backup
 ```
