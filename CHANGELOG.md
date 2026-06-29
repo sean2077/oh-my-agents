@@ -4,6 +4,41 @@
 >
 > Section heading format: `## vX.Y.Z - YYYY-MM-DD` (CI matches the tag by exact prefix; a tag with no matching section fails the release, fail-closed).
 
+## v1.3.0 - 2026-06-29
+
+This minor release is a deep optimization pass delivered as a Claude/Codex
+paired cross-review (13 reviewed slices). It hardens security and recovery
+paths, makes fail-closed errors actionable, broadens the test net, and
+reconciles docs with the implementation. It does not change the relay protocol
+or persisted workflow schemas, and adds no new public commands or flags.
+
+- **Security and integrity**: projection, canonical-root, and copy-refresh
+  writes now re-validate their target immediately before the write, narrowing
+  the check-to-write (TOCTOU) windows; new adversarial negative tests cover
+  archive extraction and the ledger secret scan.
+- **Relay recovery correctness**: `oma relay status` refreshes the caller's own
+  heartbeat per the protocol; sequence reservations are fsynced for crash
+  durability while keeping their exclusive-create guarantee; `pair join
+  --rebind` now cleans the replaced session's orphan reservations (and quarantines
+  any incomplete publish) instead of leaving hidden residue; a failed `approve`
+  close rolls the pair back to active; an abandoned reclaim election no longer
+  blocks the next reclaimer for the full lock lease.
+- **Actionable errors**: CLI-authored fail-closed refusals now emit a one-line
+  `hint:` naming the recovery action, while preserving exit codes.
+- **Configuration and conformance**: relay commands consume the config layer
+  (e.g. `relay.stale_after`, including `preflight`); deep-interview stall
+  escalation is decided in the binary and surfaced as a verdict; a new
+  adapter-conformance check rejects Claude-only constructs on a codex skill's
+  default path.
+- **Simplification and durability**: inline JSON encoders fold into the shared
+  `printJSON`; the asset registry persists through the atomic
+  backup-and-write path; dead code and a stale schema-dedup are removed.
+- **Documentation accuracy**: the schema registry, secret-scan contract, and
+  asset source labels now match the implementation.
+- **Test coverage**: focused negative, boundary, concurrency, and
+  interruption-matrix tests across atomicfile, relay, state, config, interview,
+  budget, and the asset projection conformance harness.
+
 ## v1.2.0 - 2026-06-24
 
 This minor release polishes the unified statusline marker and stabilizes the
