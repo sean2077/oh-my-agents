@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,18 @@ import (
 
 	"github.com/sean2077/oh-my-agents/internal/config"
 )
+
+// jsonPathInOutput reports whether JSON blob `out` contains `path` encoded as a
+// JSON string value, so a Windows path's backslashes match their `\\` escaping
+// in the JSON (a raw strings.Contains over the path would miss that).
+func jsonPathInOutput(t *testing.T, out, path string) bool {
+	t.Helper()
+	b, err := json.Marshal(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.Contains(out, string(b[1:len(b)-1]))
+}
 
 // S3 / DRIFT-1: relay commands consume the config layer. These tests prove the
 // three approved fields (stale_after, wait_timeout, ledger_root) actually affect
@@ -39,8 +52,10 @@ func TestRelayLedgerConsumesConfigFile(t *testing.T) {
 	home := t.TempDir()
 	relayIdentityEnv(t, home, "cfg-file")
 	ledgerRoot := filepath.Join(t.TempDir(), "custom-relay")
+	// The path goes in a TOML LITERAL string (single quotes) so a Windows path's
+	// backslashes are taken verbatim instead of parsed as TOML escapes.
 	writeUserConfig(t, home,
-		"relay.stale_after = \"30m\"\nrelay.ledger_root = \""+ledgerRoot+"\"\n")
+		"relay.stale_after = \"30m\"\nrelay.ledger_root = '"+ledgerRoot+"'\n")
 
 	l, err := relayLedger("", false)
 	if err != nil {
@@ -95,14 +110,14 @@ func TestRelayPreflightHonorsConfigLedgerRoot(t *testing.T) {
 	home := t.TempDir()
 	relayIdentityEnv(t, home, "preflight-cfg")
 	customRoot := filepath.Join(t.TempDir(), "cfg-relay")
-	writeUserConfig(t, home, "relay.ledger_root = \""+customRoot+"\"\n")
+	writeUserConfig(t, home, "relay.ledger_root = '"+customRoot+"'\n")
 
 	// Uninitialized custom root → preflight warns; the assertion is the root.
 	code, out := runRelay(t, "relay", "preflight", "--json")
 	if code != ExitOK && code != ExitWarn && code != ExitState {
 		t.Fatalf("preflight exit %d: %s", code, out)
 	}
-	if !strings.Contains(out, customRoot) {
+	if !jsonPathInOutput(t, out, customRoot) {
 		t.Fatalf("preflight --json must report config ledger_root %q; got: %s", customRoot, out)
 	}
 }
@@ -117,7 +132,7 @@ func TestRelayPreflightHonorsEnvLedgerRoot(t *testing.T) {
 	if code != ExitOK && code != ExitWarn && code != ExitState {
 		t.Fatalf("preflight exit %d: %s", code, out)
 	}
-	if !strings.Contains(out, customRoot) {
+	if !jsonPathInOutput(t, out, customRoot) {
 		t.Fatalf("preflight --json must report env ledger_root %q; got: %s", customRoot, out)
 	}
 }

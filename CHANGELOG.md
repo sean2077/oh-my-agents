@@ -15,7 +15,8 @@ or persisted workflow schemas, and adds no new public commands or flags.
 - **Security and integrity**: projection, canonical-root, and copy-refresh
   writes now re-validate their target immediately before the write, narrowing
   the check-to-write (TOCTOU) windows; new adversarial negative tests cover
-  archive extraction and the ledger secret scan.
+  archive extraction (now rejecting Unix-absolute entry paths the same way on
+  every OS) and the ledger secret scan.
 - **Relay recovery correctness**: `oma relay status` refreshes the caller's own
   heartbeat per the protocol; sequence reservations are fsynced for crash
   durability while keeping their exclusive-create guarantee; `pair join

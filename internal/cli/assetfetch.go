@@ -282,7 +282,10 @@ func extractTarGz(tarPath, root string, limits assetFetchLimits) error {
 		if name == "." {
 			continue
 		}
-		if filepath.IsAbs(name) || name == ".." || strings.HasPrefix(name, ".."+string(os.PathSeparator)) || strings.Contains(name, ".."+string(os.PathSeparator)) {
+		// A tar entry name is always forward-slash; a leading "/" is a
+		// Unix-absolute escape attempt that filepath.IsAbs misses on Windows
+		// (where "\etc" is not absolute), so reject it OS-independently first.
+		if strings.HasPrefix(hdr.Name, "/") || filepath.IsAbs(name) || name == ".." || strings.HasPrefix(name, ".."+string(os.PathSeparator)) || strings.Contains(name, ".."+string(os.PathSeparator)) {
 			return fmt.Errorf("unsafe path %q in archive", hdr.Name)
 		}
 		target := filepath.Join(cleanRoot, name)

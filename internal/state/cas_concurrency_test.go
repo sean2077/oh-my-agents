@@ -3,6 +3,7 @@ package state
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -56,9 +57,14 @@ func TestConcurrentCASExactlyOneWinnerAtRevision(t *testing.T) {
 			winners++
 			winnerIdx = i
 		case errors.Is(e, ErrConflict):
-			// expected loser
+			// expected loser: the in-lock CAS rejected the stale revision
+		case strings.Contains(e.Error(), "file lock held"):
+			// loser by lock-acquisition timeout: under heavy contention (notably
+			// Windows + -race) a goroutine can exhaust the state-lock wait and
+			// never enter the locked section. It never wrote, so it is a clean
+			// non-winner and the exactly-one-winner invariant still holds.
 		default:
-			t.Fatalf("goroutine %d: unexpected error = %v, want nil or ErrConflict", i, e)
+			t.Fatalf("goroutine %d: unexpected error = %v, want nil, ErrConflict, or lock-held", i, e)
 		}
 	}
 	if winners != 1 {
