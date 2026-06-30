@@ -2,8 +2,10 @@ package atomicfile
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -105,5 +107,33 @@ func TestTakeOverStaleRefusesFreshLock(t *testing.T) {
 	}
 	if _, err := os.Stat(dir + ".reclaim"); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf(".reclaim election lock must be cleaned up, stat err = %v", err)
+	}
+}
+
+// TestIsLockContended pins the Windows pending-delete race fix: a Mkdir-acquire
+// that fails with ErrPermission (ERROR_ACCESS_DENIED on a dir mid-removal) is
+// contention to wait out on Windows, but a genuine permission error elsewhere
+// must still fail fast — so the ErrPermission verdict tracks GOOS.
+func TestIsLockContended(t *testing.T) {
+	permIsContended := runtime.GOOS == "windows"
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"exist", os.ErrExist, true},
+		{"wrapped exist", fmt.Errorf("mkdir: %w", os.ErrExist), true},
+		{"permission", os.ErrPermission, permIsContended},
+		{"wrapped permission", fmt.Errorf("mkdir: %w", os.ErrPermission), permIsContended},
+		{"not exist", os.ErrNotExist, false},
+		{"other", errors.New("disk full"), false},
+		{"nil", nil, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isLockContended(tc.err); got != tc.want {
+				t.Fatalf("isLockContended(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
 	}
 }

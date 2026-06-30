@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -47,7 +48,7 @@ func AcquireLock(dir string, timeout time.Duration) (*Lock, error) {
 			}
 			return &Lock{dir: dir, token: token}, nil
 		}
-		if !errors.Is(err, os.ErrExist) {
+		if !isLockContended(err) {
 			return nil, err
 		}
 		if stale, _ := staleLock(dir); stale {
@@ -63,6 +64,23 @@ func AcquireLock(dir string, timeout time.Duration) (*Lock, error) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
+}
+
+// isLockContended reports whether a Mkdir-acquire error means dir is currently
+// contended — held, or racing a concurrent release — rather than a hard
+// failure. ErrExist is the portable "already held" signal. On Windows directory
+// removal is asynchronous: a lock being released lingers in a pending-delete
+// state, and a concurrent Mkdir of the same path fails with ERROR_ACCESS_DENIED
+// (surfaced as ErrPermission) instead of ErrExist. Treating that as contention
+// lets AcquireLock wait out the transient window and retry rather than surface a
+// spurious error — a flaky failure seen only on windows-latest under concurrent
+// reclaim. The Windows gate keeps a genuine permission error on Unix (e.g. an
+// unwritable parent) failing fast as before.
+func isLockContended(err error) bool {
+	if errors.Is(err, os.ErrExist) {
+		return true
+	}
+	return runtime.GOOS == "windows" && errors.Is(err, os.ErrPermission)
 }
 
 // Release frees the lock. It removes only the lock directory tree.
