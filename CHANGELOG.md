@@ -4,6 +4,18 @@
 >
 > Section heading format: `## vX.Y.Z - YYYY-MM-DD` (CI matches the tag by exact prefix; a tag with no matching section fails the release, fail-closed).
 
+## v1.3.1 - 2026-06-30
+
+A patch closing one relay recovery gap left by the v1.3.0 `--rebind` work.
+
+- **Relay rebind preserves read progress**: `oma relay pair join <slug>
+  --rebind` now carries the reclaiming session's consumption cursor (and its
+  delivered-mark) to the new seat. The cursor is keyed by session, so a rebind —
+  which runs under a new session id — previously reset it to zero, making `wait`
+  re-deliver the peer's entire already-consumed history; it now follows the seat
+  alongside the existing reservation cleanup, restoring `wait` idempotency across
+  a rebind. No protocol, schema, command, or flag changes.
+
 ## v1.3.0 - 2026-06-29
 
 This minor release is a deep optimization pass delivered as a Claude/Codex
