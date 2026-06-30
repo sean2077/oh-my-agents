@@ -260,6 +260,11 @@ func (l *Ledger) Rejoin(slug string, dryRun bool) (*Session, error) {
 			if err := l.cleanReplacedReservations(slug, l.Identity.Author, oldSession); err != nil {
 				return err
 			}
+			// COR-6: the consumption cursor (and its .seen delivered-mark) is
+			// named by sessionKey too, so it must follow the seat — otherwise the
+			// reclaiming session reads cursor 0 and wait re-delivers the peer's
+			// entire already-consumed history. Best-effort, monotonic merge.
+			l.migrateCursorFrom(l.PairDir(slug), oldSession)
 		}
 		l.touchHeartbeat(slug)
 		return nil

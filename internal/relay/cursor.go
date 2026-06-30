@@ -77,3 +77,29 @@ func (l *Ledger) markDelivered(pairDir string, seq int) { l.writeSeqFile(pairDir
 func (l *Ledger) advanceCursorToConsumed(pairDir string) {
 	l.writeSeqFile(pairDir, "", l.readDelivered(pairDir))
 }
+
+// migrateCursorFrom carries this author's consumption cursor and its .seen
+// delivered-mark from a now-replaced session onto THIS (the reclaiming) session.
+// The cursor is named by (author, sessionKey), so a session resume — which
+// changes the sessionKey — moves it to a fresh file name; `pair join --rebind`
+// (Rejoin) reassigning the seat would then leave the new session reading cursor
+// 0, and wait would re-deliver the peer's ENTIRE already-consumed history. The
+// cursor belongs to the SEAT, not the platform session, so it must follow the
+// seat. Values merge monotonically (writeSeqFile never lowers the destination)
+// so progress the new session already made is never rolled back; the old files
+// are then removed so this is a move, not a duplicate. Best-effort like the rest
+// of the cursor machinery: called under the pair lock in Rejoin, a failure here
+// must never fail the rebind.
+func (l *Ledger) migrateCursorFrom(pairDir, oldSession string) {
+	if oldSession == "" || oldSession == l.Identity.SessionKey {
+		return
+	}
+	dir := filepath.Join(pairDir, ".cursor")
+	for _, suffix := range []string{"", ".seen"} {
+		src := filepath.Join(dir, ownerName(l.Identity.Author, oldSession)+suffix)
+		if seq := readSeqFile(src); seq > 0 {
+			l.writeSeqFile(pairDir, suffix, seq)
+		}
+		_ = os.Remove(src)
+	}
+}

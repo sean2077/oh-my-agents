@@ -218,6 +218,69 @@ func TestRebindCleansReplacedSessionReservations(t *testing.T) {
 	}
 }
 
+// --- COR-6: pair join --rebind carries the consumption cursor to the new seat ---
+//
+// The reader's consumption cursor is named by (author, sessionKey); a session
+// resume changes the sessionKey, so without migration the reclaiming session
+// reads cursor 0 and wait re-delivers the peer's entire consumed history. Rejoin
+// must move the prior session's cursor (and its .seen sidecar) onto the new name.
+func TestRebindCarriesConsumptionCursor(t *testing.T) {
+	ck := newClock()
+	root, _ := initRoot(t, ck)
+	claudeA := claudeLedger(t, root, ck, "session-A")
+	claudeB := claudeLedger(t, root, ck, "session-B")
+	codex := testLedger(t, root, "codex", ck)
+	s := mustPair(t, claudeA, "topic")
+	if _, err := codex.Join(s.Pair, false); err != nil {
+		t.Fatal(err)
+	}
+	pairDir := claudeA.PairDir(s.Pair)
+
+	// codex publishes two artifacts; session-A consumes only the first, advancing
+	// its cursor past that seq (delivered, then consumed on its own turn).
+	first := mustPublish(t, codex, s.Pair, "plan", "body", "next")
+	firstSeq := seqOf(t, first)
+	second := mustPublish(t, codex, s.Pair, "note", "body", "next")
+	secondSeq := seqOf(t, second)
+
+	claudeA.markDelivered(pairDir, firstSeq)
+	claudeA.advanceCursorToConsumed(pairDir)
+	if got := claudeA.readCursor(pairDir); got != firstSeq {
+		t.Fatalf("precondition: claudeA cursor = %d, want %d", got, firstSeq)
+	}
+
+	// Rebind: session-B reclaims the seat after the session-A resume.
+	if _, err := claudeB.Rejoin(s.Pair, false); err != nil {
+		t.Fatalf("rejoin: %v", err)
+	}
+
+	// fail-before: without the migration claudeB reads cursor 0 here.
+	if got := claudeB.readCursor(pairDir); got != firstSeq {
+		t.Fatalf("cursor must follow the seat across rebind: claudeB cursor = %d, want %d", got, firstSeq)
+	}
+	if got := claudeB.readDelivered(pairDir); got != firstSeq {
+		t.Fatalf(".seen delivered-mark must follow the seat: claudeB delivered = %d, want %d", got, firstSeq)
+	}
+	// Migration is a move, not a copy: the old session's cursor files are gone.
+	oldCursor := filepath.Join(pairDir, ".cursor", ownerName("claude", claudeA.Identity.SessionKey))
+	if exists(oldCursor) || exists(oldCursor+".seen") {
+		t.Errorf("old session cursor files must be removed after migration")
+	}
+
+	// Consequence: wait must NOT re-deliver the already-consumed `first`; it
+	// surfaces only the still-unconsumed second artifact.
+	path, ok, err := claudeB.newPeerArtifact(pairDir, "codex")
+	if err != nil {
+		t.Fatalf("newPeerArtifact: %v", err)
+	}
+	if !ok {
+		t.Fatal("the second (unconsumed) artifact must still be deliverable after rebind")
+	}
+	if got := seqOf(t, path); got != secondSeq {
+		t.Fatalf("wait surfaced seq %03d after rebind, want the unconsumed %03d (0/firstSeq means history replay)", got, secondSeq)
+	}
+}
+
 // writeRawReservation re-creates a bare .seq marker owned by l's identity, used
 // to model a post-publish residue reservation that publish cleanup missed.
 func writeRawReservation(t *testing.T, l *Ledger, pairDir string, seq int) {
