@@ -4,6 +4,20 @@
 >
 > Section heading format: `## vX.Y.Z - YYYY-MM-DD` (CI matches the tag by exact prefix; a tag with no matching section fails the release, fail-closed).
 
+## v1.3.2 - 2026-06-30
+
+A patch fixing a Windows-only flaky in the cross-process file lock.
+
+- **Windows lock acquire tolerates the pending-delete race**: on Windows
+  directory removal is asynchronous, so a lock directory being released lingers
+  in a pending-delete state and a concurrent `AcquireLock` saw `mkdir ...
+  ERROR_ACCESS_DENIED` instead of "already exists", surfacing it as a hard
+  error. Acquire now treats a Windows permission error as lock contention and
+  waits it out within the existing timeout; a genuine permission error on Unix
+  still fails fast. Fixes the intermittent
+  `TestAcquireLockConcurrentReclaimSingleHolder` failure on windows-latest. Lock
+  semantics are unchanged on every platform.
+
 ## v1.3.1 - 2026-06-30
 
 A patch closing one relay recovery gap left by the v1.3.0 `--rebind` work.
