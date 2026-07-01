@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -20,6 +21,10 @@ var ErrLockHeld = errors.New("file lock held")
 var ErrLockNotOwned = errors.New("file lock not owned")
 
 const defaultLockLease = 15 * time.Minute
+
+const lockReleaseRetryTimeout = 2 * time.Second
+
+const windowsSharingViolation syscall.Errno = 32
 
 // reclaimTimeout bounds how long an abandoned `.reclaim` election claim may
 // block the next reclaimer. It is much shorter than the lock lease: a reclaimer
@@ -33,6 +38,11 @@ type Lock struct {
 	dir   string
 	token string
 }
+
+var (
+	removeAllFn      = os.RemoveAll
+	lockReleaseSleep = time.Sleep
+)
 
 // AcquireLock obtains dir as an exclusive lock. timeout <= 0 performs one
 // attempt. The caller is responsible for ensuring the parent directory exists.
@@ -83,6 +93,35 @@ func isLockContended(err error) bool {
 	return runtime.GOOS == "windows" && errors.Is(err, os.ErrPermission)
 }
 
+func removeLockDir(dir string) error {
+	return removeLockDirWithRetry(dir, isLockReleaseTransient)
+}
+
+func removeLockDirWithRetry(dir string, retryable func(error) bool) error {
+	deadline := time.Now().Add(lockReleaseRetryTimeout)
+	for {
+		err := removeAllFn(dir)
+		if err == nil || errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		if !retryable(err) || !time.Now().Before(deadline) {
+			return err
+		}
+		lockReleaseSleep(10 * time.Millisecond)
+	}
+}
+
+// isLockReleaseTransient reports Windows-only release errors caused by another
+// goroutine/process briefly holding a handle under the lock directory while
+// Release removes it. In that state Windows reports ERROR_SHARING_VIOLATION
+// ("being used by another process") rather than a durable filesystem failure.
+// ERROR_ACCESS_DENIED can also surface during pending-delete transitions, so it
+// remains retryable only on Windows. Other platforms keep failing fast.
+func isLockReleaseTransient(err error) bool {
+	return runtime.GOOS == "windows" &&
+		(errors.Is(err, windowsSharingViolation) || errors.Is(err, os.ErrPermission))
+}
+
 // Release frees the lock. It removes only the lock directory tree.
 func (l *Lock) Release() error {
 	if l == nil || l.dir == "" {
@@ -98,7 +137,7 @@ func (l *Lock) Release() error {
 	if token == "" || token != l.token {
 		return fmt.Errorf("%w: %s", ErrLockNotOwned, l.dir)
 	}
-	return os.RemoveAll(l.dir)
+	return removeLockDir(l.dir)
 }
 
 // WithLock runs fn while holding dir.

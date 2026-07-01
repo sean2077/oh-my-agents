@@ -137,3 +137,108 @@ func TestIsLockContended(t *testing.T) {
 		})
 	}
 }
+
+func TestIsLockReleaseTransient(t *testing.T) {
+	windowsOnly := runtime.GOOS == "windows"
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"sharing violation", windowsSharingViolation, windowsOnly},
+		{"wrapped sharing violation", fmt.Errorf("unlink owner: %w", windowsSharingViolation), windowsOnly},
+		{"permission", os.ErrPermission, windowsOnly},
+		{"wrapped permission", fmt.Errorf("remove lock: %w", os.ErrPermission), windowsOnly},
+		{"exist", os.ErrExist, false},
+		{"other", errors.New("disk full"), false},
+		{"nil", nil, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isLockReleaseTransient(tc.err); got != tc.want {
+				t.Fatalf("isLockReleaseTransient(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestRemoveLockDirRetriesTransientRemoveError(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "resource.lock")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "owner"), []byte("token=x\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	transient := errors.New("transient remove failure")
+	origRemoveAll := removeAllFn
+	origSleep := lockReleaseSleep
+	defer func() {
+		removeAllFn = origRemoveAll
+		lockReleaseSleep = origSleep
+	}()
+
+	calls := 0
+	sleeps := 0
+	removeAllFn = func(path string) error {
+		calls++
+		if path != dir {
+			t.Fatalf("remove path = %q, want %q", path, dir)
+		}
+		if calls == 1 {
+			return transient
+		}
+		return origRemoveAll(path)
+	}
+	lockReleaseSleep = func(time.Duration) {
+		sleeps++
+	}
+
+	err := removeLockDirWithRetry(dir, func(err error) bool {
+		return errors.Is(err, transient)
+	})
+	if err != nil {
+		t.Fatalf("removeLockDirWithRetry: %v", err)
+	}
+	if calls != 2 {
+		t.Fatalf("remove calls = %d, want 2", calls)
+	}
+	if sleeps != 1 {
+		t.Fatalf("sleeps = %d, want 1", sleeps)
+	}
+	if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("lock dir after retrying remove: %v", err)
+	}
+}
+
+func TestRemoveLockDirFailsFastOnDurableRemoveError(t *testing.T) {
+	durable := errors.New("durable remove failure")
+	origRemoveAll := removeAllFn
+	origSleep := lockReleaseSleep
+	defer func() {
+		removeAllFn = origRemoveAll
+		lockReleaseSleep = origSleep
+	}()
+
+	calls := 0
+	sleeps := 0
+	removeAllFn = func(string) error {
+		calls++
+		return durable
+	}
+	lockReleaseSleep = func(time.Duration) {
+		sleeps++
+	}
+
+	err := removeLockDirWithRetry("resource.lock", func(error) bool { return false })
+	if !errors.Is(err, durable) {
+		t.Fatalf("removeLockDirWithRetry err = %v, want durable error", err)
+	}
+	if calls != 1 {
+		t.Fatalf("remove calls = %d, want 1", calls)
+	}
+	if sleeps != 0 {
+		t.Fatalf("sleeps = %d, want 0", sleeps)
+	}
+}
