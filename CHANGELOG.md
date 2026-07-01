@@ -4,6 +4,20 @@
 >
 > Section heading format: `## vX.Y.Z - YYYY-MM-DD` (CI matches the tag by exact prefix; a tag with no matching section fails the release, fail-closed).
 
+## v1.3.3 - 2026-07-01
+
+A patch closing the release-side half of the Windows lock teardown race.
+
+- **Windows lock release tolerates transient sharing violations**: after
+  v1.3.2 fixed acquire-side pending-delete errors, Windows CI still exposed the
+  complementary release path: `Release` could fail while deleting
+  `resource.lock\owner` if another goroutine briefly held the owner file open
+  for stale-lock observation. Lock release now retries boundedly for
+  Windows-only `ERROR_SHARING_VIOLATION` / access-denied teardown errors while
+  preserving fail-fast behavior for durable filesystem errors and non-Windows
+  platforms. The concurrent stale-lock reclaim test remains enabled and now
+  passes on windows-latest.
+
 ## v1.3.2 - 2026-06-30
 
 A patch fixing a Windows-only flaky in the cross-process file lock.
