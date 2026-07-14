@@ -4,6 +4,40 @@
 >
 > Section heading format: `## vX.Y.Z - YYYY-MM-DD` (CI matches the tag by exact prefix; a tag with no matching section fails the release, fail-closed).
 
+## v1.4.0 - 2026-07-14
+
+This minor release sharpens OMA's judgment-layer workflows while reducing the
+resident and default-path context needed to use them. It adopts selected methods
+from `mattpocock/skills` without adding a competing orchestration system, new
+workflow state, or mandatory cross-agent review.
+
+- **New on-demand evidence lanes**: `code-review` provides a bounded, read-only
+  review of an existing diff under separate spec-compliance and quality axes;
+  `prototype` turns one material design uncertainty into a runnable disposable
+  experiment with an explicit production disposition. Neither adds resident cost
+  unless installed.
+- **Stronger canonical workflows**: `deep-interview` now offers concrete,
+  evidence-backed choices and gates research by decision value; `trace` establishes
+  a tight red-capable loop before ranking code-failure causes; `autopilot` verifies
+  inherited premises and records tracer-bullet slice status plus observed evidence;
+  and `pair-delivery` uses an unbiased, compact delta handoff. Pair review is
+  optional and a missing peer no longer blocks otherwise verified local work.
+- **Lower context debt**: every shipped skill description is now pure `Use when`
+  trigger metadata, rare recovery/host branches moved behind conditional one-hop
+  references, and the core4 resident surface is 169 tokens under a 400-token
+  release ceiling.
+- **Inspectable context accounting**: `oma asset audit` now reports resident,
+  description, manifest-budget, and loaded-body token estimates separately; active
+  descriptions that exceed their manifest budget fail the release fixture.
+- **Skill contract regression coverage**: fixtures protect workflow heading order,
+  durable autopilot progress, compact pair handoffs, one-hop conditional references,
+  and expected trigger coverage for every active shipped skill. The trigger samples
+  remain illustrative and make future behavior claims falsifiable rather than
+  presenting labels as live-agent efficacy evidence.
+- **Installer grouping metadata**: the Claude plugin manifest now enumerates the
+  shipped skill directories so `npx skills` keeps OMA installs grouped and
+  attributable instead of listing them as unrelated global skills.
+
 ## v1.3.3 - 2026-07-01
 
 A patch closing the release-side half of the Windows lock teardown race.
