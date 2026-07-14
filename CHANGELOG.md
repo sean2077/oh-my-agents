@@ -4,6 +4,32 @@
 >
 > Section heading format: `## vX.Y.Z - YYYY-MM-DD` (CI matches the tag by exact prefix; a tag with no matching section fails the release, fail-closed).
 
+## v1.4.1 - 2026-07-14
+
+This patch publishes the skill and context-budget improvements first tagged as
+v1.4.0 after advancing the release toolchain to Go 1.25.12. The v1.4.0 pipeline
+failed closed at `govulncheck` before packaging, so no v1.4.0 GitHub Release or
+release assets were published.
+
+- **Security-fixed release toolchain**: source builds and CI now require Go
+  1.25.12, which includes the standard-library fix needed for GO-2026-5856 and
+  lets the vulnerability gate pass without suppressing or excluding findings.
+- **New on-demand evidence lanes**: optional `code-review` and `prototype`
+  skills provide bounded diff review and disposable uncertainty-testing without
+  adding resident context unless explicitly installed.
+- **Stronger canonical workflows**: `deep-interview`, `trace`, `autopilot`, and
+  `pair-delivery` now make decision value, red-capable loops, durable slice
+  progress, observed evidence, and compact unbiased handoffs explicit. Pair
+  review remains optional and a missing peer does not block verified local work.
+- **Lower, inspectable context debt**: trigger descriptions are pure `Use when`
+  metadata, rare branches live behind conditional one-hop references, and
+  `oma asset audit` separates resident, description, manifest-budget, and
+  loaded-body estimates. The core4 resident surface is 169 tokens under its
+  400-token release ceiling.
+- **Regression and installer coverage**: structural and trigger fixtures protect
+  workflow contracts, references, budgets, and trigger coverage; plugin metadata
+  keeps global `npx skills` installs grouped and attributable to OMA.
+
 ## v1.4.0 - 2026-07-14
 
 This minor release sharpens OMA's judgment-layer workflows while reducing the
