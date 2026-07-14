@@ -3,7 +3,7 @@
 > **Status: historical — implemented / superseded.** This was the planning artifact for borrowing superpowers' skill-authoring wisdom into oma; that work has landed (see [`../skill-authoring.md`](../skill-authoring.md) and the hardened skill contracts). It is kept under `docs/history/` as a design note, **not** a normative spec — the authoritative contracts live in [`../reference/`](../reference/).
 > Date: 2026-06-17 · Source: `obra/superpowers` v6.0.1 (`a21956e`).
 > Ruler: every candidate is judged against [`../design-philosophy.md`](../design-philosophy.md) — minimal resident footprint (accuracy first, cost second), mechanical-vs-judgment split, agent-neutral default, zero host-config mutation, terminal-state + fail-closed.
-> Relation to prior borrow rounds: earlier rounds borrowed omx/omc's **delivery loop** (relay receipts / quality gates / trace / ai-slop-cleaner) and its **research vein** (score keep-policy / research-mission / analyze); superpowers sits on a **third, orthogonal axis** those two never mined.
+> Relation to prior borrow rounds: earlier rounds borrowed [omx/omc's](borrow-from-omx-omc.md) **delivery loop** (relay receipts / quality gates / trace / ai-slop-cleaner) and its **research vein** (score keep-policy / research-mission / analyze); superpowers sits on a **third, orthogonal axis** those two never mined.
 
 ## 0. Background & core judgment
 

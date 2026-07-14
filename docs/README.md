@@ -21,4 +21,4 @@ Authoritative reference — the spec the implementation follows:
 
 Project policies (repo root): **[../STABILITY.md](../STABILITY.md)** (compatibility contract), **[../SECURITY.md](../SECURITY.md)** (vulnerability reporting), **[../CONTRIBUTING.md](../CONTRIBUTING.md)** (delivery process).
 
-See also **[examples/](examples/)** for working snippets and **[history/](history/)** for historical decision records, including the implemented borrowing notes for [`superpowers`](history/borrow-from-superpowers.md) and [`mattpocock/skills`](history/borrow-from-matt-pocock-skills.md).
+See also **[examples/](examples/)** for working snippets and **[history/](history/)** for historical decision records, including the implemented borrowing notes for [`omx/omc`](history/borrow-from-omx-omc.md), [`superpowers`](history/borrow-from-superpowers.md), and [`mattpocock/skills`](history/borrow-from-matt-pocock-skills.md).
