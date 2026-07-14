@@ -49,8 +49,11 @@ func TestAssetAuditCLI(t *testing.T) {
 	var out struct {
 		Schema string `json:"schema"`
 		Audit  []struct {
-			Name  string `json:"name"`
-			Label string `json:"label"`
+			Name                    string `json:"name"`
+			Label                   string `json:"label"`
+			DescriptionTokens       int    `json:"description_tokens"`
+			DescriptionBudgetTokens int    `json:"description_budget_tokens"`
+			BodyTokens              int    `json:"body_tokens"`
 		} `json:"audit"`
 	}
 	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
@@ -62,6 +65,12 @@ func TestAssetAuditCLI(t *testing.T) {
 	if out.Audit[0].Label != "ORPHAN" { // a lone unreferenced skill
 		t.Fatalf("demo label = %s, want ORPHAN", out.Audit[0].Label)
 	}
+	if out.Audit[0].BodyTokens != 2 { // "body\n" is 5 bytes under approx-b4/1
+		t.Fatalf("demo body_tokens = %d, want 2", out.Audit[0].BodyTokens)
+	}
+	if out.Audit[0].DescriptionTokens != 2 || out.Audit[0].DescriptionBudgetTokens != 80 {
+		t.Fatalf("demo description budget = %d/%d, want 2/80", out.Audit[0].DescriptionTokens, out.Audit[0].DescriptionBudgetTokens)
+	}
 
 	// text output is human-scannable and names the asset + label.
 	rc2 := newRootCmd()
@@ -72,8 +81,10 @@ func TestAssetAuditCLI(t *testing.T) {
 	if err := rc2.Execute(); err != nil {
 		t.Fatalf("asset audit text: %v\n%s", err, buf2.String())
 	}
-	if !bytes.Contains(buf2.Bytes(), []byte("demo")) || !bytes.Contains(buf2.Bytes(), []byte("ORPHAN")) {
-		t.Fatalf("text output missing demo/ORPHAN: %s", buf2.String())
+	if !bytes.Contains(buf2.Bytes(), []byte("demo")) || !bytes.Contains(buf2.Bytes(), []byte("ORPHAN")) ||
+		!bytes.Contains(buf2.Bytes(), []byte("resident=3")) || !bytes.Contains(buf2.Bytes(), []byte("desc=2  /80")) ||
+		!bytes.Contains(buf2.Bytes(), []byte("body=2")) {
+		t.Fatalf("text output missing demo/ORPHAN/context metrics: %s", buf2.String())
 	}
 }
 

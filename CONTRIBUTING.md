@@ -1,10 +1,34 @@
 # Contributing to oma
 
-oma is built through its own delivery process — the same `pair-delivery` workflow it ships. Every change is cross-reviewed by a second agent over the `oma relay` ledger before it lands.
+Every change must clear the repository's local and CI quality gates. `oma` also ships
+the `pair-delivery` workflow for changes that benefit from an independent second
+agent, but that workflow is optional rather than a prerequisite for contributing.
 
-## The delivery process
+## Choosing the delivery process
 
-A change moves through two non-skippable review gates:
+Use `pair-delivery` when the user requests cross-review or when an available
+independent reviewer materially improves confidence in a risky change. If no
+independent peer host is available, continue with a focused diff review and the
+normal verification gates; do not block ordinary local work or relabel same-host
+assistance as independent cross-host review.
+
+For that local fallback, review the final diff under four explicit headings:
+
+- **Spec compliance** — does the change satisfy the requested behavior and the
+  authoritative repository contract?
+- **Standards & quality** — does it follow repository conventions without introducing
+  avoidable complexity, regressions, or maintenance risk?
+- **Verification** — which focused and repository-wide checks ran, and what were their
+  observed results?
+- **Limitations** — what was not checked or remains uncertain?
+
+The on-demand `code-review` skill may perform this review-only pass over an existing
+diff when installed. Whether performed inline or through that skill, this is a
+self-review, not an independent review. Report it as local verification.
+Never describe same-host assistance as cross-reviewed or use it to satisfy a
+`pair-delivery` gate.
+
+When `pair-delivery` is selected, its two review gates remain part of that workflow:
 
 1. **Plan.** The implementing agent (the *lead*) writes a plan: scope, approach, acceptance criteria.
 2. **Gate 1 — plan review.** A second agent reviews the plan and returns a typed verdict. Only an `approve` clears the gate.
@@ -12,7 +36,11 @@ A change moves through two non-skippable review gates:
 4. **Gate 2 — code review.** The second agent reviews the actual diff and returns a verdict; the lead dispositions every finding (adopt / partially adopt / reject, with reasoning).
 5. **Decision.** When both sides agree, the lead publishes a decision and the binary stamps a completion receipt binding the approved plan, the non-lead `approve` review, and the reviewed head by content hash.
 
-In practice the lead is Claude and the reviewer is Codex, but the roles are configurable. The two gates are not optional. See the `pair-delivery` skill and [`docs/reference/workflows.md`](docs/reference/workflows.md) for gate semantics, and [`docs/reference/relay-v2-protocol.md`](docs/reference/relay-v2-protocol.md) for the ledger.
+The roles are configurable and agent-neutral. See the `pair-delivery` skill and
+[`docs/reference/workflows.md`](docs/reference/workflows.md) for gate semantics, and
+[`docs/reference/relay-v2-protocol.md`](docs/reference/relay-v2-protocol.md) for the
+ledger. Once a pair run is chosen, follow its gates rather than claiming a partial run
+was cross-reviewed.
 
 ## Spec-first
 
@@ -46,7 +74,7 @@ Beyond `go test`, CI enforces:
 
 - **`-race` + `govulncheck`** — the 3-platform test matrix runs under the race detector, and the module is scanned for known vulnerabilities;
 - **refcheck** — every `oma …` reference in a shipped skill resolves to a real command;
-- **`oma doctor budget`** — the resident-token footprint of the core skill set stays under threshold;
+- **context budgets** — `oma doctor budget --profile core4 --max-resident-tokens 400` keeps the core resident surface under the release ceiling, and the asset fixture rejects any active description over its manifest budget;
 - **conformance fixtures** — projected assets carry no host-unsupported references on their default path;
 - **security + relay protocol suites** — dry-run discloses but never writes, unmanaged targets are refused without `--force`, symlink escapes are rejected, and the relay protocol invariants hold.
 

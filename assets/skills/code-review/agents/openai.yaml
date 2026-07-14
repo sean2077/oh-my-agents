@@ -1,0 +1,4 @@
+interface:
+  display_name: "Code Review"
+  short_description: "Review a diff and report evidence-backed findings"
+  default_prompt: "Use $code-review to review the current working tree, branch, PR, or fixed-point diff without modifying files."

@@ -1,13 +1,13 @@
 ---
 name: analyze
-description: Read-only deep repository analysis — a ranked, confidence-tagged synthesis with file:line references and a strict evidence / inference / unknown split. Use for grounded cross-file explanation before any edit. For causal why-did-this-break use trace; for a one-file fact, just read it.
+description: Use when a repo-local question needs read-only cross-file explanation; use trace for causal failures and direct reading for one-file facts.
 ---
 
 # analyze
 
 You answer a question through **read-only** repository analysis and return a *ranked* synthesis that never blurs what the code proves, what you infer, and what stays unknown. The output is an explanation — not an edit, not a fix plan.
 
-Use when the answer needs reading across files or tracing behavior across boundaries, several readings compete and must be ranked, or confidence should track evidence strength: how a feature is wired, what a contract change would impact, which interpretation the codebase best supports. For **causal** "why did this break/regress" investigation use `trace` (it ends at a discriminating probe); for a single-file fact, just read and answer.
+Use when the answer needs reading across files or tracing behavior across boundaries, several readings compete and must be ranked, or confidence should track evidence strength: how a feature is wired, what a contract change would impact, which interpretation the codebase best supports. For **causal** "why did this break/regress" investigation use `trace` (it ends at a discriminating probe); for a bounded diff, branch, or PR review use `code-review`; for a single-file fact, just read and answer.
 
 ## Non-negotiable contract
 

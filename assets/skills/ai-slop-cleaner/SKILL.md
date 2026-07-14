@@ -1,6 +1,6 @@
 ---
 name: ai-slop-cleaner
-description: Regression-safe, deletion-first cleanup of AI code slop — lock behavior with tests, then remove duplication / dead code / needless abstraction / boundary leaks one pass at a time. Completion requires a green verifier (or a user-approved no-test rationale). Usable as ralph's deslop gate.
+description: Use when behaviorally correct code needs bounded simplification of AI-style duplication, dead code, needless abstraction, boundary leaks, or weak coverage without changing intended behavior.
 ---
 
 # ai-slop-cleaner
@@ -19,12 +19,14 @@ Clean AI-generated code slop — bloated, repetitive, weakly-tested, over-abstra
 - It's a new feature / product change, or a broad redesign.
 - A generic refactor with no simplification intent.
 - Behavior is too unclear to protect with tests or a concrete verification plan — clarify or `trace` first.
+- Simplification would require a new public seam, move ownership across modules, or change what callers must know — stop and hand it off as architecture work; this skill does not design that change.
 
 ## Posture
 
 - Preserve behavior unless the user explicitly asks to change it.
 - Lock behavior with focused regression tests FIRST; plan before editing; prefer deletion over addition.
 - Reuse existing utilities/patterns before adding any; no new dependencies unless asked.
+- Prefer simplifications that improve locality: future changes, bugs, and verification concentrate in fewer places without increasing what callers must know.
 - Keep diffs small, reversible, smell-focused; inspect → edit → verify → report.
 
 ## Workflow
@@ -34,7 +36,7 @@ Clean AI-generated code slop — bloated, repetitive, weakly-tested, over-abstra
 3. **Classify the slop:**
    - **Duplication** — repeated logic, copy-paste branches, redundant helpers.
    - **Dead code** — unused/unreachable code, stale flags, debug leftovers.
-   - **Needless abstraction** — pass-through wrappers, speculative indirection, single-use layers.
+   - **Needless abstraction** — pass-through wrappers, speculative indirection, single-use layers. Apply the deletion test: if removing the layer makes complexity disappear, delete it; if the complexity would spread back across several callers, the layer may be earning its keep.
    - **Boundary violations** — hidden coupling, misplaced responsibility, wrong-layer imports/side-effects.
    - **Missing tests** — unlocked behavior, weak coverage, edge-case gaps.
    - **Masking fallbacks** — catch-all/default branches that hide failures instead of surfacing them; grep for `quick hack` / `temporary workaround`, swallowed exceptions (bare `except:` / empty `catch {}`), silent default returns, `|| true` (distinguish from *grounded* compatibility fallbacks that are intentional and documented).
@@ -57,7 +59,8 @@ A reviewer pass after cleanup is drafted, preserving writer/reviewer separation 
 
 1. Don't edit. Review the cleanup plan, changed files, and regression coverage.
 2. Check for: leftover dead code / unused exports; duplication that should have merged; needless wrappers still blurring boundaries; missing or weak tests for preserved behavior; cleanup that changed behavior without intent.
-3. Produce a verdict + required follow-ups; hand changes back to a separate writer pass — never fix-and-approve in one step.
+3. Check whether preserved behavior can be tested through the same interface callers use; tests that must reach through internals are an architecture signal, not permission to redesign during cleanup.
+4. Produce a verdict + required follow-ups; hand changes back to a separate writer pass — never fix-and-approve in one step.
 
 ## Scope discipline
 

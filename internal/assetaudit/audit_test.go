@@ -79,6 +79,63 @@ func TestAuditLabels(t *testing.T) {
 	}
 }
 
+func TestAuditBodyTokensExcludeYAMLFrontmatter(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		eol       string
+		delimiter string
+	}{
+		{name: "lf", eol: "\n", delimiter: "---"},
+		{name: "crlf", eol: "\r\n", delimiter: "---"},
+		{name: "lf trailing spaces", eol: "\n", delimiter: "---  "},
+		{name: "crlf trailing tab", eol: "\r\n", delimiter: "---\t"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			writeSkill(t, root, "demo", "short", "", "", "placeholder")
+			path := filepath.Join(root, "skills", "demo", "SKILL.md")
+			raw := strings.Join([]string{tc.delimiter, "name: demo", "description: short", tc.delimiter, "abcdefgh"}, tc.eol)
+			if err := os.WriteFile(path, []byte(raw), 0o644); err != nil {
+				t.Fatal(err)
+			}
+
+			entries, err := Audit(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := find(entries, "demo").BodyTokens; got != 2 { // 8 UTF-8 bytes under approx-b4/1
+				t.Fatalf("body_tokens = %d, want 2", got)
+			}
+		})
+	}
+}
+
+func TestAuditDescriptionBudgetExcludesAssetName(t *testing.T) {
+	root := t.TempDir()
+	longName := "skill-" + strings.Repeat("x", 58) // 64 bytes; valid asset name
+	description := strings.Repeat("abcd", 70)      // exactly 70 tokens
+	writeSkill(t, root, longName, description, "", "", "body")
+	writeSkill(t, root, "referencer", "short", "", "", "use "+longName)
+
+	entries, err := Audit(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := find(entries, longName)
+	if e == nil {
+		t.Fatalf("%s missing from audit", longName)
+	}
+	if e.ResidentTokens <= 80 {
+		t.Fatalf("fixture resident_tokens = %d, want > 80", e.ResidentTokens)
+	}
+	if e.DescriptionTokens != 70 || e.DescriptionBudgetTokens != 80 {
+		t.Fatalf("description budget metrics = %d/%d, want 70/80", e.DescriptionTokens, e.DescriptionBudgetTokens)
+	}
+	if e.Label != LabelKeep {
+		t.Fatalf("label = %s, want KEEP: description itself is within its 80-token budget", e.Label)
+	}
+}
+
 func TestAuditRefExcludesSelfAndCountsCanonical(t *testing.T) {
 	root := t.TempDir()
 	// successor referenced only via an alias's canonical pointer.

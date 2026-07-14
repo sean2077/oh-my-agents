@@ -36,9 +36,10 @@ The stages:
 
 ## 1. Install and verify the CLI
 
-**Why:** every skill shells out to `oma` for the parts that must be counted,
-validated, or persisted. A skill invoked without the binary on `PATH` stops at
-its first command, so the binary comes first.
+**Why:** every core skill in this tutorial shells out to `oma` for the parts that
+must be counted, validated, or persisted. A skill that names an `oma` command
+stops at that command without the binary on `PATH`, so the binary comes first for
+this walkthrough. Commandless judgment-only assets do not invent a CLI dependency.
 
 Install the latest release into `~/.local/bin` (full options — pinning a tag,
 other destinations, source builds, Windows PowerShell — are in the README
@@ -93,13 +94,18 @@ only the resident surface (each skill's `name` + `description`, not the
 on-demand body):
 
 ```bash
-oma doctor budget --agent claude --profile core4
+oma doctor budget --agent claude --profile core4 --max-resident-tokens 400
 ```
 
-**Success looks like:** exit `0` — the core4 surface is well under the 2000-token
-CI threshold (internal target 1800; the budget model is
+**Success looks like:** exit `0` — the core4 surface is below the 400-token
+release ceiling (the budget model is
 [reference/adapter-conformance.md](reference/adapter-conformance.md) §5). Over
-the limit would exit `4`.
+the limit exits `4`.
+
+From a source checkout, `oma asset audit --from assets --json` also reports each
+skill's `body_tokens`, excluding YAML frontmatter and one-hop references. Use it
+to find progressive-disclosure opportunities; it is diagnostic rather than a
+hard body-size gate.
 
 Optionally run the full diagnostic sweep (install consistency, permission bits,
 command refcheck, security items, relay leftovers):

@@ -17,13 +17,14 @@ oma asset list [--installed] [--json]
 oma asset remove <name>... [--dry-run]
 oma asset rollback <name> [--to <backup-id>]
 oma asset catalog [--from <root>] [--json]      # catalog view generated from the manifest (status lifecycle)
-oma asset audit [--from <root>] [--json]        # advisory bloat audit: LOC/resident-tokens/ref-count + classification (KEEP/ORPHAN/OVERSIZED/RETIRE), never auto-deletes
+oma asset audit [--from <root>] [--json]        # advisory audit: LOC/resident/description-budget/body tokens/ref-count + classification, never auto-deletes
 ```
 
 - `install`: asset files → canonical location `~/.agents/{skills,agents,hooks}/<name>/` → platform projection into each agent directory per the manifest's `targets` (`symlink` on Unix-like hosts; `junction` for native-Windows directory assets when available, managed `copy` fallback/file assets otherwise). By default all targets are projected; `--agent` narrows them. Hook assets are canonical-only (placed only in the canonical location, never injected into host config; the user wires them by hand — see relay-v2-protocol.md §12.4). Source resolution: exactly one of `--from <root>` (a local checkout's `assets/`) or `--ref <tag>` (the pinned release's `assets-<tag>.tar.gz`, fetched over https and verified against that release's `checksums.txt`), else default = the running binary's own version, so a clean machine installs the version-matched bundle and never an unpinned ref; a `dev` build with neither flag fails closed (`ExitState`). Remote `--dry-run` still downloads, checksum-verifies, safely extracts, validates every requested asset, and then reports the engine's exact dry-run paths while leaving no persistent writes.
 - Overwrite semantics: target already exists and is not oma-managed → refuse; `--force` backs up first, then overwrites (see security-contract.md §2).
 - `rollback`: restores from `~/.config/oma/backups/`; when `--to` is omitted, the most recent backup is used.
 - `catalog`: scans `<root>/{skills,agents,hooks,prompts}/*/manifest.json` to produce a name-sorted catalog (name/type/status/targets/canonical), defaulting to `--from ./assets`; it shares its source with install/registry and introduces no second source of truth; a duplicate name, or a name that disagrees with its directory, is fail-closed. A manifest may optionally carry `status(active|deprecated|merged|alias)` plus `canonical`.
+- `audit`: adds deterministic `resident_tokens`, `description_tokens`, `description_budget_tokens`, `body_tokens`, LOC, reference count, and lifecycle labels to that catalog view. For a skill, `body_tokens` measures `SKILL.md` after its YAML frontmatter and excludes separate one-hop references. Labels remain advisory and never delete; the release fixture separately rejects active descriptions over their manifest budget.
 
 ## 3. `oma state` — general project-level state
 
@@ -48,7 +49,7 @@ oma state check-worktree <namespace> [--allow-worktree-change]
 
 ```
 oma doctor [--json]
-oma doctor budget --agent claude --profile core4 --max-resident-tokens 2000 [--json]
+oma doctor budget --agent claude --profile core4 --max-resident-tokens 400 [--json]
 oma doctor state --migrate-session-scope [--apply]
 oma doctor relay [--restore <slug>] [--clean-stale] [--migrate] [--apply]
 ```

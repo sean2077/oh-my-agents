@@ -10,7 +10,7 @@ The trigger for this project was a concrete pain point in oh-my-claudecode (OMC)
 
 `oma` is the opposite bet:
 
-- **You decide what is installed.** Skills are explicit assets you install and remove. Nothing is resident unless you put it there. The four core skills together cost **~275 tokens** of resident surface (name + description), versus OMC's 15-20k, about 2%, and every asset is independently installable.
+- **You decide what is installed.** Skills are explicit assets you install and remove. Nothing is resident unless you put it there. The four core skills currently cost **169 tokens** of resident surface (name + description), versus OMC's 15-20k, about 1%; the release ceiling is 400 and every asset is independently installable.
 - **Mechanical logic belongs in a binary, not a prompt.** Sequence numbers, ambiguity math, threshold gates, stall detection, atomic file writes, and integrity checks are deterministic. They live in `oma`, where they are testable and fail-closed, not re-derived by the model each turn.
 - **Skills stay agent-neutral.** A skill's default path is plain `oma` commands plus markdown, so Claude Code and Codex follow the *same* contract. Host-only accelerations (Claude Code's structured option picker, subagents, plan mode) are clearly-marked optional branches, never the default.
 - **One asset model, two agents.** Assets live in canonical `~/.agents/` and are projected into both `~/.claude/` and `~/.codex/` (symlink on Unix-like hosts; directory junction for skills on native Windows, with managed copy fallback). Install once, available to both. (Hook assets are placed canonically only — oma never writes your host config; you wire hooks into `settings.json`/`hooks.json` by hand, see [`docs/reference/relay-v2-protocol.md`](docs/reference/relay-v2-protocol.md) §12.4.)
@@ -35,14 +35,38 @@ On-demand skills (install only when a task needs them — zero resident cost oth
 | **trace** | Adversarial root-cause investigation: competing hypotheses, evidence-strength ranking, self-falsification, ending at the single highest-value discriminating probe. |
 | **analyze** | Read-only deep repository analysis: a ranked, confidence-tagged synthesis with `file:line` evidence and a strict evidence / inference / unknown split. |
 | **best-practice-research** | Bounded external best-practice research with official/upstream sourcing, version/date context, and a terminal read-only handoff. |
+| **code-review** | Read-only review of an existing diff under Spec compliance and Standards & quality, with `file:line` findings, verification, and limitations; never pair evidence. |
+| **prototype** | Build one runnable, disposable artifact to answer one material design question before production work. |
 | **research-mission** | Scaffold a falsifiable research/optimization mission (deterministic evaluator contract + candidate ledger) and drive it with ralph's `score_improvement` keep-policy. |
 | **ai-slop-cleaner** | Regression-safe, deletion-first cleanup of AI code slop, gated by a green verifier. |
 | **ultraqa** | Adversarial end-to-end QA as a ralph profile (hostile-scenario matrix). |
-| **skillify** | Capture a repeatable workflow into a new oma skill, gated by a 3-question quality test. |
+| **skillify** | Capture a repeatable workflow into a new oma skill, gated by a four-part quality test. |
 
-The full installed catalog (with lifecycle status) is `oma asset catalog`; `oma asset audit` flags catalog bloat (orphan / oversized / retire) as advisory-only signals.
+The full installed catalog (with lifecycle status) is `oma asset catalog`. `oma asset audit` reports resident, description/budget, and loaded-body token estimates alongside advisory lifecycle labels; release tests separately fail when an active description exceeds its manifest budget.
 
-> **The skills require the `oma` CLI.** They are deliberately *not* standalone prompts: every mechanical step (state, scoring gates, sequence-numbered ledger operations) shells out to `oma`, and a skill invoked without the binary on `PATH` stops at its first command. Install the CLI first, then the skills. By the same principle, skill bodies carry only the core workflow — installation and platform guidance live here in the README, never in a `SKILL.md`.
+### Which workflow?
+
+This is a documentation router, not another skill. Start from the outcome you need:
+
+| Need | Use |
+|---|---|
+| Turn a vague idea into an approved, durable specification | **deep-interview** |
+| Drive a sufficiently concrete task end to end | **autopilot** |
+| Iterate against a verifier until the stop judgment passes | **ralph** |
+| Obtain independent cross-agent review when it is useful and available | **pair-delivery** |
+| Explain why a bug, regression, or surprising result happened | **trace** |
+| Explain a repository-wide design or behavior from local evidence | **analyze** |
+| Review a bounded existing diff without editing it | **code-review** |
+| Resolve current external or version-sensitive guidance | **best-practice-research** |
+| Answer a material design question with a runnable throwaway artifact | **prototype** |
+| Improve a measurable baseline under a deterministic evaluator | **research-mission** |
+| Remove duplication or needless abstraction while preserving behavior | **ai-slop-cleaner** |
+| Harden a feature against hostile and boundary scenarios | **ultraqa** |
+| Turn a repeated workflow into a reusable OMA skill | **skillify** |
+
+Optional handoffs are best-effort; when absent, the parent workflow continues.
+
+> **Install the `oma` CLI for mechanical workflows.** Every counted, validated, or persisted step (state, scoring gates, sequence-numbered ledger operations) shells out to `oma`, and a skill that names an `oma` command stops at that command without the binary on `PATH`. Judgment-only on-demand skills with no CLI command — such as `analyze`, `code-review`, and `prototype` — can run without it. By the same principle, skill bodies carry only the core workflow; installation and platform guidance live here in the README, never in a `SKILL.md`.
 
 ## Install the CLI
 
@@ -95,7 +119,7 @@ Once releases are published, `oma self-update` updates the binary in place from 
 
 ## Install the skills
 
-**Prerequisite: the `oma` CLI must be installed and on `PATH`** (see above) — the skills drive it for every mechanical step and do not work without it.
+**Prerequisite for core4 and any skill that names an `oma` command:** install the CLI on `PATH` first. Commandless judgment-only skills can instead be installed directly through `npx skills`; using `oma asset install` itself naturally requires the CLI.
 
 ```bash
 # Clean machine: fetch the assets bundle matching your installed oma version
@@ -105,6 +129,9 @@ oma asset install deep-interview ralph autopilot pair-delivery
 # Pin an explicit release, or install from a checkout of this repository:
 oma asset install --ref v1.0.0 deep-interview ralph autopilot pair-delivery
 ./oma asset install --from assets deep-interview ralph autopilot pair-delivery
+
+# Add on-demand lanes only when a task needs them:
+oma asset install trace prototype code-review
 
 # Or directly through the npx skills installer (skills only; not oma-managed)
 npx skills add sean2077/oh-my-agents -g --agent claude-code codex
@@ -189,7 +216,7 @@ the final event name.
 oma asset list --installed
 
 # Check the resident-context budget gate
-oma doctor budget --agent claude --profile core4
+oma doctor budget --agent claude --profile core4 --max-resident-tokens 400
 ```
 
 For a full walkthrough — install → deep-interview → autopilot → ralph → pair-delivery → failure/resume → upgrade, migrate, and cleanup — see **[docs/tutorial.md](docs/tutorial.md)**.
@@ -198,7 +225,7 @@ For a full walkthrough — install → deep-interview → autopilot → ralph �
 
 `oma` is organized into a few command groups (full reference: [`docs/reference/command-tree.md`](docs/reference/command-tree.md)):
 
-- **`oma asset`**: install / list / remove / rollback assets; canonical placement plus per-agent projection. `catalog` derives a status-lifecycle view from manifests; `audit` flags catalog bloat (orphan / oversized / retire), advisory-only.
+- **`oma asset`**: install / list / remove / rollback assets; canonical placement plus per-agent projection. `catalog` derives a status-lifecycle view from manifests; `audit` reports resident, description/budget, and body token estimates plus advisory lifecycle labels (orphan / oversized / retire).
 - **`oma doctor`**: installation diagnostics and the resident-token budget gate.
 - **`oma interview`**: the solidified surface of deep-interview: scoring math, threshold gate, and state. Math in the CLI; judgment in the agent.
 - **`oma ralph`**: the solidified surface of the loop: round counting, stall detection (`pass_only`) or score-plateau detection (`score_improvement`), terminal-state judgment with a falsifiable receipt. `oma` never runs your verifier.
@@ -238,13 +265,15 @@ go vet ./...
 
 CI runs the 3-platform test matrix with `-race`, `gofmt`/`vet`/`build`, `golangci-lint`, and `govulncheck` on every push and PR. Releases call the **same** pipeline as a hard gate, then promote the exact built-and-verified artifacts (no rebuild) with a checksums manifest, a strict SemVer tag gate, prerelease/latest classification checks, a build-provenance attestation, and an SBOM. The compatibility contract is [`STABILITY.md`](STABILITY.md).
 
-This project is itself built through its own `pair-delivery` workflow: every slice is cross-reviewed by a second agent over the `oma relay` ledger before it lands. The skill that describes that process is the one we used to build it.
+This project dogfoods `pair-delivery` when independent cross-agent review is useful
+and available. It is not a contribution prerequisite: local work may proceed through
+the normal verification gates when no independent peer host is available.
 
 ## Project policies
 
 - **[STABILITY.md](STABILITY.md)** — what is frozen across releases (the compatibility contract).
 - **[SECURITY.md](SECURITY.md)** — supported versions and private vulnerability reporting.
-- **[CONTRIBUTING.md](CONTRIBUTING.md)** — the cross-reviewed delivery process oma is built with.
+- **[CONTRIBUTING.md](CONTRIBUTING.md)** — contribution gates and the optional paired-review workflow.
 
 ## License
 

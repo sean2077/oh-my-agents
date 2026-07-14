@@ -1,6 +1,6 @@
 ---
 name: deep-interview
-description: Socratic requirements crystallization with deterministic ambiguity gating via oma interview. Use when an idea is vague and needs thorough clarification before any implementation — user says deep interview, interview me, ask me everything, don't assume, 我有个模糊的想法. Output is a spec file, never direct implementation.
+description: Use when an idea is vague and needs thorough clarification before implementation, or the user asks to be interviewed without unstated assumptions.
 ---
 
 # deep-interview
@@ -58,16 +58,19 @@ Repeat until the gate passes or the user exits:
 
 - A **discoverable fact** (readable from the code, config, docs, or git history): find it YOURSELF and record it in the round's `answer` labelled `[from-code][auto-confirmed]` (or `[from-research]` for web/doc sources), then score the now-clarified dimensions. Do NOT spend a user turn on it. If a wrong guess would be costly, ask a one-line confirmation labelled `[from-code]` instead of assuming.
 - A **decision-bearing judgment** (scope, priorities, trade-offs, acceptance bars — only the user can choose): ask the user, labelled `[from-user]`.
+- An **experiential uncertainty** (the answer requires running or experiencing the design): when it could change a CRITICAL axis and inspection or conversation cannot settle it, offer available `$prototype` as a bounded handoff. If accepted, pause and resume with `[from-prototype] Question: ...; entry point: ...; observations: ...; verdict: ...`; if unavailable or declined, stay in the interview and use `[from-user]` or a stated conservative default.
 
 Never ask the user for something you can read. **Cadence guard**: after 2 consecutive rounds resolved without a `[from-user]` decision, the next question MUST be `[from-user]` — an interview that only auto-confirms facts has stopped engaging the person who owns the decisions.
 
-**Research fan-out before the first user question** — for any non-trivial idea, before spending the first `[from-user]` turn, fan out bounded research lanes in parallel (repo facts via read/grep or `analyze`; external / version-aware practice via `best-practice-research`) and prefill every dimension those lanes settle, labelled `[from-code]` / `[from-research]`. Ask the user only what research cannot resolve — gather first, ask last.
+**Research only decision-bearing gaps** — before the first `[from-user]` turn, run a bounded repo or external research lane only when its answer could change a CRITICAL axis or eliminate that user-owned question. Record useful results as `[from-code]` / `[from-research]`; leave non-decision-bearing background out of the interview.
 
 **CRITICAL-axis filter** — emit a `[from-user]` question only when the answer would make the plan diverge on one of five CRITICAL axes: **scope boundary · acceptance criterion · rollback contract · lane assignment · handoff target**. If a gap moves none of them, do not spend a user turn: take the conservative default and record it in the round `answer` as `Default: <value>; revisit if <trigger>`, then score. When unsure whether two readings yield structurally different plans, default to absorbing with a stated default. (The cadence guard still wins: when it forces a `[from-user]` round, ask the user to confirm the default nearest a CRITICAL axis rather than open a low-value question.)
 
+**Answer choices** — give each `[from-user]` question 2–4 concrete choices plus free text. Mark exactly one `Recommended` only when inspected evidence favors it, citing that evidence in one sentence; otherwise state `No reliable default` and present the choices neutrally. The user's answer — not the recommendation — is the decision.
+
 1. **Target** what the LAST score report named `weakest` (component × dimension). State in one sentence why that pair is the bottleneck, then ask ONE question aimed at it. Question styles: goal → "what exactly happens when…?"; constraints → "what are the boundaries / non-goals?"; criteria → "what test would prove it works?"; context (brownfield) → cite the repo evidence you found and ask whether to extend or diverge; if a user term conflicts with repo/doc wording, name both and ask which governs.
 2. **Score** the answer against the rubric below: every ACTIVE component × every dimension for the interview type, each in [0,1], one justifying sentence per score before you write the number. This is a contract, not a suggestion — the CLI rejects a missing component, a missing dimension, an unknown dimension, and any value outside [0,1].
-3. **Extract ontology**: list the entities discussed so far (name, type, fields, relationships), reusing previous names for unchanged concepts so the stability ratio means something.
+3. **Extract and retain**: list the entities discussed so far (name, type, fields, relationships), reusing previous names for unchanged concepts. Preserve the answer's provenance label; when a term or CRITICAL-axis choice stabilizes, append `Term: <canonical term> = <one-line meaning>` or `Decision: <choice>; why: <user rationale or inspected evidence>; owner: <who>; revisit if: <trigger>` to the round answer. Carry these records into the spec; never write glossary or ADR files during the interview.
 4. **Submit**:
 
    ```
@@ -108,7 +111,7 @@ oma interview gate --json
 
 Exit 0 = ambiguity ≤ threshold: write the spec file (goal / constraints / non-goals / acceptance criteria / topology with per-component clarity / ontology / open assumptions resolved), mark it `pending approval`, then record it and close out:
 
-**Mandatory content gate (independent of the score)**: even at ambiguity ≤ threshold, do NOT crystallize until the spec carries an explicit, non-empty **Non-goals** section AND an explicit **Decision Boundaries** section (which choices are locked, which stay open, and who owns each). If either is missing, the numeric gate is not enough — ask the targeted `[from-user]` questions to fill them first. A clean ambiguity number with no stated non-goals or boundaries is a false green. And do not crystallize until at least one earlier answer has been through a pressure pass — revisited with a deeper assumption/tradeoff follow-up — so the spec does not rest on unchallenged first answers.
+**Mandatory content gate (independent of the score)**: even at ambiguity ≤ threshold, do NOT crystallize until the spec carries an explicit, non-empty **Non-goals** section AND an explicit **Decision Boundaries** section (locked choices with rationale or evidence, owner, and revisit trigger; open choices with owner and decision trigger). If either is missing, the numeric gate is not enough — ask the targeted `[from-user]` questions to fill them first. A clean ambiguity number with no stated non-goals or boundaries is a false green. And do not crystallize until at least one earlier answer has been through a pressure pass — revisited with a deeper assumption/tradeoff follow-up — so the spec does not rest on unchallenged first answers.
 
 The spec file follows this shape (your judgment fills it; the structure is fixed):
 
@@ -123,17 +126,19 @@ The spec file follows this shape (your judgment fills it; the structure is fixed
 
 ## Constraints
 ## Non-goals            # mandatory, non-empty (content gate)
-## Decision Boundaries  # mandatory: locked vs open choices + who owns each
+## Decision Boundaries  # mandatory: locked/open choices + why/evidence + owner + revisit/decision trigger
 
 ## Acceptance Criteria
 - [ ] <concrete, testable bar>
 
 ## Ontology
-<entities + relationships at convergence>
+<canonical terms + one-line meanings; entities + relationships at convergence>
 
 ## Open Assumptions
 <resolved defaults: "Default: X; revisit if Y">
 ```
+
+Keep the crystallized spec durable: record behavior, public interfaces, acceptance criteria, non-goals, and decisions that survive implementation. Task-specific prototype entry points, run commands, and other execution details stay in the evidence record or downstream implementation plan unless they are themselves part of the public contract.
 
 ```
 oma interview crystallize --spec <path-to-spec>
@@ -141,6 +146,8 @@ oma interview complete
 ```
 
 `complete` only after the user approves the spec. Exit 4 = not there yet: the JSON carries the gap and the weakest target — continue the loop.
+
+After approval, you may offer a separate docs handoff. If the user accepts, pass the relevant `Term:` / `Decision:` records and approved spec path to `domain-modeling` when available, or another user-chosen docs workflow. Never invoke it automatically; interview completion does not depend on it.
 
 **Early exit** (user wants to stop above threshold): require their explicit confirmation, then `oma interview gate --waive --reason "<their words>"` — the waiver is recorded in the state file as a warning — and crystallize with the gaps listed prominently in the spec. **Abandon** entirely: `oma interview abort`.
 
@@ -153,4 +160,4 @@ oma interview complete
 5. The interview ends in a spec file, never in implementation.
 6. **Input-lock**: while the interview is active, never treat "yes" / "ok" / "proceed" / "looks good" / "go ahead" as approval to skip questions, jump the gate, or start implementing. The only exits are a passed gate, an explicit `--waive` the user confirmed, or `abort`. A casual affirmation answers the current question — it is not consent to end the interview.
 
-> **CC acceleration (optional, Claude Code only)**: questions may be presented through the structured option picker (AskUserQuestion) with 2–4 contextual options plus free text, and brownfield evidence may come from a parallel Explore subagent. Codex and other hosts ask the same questions as plain text and inspect the repo inline — the scores contract and the ledger of state are identical either way.
+> **CC acceleration (optional, Claude Code only)**: questions may use the structured option picker (AskUserQuestion), and brownfield evidence may come from a parallel Explore subagent. Codex and other hosts present the same choices as plain text and inspect the repo inline — the scores contract and the ledger of state are identical either way.

@@ -1,8 +1,10 @@
 package cli
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -11,9 +13,15 @@ import (
 	"time"
 
 	"github.com/sean2077/oh-my-agents/internal/asset"
+	"github.com/sean2077/oh-my-agents/internal/assetaudit"
 	"github.com/sean2077/oh-my-agents/internal/budget"
 	"github.com/sean2077/oh-my-agents/internal/checks"
 	"go.yaml.in/yaml/v3"
+)
+
+const (
+	shippedCore4Budget            = 400
+	defaultSkillDescriptionBudget = 80
 )
 
 // TestRealAssetsPassReleaseGates is the Phase C release-blocking gate
@@ -28,6 +36,7 @@ func TestRealAssetsPassReleaseGates(t *testing.T) {
 		t.Skipf("no shipped assets yet: %v", err)
 	}
 	assertNpxSkillGroupingManifest(t, repoAssets, entries)
+	assertTriggerEvalCoversActiveSkills(t, repoAssets, entries)
 
 	home := t.TempDir()
 	eng := asset.NewEngine(home)
@@ -44,6 +53,9 @@ func TestRealAssetsPassReleaseGates(t *testing.T) {
 		m, err := asset.LoadManifest(filepath.Join(src, "manifest.json"))
 		if err != nil {
 			t.Fatalf("manifest %s: %v", ent.Name(), err)
+		}
+		if err := shippedSkillDescriptionViolation(filepath.Join(src, "SKILL.md"), m); err != nil {
+			t.Errorf("skill %s description gate: %v", ent.Name(), err)
 		}
 		// Core workflow skills must stay dual-agent (adapter-conformance
 		// §3); an accidental single-target drop fails the release gate
@@ -89,12 +101,12 @@ func TestRealAssetsPassReleaseGates(t *testing.T) {
 
 	// core4 resident budget (missing members are fine pre-completion;
 	// installed ones must measure and stay inside the gate).
-	rep, err := budget.Measure(eng, "claude", "core4", 2000)
+	rep, err := budget.Measure(eng, "claude", "core4", shippedCore4Budget)
 	if err != nil {
 		t.Fatalf("budget: %v", err)
 	}
-	if rep.Total > 2000 {
-		t.Fatalf("core4 resident budget %d > 2000", rep.Total)
+	if rep.Total > shippedCore4Budget {
+		t.Fatalf("core4 resident budget %d > %d", rep.Total, shippedCore4Budget)
 	}
 	// Phase C complete: every core4 member ships — a missing one is a
 	// release blocker, not a pre-completion note (review 074).
@@ -102,6 +114,151 @@ func TestRealAssetsPassReleaseGates(t *testing.T) {
 		t.Fatalf("core4 members missing from assets/: %v", rep.Missing)
 	}
 	t.Logf("core4 resident budget: %d tokens, all members present", rep.Total)
+}
+
+func assertTriggerEvalCoversActiveSkills(t *testing.T, repoAssets string, entries []os.DirEntry) {
+	t.Helper()
+
+	path := filepath.Join(repoAssets, "..", "..", "eval", "cases", "triggering.jsonl")
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatalf("open triggering eval fixture: %v", err)
+	}
+	defer func() { _ = f.Close() }()
+
+	type triggerCase struct {
+		ID       string `json:"id"`
+		Expected string `json:"expected"`
+	}
+	covered := map[string]bool{}
+	ids := map[string]bool{}
+	hasDecoy := false
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		var c triggerCase
+		if err := json.Unmarshal(scanner.Bytes(), &c); err != nil {
+			t.Fatalf("parse triggering eval fixture: %v", err)
+		}
+		if strings.TrimSpace(c.ID) == "" || ids[c.ID] {
+			t.Fatalf("triggering eval case id must be non-empty and unique: %q", c.ID)
+		}
+		ids[c.ID] = true
+		if c.Expected == "none" {
+			hasDecoy = true
+		} else {
+			covered[c.Expected] = true
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatalf("read triggering eval fixture: %v", err)
+	}
+	if !hasDecoy {
+		t.Fatal("triggering eval must retain at least one none decoy")
+	}
+
+	for _, ent := range entries {
+		if !ent.IsDir() {
+			continue
+		}
+		m, err := asset.LoadManifest(filepath.Join(repoAssets, ent.Name(), "manifest.json"))
+		if err != nil {
+			t.Fatalf("manifest %s while checking eval coverage: %v", ent.Name(), err)
+		}
+		if m.StatusOrDefault() == asset.StatusActive && !covered[m.Name] {
+			t.Errorf("active skill %s has no expected case in eval/cases/triggering.jsonl", m.Name)
+		}
+	}
+}
+
+// shippedSkillDescriptionViolation is deliberately independent of the audit's
+// single advisory label. An oversized active skill remains a release violation
+// even when ORPHAN wins the audit label precedence.
+func shippedSkillDescriptionViolation(skillPath string, m *asset.Manifest) error {
+	if m.StatusOrDefault() != asset.StatusActive {
+		return nil
+	}
+	fm, err := budget.ReadFrontmatterFile(skillPath)
+	if err != nil {
+		return err
+	}
+	description := fm["description"]
+	if !strings.HasPrefix(description, "Use when ") {
+		return fmt.Errorf("must begin exactly %q", "Use when ")
+	}
+	maxTokens := m.DescriptionBudgetTokens
+	if maxTokens <= 0 {
+		maxTokens = defaultSkillDescriptionBudget
+	}
+	if tokens := budget.Tokens(description); tokens > maxTokens {
+		return fmt.Errorf("description is %d tokens, exceeds manifest budget %d", tokens, maxTokens)
+	}
+	return nil
+}
+
+func TestShippedSkillDescriptionGate(t *testing.T) {
+	write := func(t *testing.T, description string) string {
+		t.Helper()
+		path := filepath.Join(t.TempDir(), "SKILL.md")
+		text := "---\nname: demo\ndescription: " + description + "\n---\nbody\n"
+		if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+
+	t.Run("accepts when-first description", func(t *testing.T) {
+		m := &asset.Manifest{Status: asset.StatusActive, DescriptionBudgetTokens: 80}
+		if err := shippedSkillDescriptionViolation(write(t, "Use when a focused workflow is needed."), m); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("rejects non-trigger lead", func(t *testing.T) {
+		m := &asset.Manifest{Status: asset.StatusActive, DescriptionBudgetTokens: 80}
+		err := shippedSkillDescriptionViolation(write(t, "Build a workflow when requested."), m)
+		if err == nil || !strings.Contains(err.Error(), `must begin exactly "Use when "`) {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("inactive skill is outside release gate", func(t *testing.T) {
+		m := &asset.Manifest{Status: asset.StatusDeprecated, DescriptionBudgetTokens: 1}
+		if err := shippedSkillDescriptionViolation(write(t, "not a trigger and far over budget"), m); err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
+func TestShippedDescriptionGateRejectsOversizedOrphan(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "skills", "orphan")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	manifest := []byte(`{"schema":"oma-asset/1","name":"orphan","type":"skill","targets":["claude","codex"],"description_budget_tokens":80}`)
+	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), manifest, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	description := "Use when " + strings.Repeat("x", 400)
+	skillPath := filepath.Join(dir, "SKILL.md")
+	if err := os.WriteFile(skillPath, []byte("---\nname: orphan\ndescription: "+description+"\n---\nbody\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	audit, err := assetaudit.Audit(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(audit) != 1 || audit[0].Label != assetaudit.LabelOrphan {
+		t.Fatalf("audit = %+v, want one ORPHAN", audit)
+	}
+	m, err := asset.LoadManifest(filepath.Join(dir, "manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := shippedSkillDescriptionViolation(skillPath, m); err == nil || !strings.Contains(err.Error(), "exceeds manifest budget") {
+		t.Fatalf("oversized orphan must fail release description gate, got %v", err)
+	}
 }
 
 func assertNpxSkillGroupingManifest(t *testing.T, repoAssets string, entries []os.DirEntry) {

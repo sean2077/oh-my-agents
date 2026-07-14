@@ -1,6 +1,6 @@
 ---
 name: research-mission
-description: Scaffold a falsifiable research/optimization mission (mission spec + deterministic evaluator contract + candidate ledger) and drive it with ralph's score_improvement keep-policy. Use to beat a baseline score or pass an evaluator under budget — optimize a benchmark, tune params, search for a better solution — not a one-shot fix.
+description: Use when an open-ended optimization task must beat a baseline score or pass a deterministic evaluator under a fixed budget; use ralph for a single pass/fail verifier.
 ---
 
 # research-mission

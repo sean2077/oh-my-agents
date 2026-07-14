@@ -1,6 +1,6 @@
 ---
 name: best-practice-research
-description: Bounded external best-practice research — official / upstream / standards evidence with source URLs and version/date context, returned as a cited recommendation, then hand off. Terminal, read-only, never implements. Use when a decision needs current external or version-aware guidance; for repo-local facts use analyze.
+description: Use when a decision depends on current external, version-aware guidance from official, upstream, or standards sources; use analyze for repo-local facts.
 ---
 
 # best-practice-research
@@ -27,7 +27,7 @@ This skill gathers evidence and produces a cited recommendation + handoff, then 
 1. Classify the question: conceptual best practice / implementation guidance / migration-version / standards-compliance / mixed local+external.
 2. Gather repo-local context first (read/grep, or `analyze`) when local usage or constraints shape the answer.
 3. Gather external evidence — agent-neutral: use whatever your host provides (web search, official docs, or an MCP docs server such as context7).
-4. Synthesize with source quality, version/date context, caveats, and a handoff.
+4. Synthesize with source quality, version/date context, caveats, and a handoff. Decide whether the finding should outlive this task: name an artifact-ready persistence handoff with a refresh trigger, or say `no persistence warranted`.
 5. Stop when the answer is grounded enough for the caller; otherwise report the exact blocker.
 
 ## Output contract
@@ -50,6 +50,9 @@ This skill gathers evidence and produces a cited recommendation + handoff, then 
 
 ### Boundaries / Non-goals
 <what this research does not decide>
+
+### Persistence Handoff
+<"no persistence warranted", or suggested path under the repo's existing docs convention · `current guidance` or `dated snapshot` · refresh trigger · the user-authorized docs workflow that may write it; this research skill never writes the file>
 
 ### Handoff
 <planning → `deep-interview` / `pair-delivery` plan; execution → `ralph` / `research-mission` / `autopilot`; note this skill stops here unless the user switches workflow>

@@ -14,7 +14,7 @@ An LLM attends over its **entire context** every turn. Tokens that are resident 
 
 ### 1.2 Cost (the secondary reason)
 
-Resident tokens are also a tax paid on **every single turn**. OMC keeps ~40 skills permanently in context (~15–20k tokens, with no per-skill disable); oma's core4 together cost ≈275 tokens (about 2%), and everything else is installed on demand — zero when not installed.
+Resident tokens are also a tax paid on **every single turn**. OMC keeps ~40 skills permanently in context (~15–20k tokens, with no per-skill disable); oma's core4 currently cost 169 tokens (about 1%, under a 400-token release ceiling), and everything else is installed on demand — zero when not installed.
 
 Both legs point the same way: **the default state of the system should be empty.** You pay — in money and in attention — only for what you explicitly install, and ideally only for what the current task actually needs.
 
@@ -38,7 +38,7 @@ Two payoffs:
 
 ### 3.1 A minimal, on-demand resident footprint
 
-Don't make anything resident if it doesn't have to be; an on-demand skill costs **zero** when not installed. `oma doctor budget` turns "resident footprint" into a **measured number** rather than a feeling — the enforcement gate for this principle. The target isn't merely "few skills," but "exactly the skills relevant to the current task": **relevance** is the real quantity to minimize.
+Don't make anything resident if it doesn't have to be; an on-demand skill costs **zero** when not installed. `oma doctor budget` turns "resident footprint" into a **measured number** rather than a feeling — the enforcement gate for this principle. `oma asset audit` also exposes loaded body size so authors can move rare branches behind one-hop references without pretending every long workflow needs an arbitrary hard limit. The target isn't merely "few skills," but "exactly the skills relevant to the current task": **relevance** is the real quantity to minimize.
 
 ### 3.2 Agent-neutral by default; host acceleration is an optional branch
 
@@ -56,7 +56,9 @@ Fail-closed only earns its keep if every refusal is *actionable*. A fail-closed 
 
 ## 4. How the philosophy stays honest
 
-- **Self-hosting**: oma is built with its own `pair-delivery` (Claude drafts + implements, Codex double-gates the review — the two gates are not skippable).
+- **Self-hosting without coupling**: oma dogfoods `pair-delivery` when an independent
+  peer is available and useful, but peer availability is not a contribution gate;
+  focused local verification remains sufficient for ordinary local work.
 - **Spec-first**: `docs/` is authoritative; the code follows it, not the reverse.
 - **The budget gate**: `oma doctor budget` makes resident footprint a number that is guarded, not a slogan.
 

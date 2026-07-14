@@ -7,6 +7,7 @@
 package assetaudit
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -19,7 +20,7 @@ import (
 const (
 	LabelKeep      = "KEEP"      // active, referenced, within budget
 	LabelOrphan    = "ORPHAN"    // active but no other asset references it
-	LabelOversized = "OVERSIZED" // active but resident frontmatter exceeds its budget
+	LabelOversized = "OVERSIZED" // active but description exceeds its manifest budget
 	LabelRetire    = "RETIRE"    // deprecated / merged / alias — slated for removal
 )
 
@@ -30,14 +31,17 @@ const defaultDescriptionBudget = 80
 // from asset.CatalogEntry so `oma asset catalog`'s generated view keeps its
 // stable contract (codex gate-1 change #2).
 type AuditEntry struct {
-	Name           string `json:"name"`
-	Type           string `json:"type"`
-	Status         string `json:"status"`
-	LOC            int    `json:"loc"`
-	ResidentTokens int    `json:"resident_tokens"`
-	RefCount       int    `json:"ref_count"`
-	Label          string `json:"label"`
-	Reason         string `json:"reason"`
+	Name                    string `json:"name"`
+	Type                    string `json:"type"`
+	Status                  string `json:"status"`
+	LOC                     int    `json:"loc"`
+	ResidentTokens          int    `json:"resident_tokens"`
+	DescriptionTokens       int    `json:"description_tokens"`
+	DescriptionBudgetTokens int    `json:"description_budget_tokens"`
+	BodyTokens              int    `json:"body_tokens"`
+	RefCount                int    `json:"ref_count"`
+	Label                   string `json:"label"`
+	Reason                  string `json:"reason"`
 }
 
 // Audit scans a source root and returns the name-sorted advisory audit. It
@@ -53,13 +57,16 @@ func Audit(root string) ([]AuditEntry, error) {
 		e := cat[i]
 		main := mainFilePath(root, e.Type, e.Name)
 		loc := countLines(main)
-		tokens := residentTokens(root, e.Type, e.Name)
+		resident := residentTokens(root, e.Type, e.Name)
+		description := descriptionTokens(root, e.Type, e.Name)
+		body := bodyTokens(root, e.Type, e.Name)
 		budgetTok := manifestBudget(root, e.Type, e.Name)
 		refs := refCount(root, cat, e.Name)
-		label, reason := classify(e, tokens, refs, budgetTok)
+		label, reason := classify(e, description, refs, budgetTok)
 		out = append(out, AuditEntry{
 			Name: e.Name, Type: e.Type, Status: e.Status,
-			LOC: loc, ResidentTokens: tokens, RefCount: refs,
+			LOC: loc, ResidentTokens: resident, DescriptionTokens: description,
+			DescriptionBudgetTokens: budgetTok, BodyTokens: body, RefCount: refs,
 			Label: label, Reason: reason,
 		})
 	}
@@ -117,6 +124,68 @@ func residentTokens(root, typ, name string) int {
 	}
 }
 
+// descriptionTokens measures only the frontmatter description against the
+// manifest's description_budget_tokens. The resident metric above deliberately
+// remains name + description (+ whenToUse for subagents).
+func descriptionTokens(root, typ, name string) int {
+	switch typ {
+	case asset.TypeSkill, asset.TypeSubagent:
+		fm, err := budget.ReadFrontmatterFile(mainFilePath(root, typ, name))
+		if err != nil {
+			return 0
+		}
+		return budget.Tokens(fm["description"])
+	default:
+		return 0
+	}
+}
+
+// bodyTokens approximates the prompt tokens loaded from a skill's body while
+// excluding its YAML frontmatter. Other asset types do not have a SKILL body.
+func bodyTokens(root, typ, name string) int {
+	if typ != asset.TypeSkill {
+		return 0
+	}
+	raw, err := os.ReadFile(mainFilePath(root, typ, name))
+	if err != nil {
+		return 0
+	}
+	return budget.Tokens(string(withoutYAMLFrontmatter(raw)))
+}
+
+// withoutYAMLFrontmatter returns raw unchanged when it has no complete leading
+// frontmatter block. It recognizes both LF and CRLF without normalizing the
+// body bytes that the approximate tokenizer measures.
+func withoutYAMLFrontmatter(raw []byte) []byte {
+	firstEnd := bytes.IndexByte(raw, '\n')
+	if firstEnd < 0 || !isYAMLDelimiter(raw[:firstEnd]) {
+		return raw
+	}
+
+	for start := firstEnd + 1; start <= len(raw); {
+		relEnd := bytes.IndexByte(raw[start:], '\n')
+		end, next := len(raw), len(raw)
+		if relEnd >= 0 {
+			end = start + relEnd
+			next = end + 1
+		}
+		if isYAMLDelimiter(raw[start:end]) {
+			return raw[next:]
+		}
+		if next == len(raw) {
+			break
+		}
+		start = next
+	}
+	return raw
+}
+
+// isYAMLDelimiter mirrors budget.ReadFrontmatterFile: Scanner removes the line
+// ending and the parser accepts spaces or tabs after the three dashes.
+func isYAMLDelimiter(line []byte) bool {
+	return bytes.Equal(bytes.TrimRight(line, " \t\r"), []byte("---"))
+}
+
 // manifestBudget reads the asset's description_budget_tokens (default 80).
 func manifestBudget(root, typ, name string) int {
 	m, err := asset.LoadManifest(filepath.Join(root, typeDirFor(typ), name, "manifest.json"))
@@ -170,7 +239,7 @@ func refCount(root string, cat []asset.CatalogEntry, target string) int {
 }
 
 // classify maps status + metrics to an advisory label (deterministic).
-func classify(e asset.CatalogEntry, residentTokens, refCount, budgetTok int) (label, reason string) {
+func classify(e asset.CatalogEntry, descriptionTokens, refCount, budgetTok int) (label, reason string) {
 	switch e.Status {
 	case asset.StatusDeprecated, asset.StatusMerged, asset.StatusAlias:
 		return LabelRetire, "status " + e.Status + " — slated for removal/consolidation"
@@ -178,8 +247,8 @@ func classify(e asset.CatalogEntry, residentTokens, refCount, budgetTok int) (la
 	if refCount == 0 {
 		return LabelOrphan, "no references from other assets — consolidate or deprecate"
 	}
-	if residentTokens > budgetTok {
-		return LabelOversized, "resident description exceeds its token budget — streamline"
+	if descriptionTokens > budgetTok {
+		return LabelOversized, "description exceeds its manifest token budget — streamline"
 	}
-	return LabelKeep, "active, referenced, within budget"
+	return LabelKeep, "active, referenced, description within budget"
 }

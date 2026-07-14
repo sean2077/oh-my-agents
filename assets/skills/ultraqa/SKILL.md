@@ -1,6 +1,6 @@
 ---
 name: ultraqa
-description: Adversarial end-to-end QA as a ralph profile — drive oma ralph with a hostile-scenario matrix (malformed input, cancel/resume, injection, boundary, adversarial user) until every scenario behaves safely. Use to harden a feature before shipping, when happy-path passing is not enough.
+description: Use when a feature or flow needs adversarial end-to-end hardening before shipping because happy-path verification is insufficient.
 ---
 
 # ultraqa

@@ -331,8 +331,9 @@ func newAssetAuditCmd() *cobra.Command {
 				return printJSON(cmd, map[string]any{"schema": "oma-cli/1", "audit": entries})
 			}
 			for _, e := range entries {
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%-24s %-8s %-10s %-10s loc=%-4d tok=%-4d refs=%-3d  %s\n",
-					e.Name, e.Type, e.Status, e.Label, e.LOC, e.ResidentTokens, e.RefCount, e.Reason)
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%-24s %-8s %-10s %-10s loc=%-4d resident=%-4d desc=%-3d/%-3d body=%-5d refs=%-3d  %s\n",
+					e.Name, e.Type, e.Status, e.Label, e.LOC, e.ResidentTokens, e.DescriptionTokens,
+					e.DescriptionBudgetTokens, e.BodyTokens, e.RefCount, e.Reason)
 			}
 			return nil
 		}),

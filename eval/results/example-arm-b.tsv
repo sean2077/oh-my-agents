@@ -5,7 +5,8 @@
 # The §1.1 thesis being probed: a large always-resident skill surface dilutes
 # attention and supplies distractors, so the agent "occasionally latches onto
 # the wrong one". This sample models that failure mode — more wrong-skill picks
-# on near-misses (c12/c13/c15) and more false-triggers on decoys (c18/c19/c20)
+# on near-misses (c12/c13/c15/c23) and more false-triggers on decoys
+# (c18/c19/c20/c25/c26/c27)
 # than the on-demand arm C — to show the metric that should separate B from C.
 # Replace with real observations to get real numbers.
 c01	deep-interview
@@ -28,3 +29,10 @@ c17	none
 c18	ralph
 c19	skillify
 c20	analyze
+c21	pair-delivery
+c22	prototype
+c23	pair-delivery
+c24	prototype
+c25	code-review
+c26	autopilot
+c27	prototype

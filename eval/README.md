@@ -1,6 +1,6 @@
 # oma skill-triggering eval
 
-A runnable harness that substantiates oma's headline claim
+A runnable harness that makes oma's headline claim falsifiable
 ([`docs/design-philosophy.md`](../docs/design-philosophy.md) §1.1): a **minimal,
 on-demand resident skill surface improves accuracy**, not just token cost. The
 thesis is that a large always-resident skill set "dilutes attention, supplies
@@ -23,7 +23,7 @@ the resident skill surface the agent reasons amid.
 |---|---|---|
 | **A — plain agent (no oma)** | none | Baseline: no skills installed. Can never *trigger* a skill, so it pins the floor for triggering recall and isolates the "does a bare agent follow the workflow anyway?" question. |
 | **B — always-resident (OMC-style)** | ~40 skills permanently in context (~15–20k tokens) | The status quo oma argues against: every skill's trigger text is resident every turn, with no per-skill disable. |
-| **C — oma on-demand** | only the skills relevant to the task (core4 ≈ 275 tokens resident; everything else installed on demand, zero when absent) | oma's bet: a small, precise resident surface. |
+| **C — oma on-demand** | only the skills relevant to the task (core4 currently 169 tokens resident under a 400-token release ceiling; everything else installed on demand, zero when absent) | oma's bet: a small, precise resident surface. |
 
 A and C use the same underlying agent and the same skill *definitions*; the
 difference under test is **surface size**, exactly the variable
@@ -49,8 +49,8 @@ operator during the run, not derived by the scorer.
 5. **Resident-token footprint** — measured per arm with
    `oma doctor budget --agent claude --profile core4 --json` (the enforcement
    gate from [`docs/reference/adapter-conformance.md`](../docs/reference/adapter-conformance.md)
-   §5). Arm C's core4 target is < 2000; arm B's surface is ~15–20k by
-   construction. Record the number, do not re-derive it.
+   §5). Arm C's core4 release ceiling is 400 (currently 169); arm B's surface
+   is ~15–20k by construction. Record the number, do not re-derive it.
 6. **Workflow-adherence checklist** — once a skill *is* triggered, did the run
    follow the skill's contract? A small yes/no checklist per skill (e.g.
    deep-interview must end at a `pending approval` spec, never straight code;
@@ -143,7 +143,8 @@ that on-demand installation is frictionless. It probes one mechanism —
 [`cases/triggering.jsonl`](cases/triggering.jsonl) is NDJSON, one flat object per
 line: `id`, `prompt`, `expected` (the skill that should trigger, or `none`),
 `category` (`clear` / `near-miss` / `decoy`), and a `note`. It is intentionally
-flat so the jq-free scorer can read it. Categories:
+flat so the jq-free scorer can read it. Keep every shipped skill's trigger and
+its nearest confusing boundary represented when the catalog changes. Categories:
 
 - **clear** — an unambiguous trigger for exactly one skill.
 - **near-miss** — a prompt that *should* trigger a skill but lacks the literal

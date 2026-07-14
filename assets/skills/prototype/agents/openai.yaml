@@ -1,0 +1,4 @@
+interface:
+  display_name: "Prototype"
+  short_description: "Build a runnable artifact to answer one design question"
+  default_prompt: "Use $prototype to answer one design question with a throwaway runnable artifact."

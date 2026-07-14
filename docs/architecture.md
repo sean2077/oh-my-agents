@@ -48,7 +48,7 @@ oh-my-agents/
 ├── internal/
 │   ├── cli/                 cobra command layer — thin shells; logic lives below
 │   ├── asset/               manifest / install / projection / backup / registry
-│   ├── assetaudit/          catalog bloat audit (orphan / oversized / retire), advisory
+│   ├── assetaudit/          catalog/context audit (resident/body tokens + lifecycle labels)
 │   ├── agentdir/            per-agent directory resolution (claude / codex paths, projection kind)
 │   ├── state/               project-level .oma/state/*.json (atomic 0600 writes)
 │   ├── relay/               relay v2: ledger, sentinel, sidecars, heartbeat, publish, receipt, evidence, hook dispatcher, wait, statusline

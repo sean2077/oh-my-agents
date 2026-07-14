@@ -1,6 +1,6 @@
 ---
 name: ralph
-description: Persistent improvement loop with deterministic stop judgment via oma ralph. Use when work should iterate until a verifier passes — user says keep going until tests pass, loop on this, ralph it, don't stop until green.
+description: Use when work must iterate until a verifier passes or a deterministic stop condition is reached, especially for keep-going, loop-on-this, or do-not-stop-until-green requests.
 ---
 
 # ralph

@@ -1,30 +1,31 @@
 ---
 name: skillify
-description: Use when a just-performed workflow may be reusable enough to become an oma skill.
+description: Use when a just-performed workflow appears likely to recur across sessions or projects and may justify the resident cost of an oma skill.
 ---
 
 # skillify
 
 Turn a workflow you just performed into a reusable oma skill — a `SKILL.md` + `manifest.json` under `assets/skills/<name>/` — but only when it clears the quality gate. The goal is a small, high-value catalog, not hoarding every one-off.
 
-Use [`docs/skill-authoring.md`](../../../docs/skill-authoring.md) when writing or reviewing the skill text. In particular, enforce `description = WHEN, not WHAT`: a skill description is resident trigger text, not a summary of the workflow.
+Use [`docs/skill-authoring.md`](../../../docs/skill-authoring.md) when writing or reviewing the skill text. In particular, enforce `description = WHEN, not WHAT`: it begins with `Use when` followed by one space, names only the trigger, and never summarizes the workflow.
 
-## Quality gate (all three must hold)
+## Quality gate (all four must hold)
 
 Before writing anything, answer honestly:
 
 1. **Reusable?** Will this recur across sessions/projects, or was it a one-off? One-offs do not become skills.
 2. **General?** Does it encode a *workflow* (judgment, sequence, stop conditions), not a single concrete task? A skill is a method, not a memory.
 3. **Worth the resident cost?** Every installed skill's name+description is always-loaded context (measure it with `oma doctor budget`). Is the recurring value worth that tax? If unsure, it is not.
+4. **Behavior-changing?** Can every proposed section be tied to a trigger, decision, action, artifact, stop condition, or verifier? General advice with no observable effect is documentation at best, not skill guidance.
 
-If any answer is no, stop — record it as a note or memory instead, not a skill.
+If any answer is no, record the result as a note or memory instead, then stop without creating a skill.
 
 ## Optional efficacy gate
 
 Use this only for discipline skills where agents have a realistic incentive to rationalize around the rule. It is not required for reference skills or simple workflow captures.
 
 1. **RED: no-guidance control.** Run a fresh-context pressure scenario without the candidate skill. If the control does not fail, stop; there is no demonstrated behavior to correct.
-2. **Capture rationalizations.** Record the exact excuses, shortcuts, or shape failures the agent used. Do not generalize from memory.
+2. **Capture rationalizations.** Record the exact excuses, shortcuts, or shape failures the agent used, based on the run rather than a reconstruction from memory.
 3. **GREEN: add the smallest guidance that blocks those failures.** Address the observed rationalizations, not hypothetical ones.
 4. **REFACTOR: pressure-test variants.** Re-run with the candidate skill, look for new loopholes, and tighten wording only where evidence shows drift.
 5. **Track variance.** If repeated runs produce many different interpretations, the form is not binding yet. Prefer a clearer recipe or output contract over more prohibitions.
@@ -43,19 +44,19 @@ Before writing, distill what you just did into the reusable shape: the trigger /
    oma asset catalog
    ```
 
-   Don't collide or duplicate another skill's purpose — extend it or pick a sharper boundary.
+   Extend an existing skill or pick a sharper boundary when the purpose overlaps; avoid creating a duplicate trigger.
 2. **SKILL.md** with frontmatter:
 
    ```
    ---
    name: <name>
-   description: <one line, ≤ ~80 tokens: WHEN to use this skill, not WHAT it does>
+   description: Use when <one-line trigger, within the manifest budget>
    ---
    ```
 
-   Reject descriptions that summarize the workflow. The description must name the trigger situation, input, or boundary that should load the skill. Put the actual method in the body.
+   Reject descriptions that do not begin with `Use when` followed by one space or that summarize the workflow. The rest of the description names the trigger situation, input, or boundary that should load the skill. Put the actual method in the body.
 
-   Body = the workflow ONLY: the steps, the judgment at each, the hard rules, the stop conditions. Keep it agent-neutral (plain `oma` commands + markdown); mark any Claude-Code-only acceleration as a clearly-optional block. Installation/troubleshooting goes to docs, never the skill body.
+   Body = the workflow ONLY: the steps, the judgment at each, the hard rules, the stop conditions. Put the main path and invariants before exceptions, lead with the desired action or artifact, and use prohibitions only for hard boundaries that cannot be expressed positively; every prohibition must name the concrete alternative or recovery action. Prune any sentence whose removal changes no trigger, decision, action, artifact, stop, or verifier. Keep durable behavior, interfaces, acceptance criteria, non-goals, and decisions in the skill or durable spec; put task-specific paths and commands in the execution plan unless they are part of the public contract. Move optional detail to one-hop references loaded only when needed. Keep the default path agent-neutral (plain `oma` commands + markdown); mark any Claude-Code-only acceleration as a clearly-optional block. Installation/troubleshooting goes to docs, never the skill body.
 3. **manifest.json**:
 
    ```
@@ -64,14 +65,18 @@ Before writing, distill what you just did into the reusable shape: the trigger /
 
 ## Verify before declaring done
 
-- The description says WHEN to use the skill, not WHAT the workflow does, and is genuinely ≤ ~80 tokens (it is resident on every session). Run `oma doctor budget` after installing.
+- The description begins with `Use when` followed by one space, says WHEN rather than WHAT, and fits `description_budget_tokens`. Run `oma doctor budget` after installing.
 - Every `oma` command the skill names actually exists (so refcheck passes).
 - The body carries workflow, not prose padding.
+- The first words of headings and steps expose the controlling action or branch; mandatory behavior is not buried in rationale.
+- Desired behavior appears before a prohibition; every prohibition closes a hard boundary and names the concrete alternative or recovery action.
+- Main path precedes exceptions, references are one hop away, and no rule is duplicated across the body and a reference.
+- Add an expected trigger case to `eval/cases/triggering.jsonl` (plus a real overlapping boundary when relevant); fixture labels are not efficacy evidence.
 
 ## Hard rules
 
 1. The quality gate is not optional — a skill that fails it pollutes everyone's resident context.
-2. `description = WHEN, not WHAT` — reject workflow summaries in resident trigger text.
+2. `description = WHEN, not WHAT` — begin with `Use when` followed by one space and reject workflow summaries in resident trigger text.
 3. Workflow only in the body; platform/install/troubleshooting → docs.
 4. Agent-neutral default path; any CC-only path clearly marked optional.
-5. Never duplicate an existing skill's intent.
+5. Extend an existing skill or sharpen the trigger boundary instead of duplicating its intent.

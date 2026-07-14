@@ -16,16 +16,88 @@ func readPairDeliverySkill(t *testing.T) string {
 	return string(raw)
 }
 
-func TestPairDeliverySkillCodexStopHookFirst(t *testing.T) {
-	text := readPairDeliverySkill(t)
+func readPairDeliveryContinuationReference(t *testing.T) string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("..", "..", "assets", "skills", "pair-delivery", "references", "continuation-and-recovery.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(raw)
+}
+
+func TestAutopilotRoutesResumeDetailOnDemand(t *testing.T) {
+	skill := readBorrowedContractFile(t, "assets", "skills", "autopilot", "SKILL.md")
+	for _, want := range []string{
+		"references/resume-and-recovery.md",
+		"only when",
+		"missing or inconsistent state",
+		"Do not load it for a fresh missing/`done` run",
+	} {
+		if !strings.Contains(skill, want) {
+			t.Fatalf("autopilot skill lost conditional resume route %q", want)
+		}
+	}
+	for _, moved := range []string{
+		"oma state list autopilot --json",
+		"--expected-revision <n>",
+		"recoverable corrupt workflow state",
+	} {
+		if strings.Contains(skill, moved) {
+			t.Fatalf("autopilot skill re-inlined on-demand resume detail %q", moved)
+		}
+	}
+
+	ref := readBorrowedContractFile(t, "assets", "skills", "autopilot", "references", "resume-and-recovery.md")
+	for _, want := range []string{
+		"oma state list autopilot --json",
+		"ask which namespace to resume rather than guessing",
+		"recoverable corrupt workflow state",
+		"--expected-revision <n>",
+	} {
+		if !strings.Contains(ref, want) {
+			t.Fatalf("autopilot resume reference lost recovery guardrail %q", want)
+		}
+	}
+	if strings.Contains(ref, "](") {
+		t.Fatal("autopilot resume reference must remain one hop from SKILL.md")
+	}
+}
+
+func TestPairDeliverySkillRoutesContinuationDetailOnDemand(t *testing.T) {
+	skill := readPairDeliverySkill(t)
+	for _, want := range []string{
+		"references/continuation-and-recovery.md",
+		"only when",
+		"hook wiring or trust is unclear",
+	} {
+		if !strings.Contains(skill, want) {
+			t.Fatalf("pair-delivery skill lost conditional continuation route %q", want)
+		}
+	}
+	for _, moved := range []string{
+		"oma relay wait --timeout 3600",
+		"~/.codex/hooks.json",
+		"oma doctor relay --clean-stale",
+	} {
+		if strings.Contains(skill, moved) {
+			t.Fatalf("pair-delivery skill re-inlined on-demand continuation detail %q", moved)
+		}
+	}
+
+	text := readPairDeliveryContinuationReference(t)
 	for _, want := range []string{
 		"the Stop hook is the main self-continuation path",
-		"Stop hook dispatcher is wired in `~/.codex/hooks.json` and trusted through `/hooks`",
-		"Use held/re-polled `oma relay wait` only as the fallback path",
+		"dispatcher is wired in",
+		"trusted through `/hooks`",
+		"held or re-polled `oma relay wait` only when hook wiring/trust is unavailable",
+		"oma doctor relay --clean-stale",
 	} {
 		if !strings.Contains(text, want) {
-			t.Fatalf("pair-delivery skill lost Codex Stop-hook-first guardrail %q", want)
+			t.Fatalf("pair-delivery continuation reference lost host/recovery guardrail %q", want)
 		}
+	}
+	if strings.Contains(text, "](") {
+		t.Fatal("pair-delivery continuation reference must remain one hop from SKILL.md")
 	}
 }
 
@@ -34,9 +106,10 @@ func TestPairDeliverySkillReviewerAntiPrejudgingContract(t *testing.T) {
 	for _, want := range []string{
 		"Reviewer contract (anti-prejudging)",
 		"read-only review of the checkout",
-		"two separate judgments",
+		"three explicitly separate sections",
 		"Spec compliance",
-		"Quality verdict",
+		"Standards & quality",
+		"Verdict",
 		"`file:line`",
 		"Do not pre-judge the reviewer",
 		"`don't flag`",
