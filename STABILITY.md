@@ -112,7 +112,7 @@ freezes the *contract*, those files describe the *surface*.
 - **OS / arch** — Linux, macOS, and Windows on `amd64` and `arm64` (the six
   published release binaries). Other targets require an opt-in source build.
 - **Source builds** — the Go toolchain version pinned in `go.mod` (currently
-  `go 1.25.11`) or newer.
+  `go 1.25.12`) or newer.
 - **Hosts** — Claude Code and Codex. `oma` is host-neutral by contract and
   targets no specific host version; each release records the host versions it was
   last verified against, and the date, in `CHANGELOG.md`. Future host releases are

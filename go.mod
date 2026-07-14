@@ -1,6 +1,6 @@
 module github.com/sean2077/oh-my-agents
 
-go 1.25.11
+go 1.25.12
 
 require (
 	github.com/spf13/cobra v1.10.2
