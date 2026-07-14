@@ -6,6 +6,7 @@ Start here:
 - **[architecture.md](architecture.md)** — the *how*: the four layers, the asset / projection model, the relay ledger, and the repository layout.
 - **[tutorial.md](tutorial.md)** — an end-to-end walkthrough: install → core4 → deep-interview → autopilot → ralph → pair-delivery → resume → upgrade / migrate / uninstall.
 - **[skill-authoring.md](skill-authoring.md)** — how to write small, trigger-accurate skills that agents actually follow.
+- **[companion-skills.md](companion-skills.md)** — a deliberately small, versioned list of external skills that complement oma without duplicating its workflow surfaces.
 - **[porting-to-new-harness.md](porting-to-new-harness.md)** — how to map oma skills to another harness without changing skill bodies or user-owned files.
 
 Authoritative reference — the spec the implementation follows:

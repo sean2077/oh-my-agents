@@ -2,6 +2,8 @@
 
 > **Status: historical — implemented.** This is the decision record for borrowing selected methods from `mattpocock/skills`, not a normative specification. The executable contracts live in the relevant canonical oma skills and authoring guide; contribution policy lives in [`../../AGENTS.md`](../../AGENTS.md) and [`../../CONTRIBUTING.md`](../../CONTRIBUTING.md).
 >
+> Current user-facing installation guidance lives in [`../companion-skills.md`](../companion-skills.md).
+>
 > Decision date: 2026-07-14. Upstream pin: [`mattpocock/skills@66898f60e8c744e269f8ce06c2b2b99ce7660d5f`](https://github.com/mattpocock/skills/tree/66898f60e8c744e269f8ce06c2b2b99ce7660d5f).
 
 ## Ruler

@@ -139,6 +139,9 @@ npx skills add sean2077/oh-my-agents -g --agent claude-code codex
 
 The compatibility manifest groups these entries under **Oh My Agents** in `npx skills ls`. If they were installed before the manifest existed, rerun the `add` command once so `npx skills` records the group in its lockfile.
 
+For a deliberately small, versioned list of external skills that complement
+rather than duplicate oma, see **[Companion skills for oma](docs/companion-skills.md)**.
+
 ## Wire the statusline and hooks (optional)
 
 `oma` never writes your host config. The statusline and the auto-continue
