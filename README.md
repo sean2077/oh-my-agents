@@ -15,7 +15,7 @@ The trigger for this project was a concrete pain point in oh-my-claudecode (OMC)
 - **Skills stay agent-neutral.** A skill's default path is plain `oma` commands plus markdown, so Claude Code and Codex follow the *same* contract. Host-only accelerations (Claude Code's structured option picker, subagents, plan mode) are clearly-marked optional branches, never the default.
 - **One asset model, two agents.** Assets live in canonical `~/.agents/` and are projected into both `~/.claude/` and `~/.codex/` (symlink on Unix-like hosts; directory junction for skills on native Windows, with managed copy fallback). Install once, available to both. (Hook assets are placed canonically only — oma never writes your host config; you wire hooks into `settings.json`/`hooks.json` by hand, see [`docs/reference/relay-v2-protocol.md`](docs/reference/relay-v2-protocol.md) §12.4.)
 
-This is CLI + skills, deliberately **not** a Claude Code plugin: a plugin is a Claude-Code-only concept, and the whole point is to stay neutral and lightweight.
+This is CLI + agent-neutral skills, deliberately **not a Claude-only workflow**. The minimal [`.claude-plugin/plugin.json`](.claude-plugin/plugin.json) is installer compatibility metadata: `npx skills` uses it to group the installed skills under **Oh My Agents**, while the canonical asset model and runtime contract remain shared by Claude Code and Codex.
 
 ## What ships
 
@@ -109,6 +109,8 @@ oma asset install --ref v1.0.0 deep-interview ralph autopilot pair-delivery
 # Or directly through the npx skills installer (skills only; not oma-managed)
 npx skills add sean2077/oh-my-agents -g --agent claude-code codex
 ```
+
+The compatibility manifest groups these entries under **Oh My Agents** in `npx skills ls`. If they were installed before the manifest existed, rerun the `add` command once so `npx skills` records the group in its lockfile.
 
 ## Wire the statusline and hooks (optional)
 

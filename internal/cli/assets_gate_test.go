@@ -2,8 +2,10 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -25,6 +27,7 @@ func TestRealAssetsPassReleaseGates(t *testing.T) {
 	if err != nil {
 		t.Skipf("no shipped assets yet: %v", err)
 	}
+	assertNpxSkillGroupingManifest(t, repoAssets, entries)
 
 	home := t.TempDir()
 	eng := asset.NewEngine(home)
@@ -99,6 +102,37 @@ func TestRealAssetsPassReleaseGates(t *testing.T) {
 		t.Fatalf("core4 members missing from assets/: %v", rep.Missing)
 	}
 	t.Logf("core4 resident budget: %d tokens, all members present", rep.Total)
+}
+
+func assertNpxSkillGroupingManifest(t *testing.T, repoAssets string, entries []os.DirEntry) {
+	t.Helper()
+
+	manifestPath := filepath.Join(repoAssets, "..", "..", ".claude-plugin", "plugin.json")
+	raw, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatalf("read npx skills grouping manifest: %v", err)
+	}
+	var manifest struct {
+		Name   string   `json:"name"`
+		Skills []string `json:"skills"`
+	}
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		t.Fatalf("parse npx skills grouping manifest: %v", err)
+	}
+	if manifest.Name != "oh-my-agents" {
+		t.Fatalf("npx skills grouping name = %q, want oh-my-agents", manifest.Name)
+	}
+
+	want := make([]string, 0, len(entries))
+	for _, ent := range entries {
+		if ent.IsDir() {
+			want = append(want, "./assets/skills/"+ent.Name())
+		}
+	}
+	slices.Sort(want)
+	if !slices.Equal(manifest.Skills, want) {
+		t.Fatalf("npx skills grouping paths = %v, want %v", manifest.Skills, want)
+	}
 }
 
 func assertPortableSkillFrontmatter(t *testing.T, path string) {
