@@ -23,13 +23,13 @@ separate from the product skills shipped from [`../assets/skills/`](../assets/sk
   or `.codex/` projections directly.
 - Keep shipped `oma` skills under `assets/skills/`; do not mirror them here.
 - Verify links with `python .agents/symlink-manager.py verify --repo .` and
-  subagents with `python tools/agent/generate-subagents.py --check`.
+  subagents with `python .agents/tools/generate-subagents.py --check`.
 - Refresh vendored harness mechanics through `agent-scaffold upgrade`, not a
   local fork of `relink-skills.sh` or `symlink-manager.py`.
 
 ## Dependencies
 
 Projects into [`../.claude/`](../.claude/) and [`../.codex/`](../.codex/) and
-shares generators and hooks with [`../tools/agent/`](../tools/agent/).
+owns the shared generators and hooks under [`tools/`](tools/).
 
 <!-- MANUAL: notes below this line are preserved on regeneration -->

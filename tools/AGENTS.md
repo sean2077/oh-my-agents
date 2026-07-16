@@ -14,7 +14,6 @@ remain under `scripts/`; commands here serve contributors, CI, and releases.
 |---|---|
 | `tools-manifest.tsv` | Machine-readable command-surface source of truth. |
 | `manifest-check.sh` | Reconciles the manifest with files, syntax, and help contracts. |
-| `agent/` | Vendored dual-host contributor harness. |
 | `release/` | Release construction, tag validation, and changelog helpers. |
 | `install/` | Offline installer regression tests. |
 | `git-hooks/` | Repository-local Git hook entry points. |
@@ -31,8 +30,8 @@ remain under `scripts/`; commands here serve contributors, CI, and releases.
   existing binary byte-identical and residue-free.
 - Keep Git hooks agent-neutral. Deterministic harness/tooling drift blocks;
   content-budget findings stay advisory unless explicitly configured to block.
-- Treat `agent/` as externally managed and refresh it only through
-  `agent-scaffold upgrade`.
+- The externally managed contributor harness lives under `../.agents/tools/`;
+  refresh it only through `agent-scaffold upgrade`.
 
 ## Dependencies
 
