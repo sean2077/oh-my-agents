@@ -67,6 +67,9 @@ Do these in order; each step points at the README for options and detail.
   remain authoritative under `assets/skills/`; `.agents/skills/` is reserved for
   repo-local contributor workflows. Never move or mirror release assets into the
   harness projection tree.
+- **Authority docs are selective.** Add a nested `AGENTS.md` only when a directory
+  has distinct, non-obvious constraints; otherwise it inherits the nearest parent.
+  Do not generate a file merely because a directory exists.
 - **Specs are authoritative.** [`docs/reference/`](docs/reference/) holds command-tree,
   relay-v2-protocol, schemas, adapter-conformance, config, security-contract, and
   workflows. Implementation follows the docs — change the doc together with the code.

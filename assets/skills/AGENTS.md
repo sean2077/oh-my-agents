@@ -1,4 +1,4 @@
-<!-- Parent: ../AGENTS.md -->
+<!-- Parent: ../../AGENTS.md -->
 <!-- Subordinate to /AGENTS.md — the authoritative agent contract; on conflict /AGENTS.md wins. -->
 
 # assets/skills/
@@ -19,6 +19,8 @@ bundle and advertised by the plugin catalog.
 ## For AI Agents
 
 - Start descriptions with `Use when`; describe the trigger, not the procedure.
+- Treat this tree as shipped product content; repo-local contributor skills stay
+  under `.agents/skills/` and are never mirrored here.
 - Shell out to `oma` for counted, validated, or persisted mechanics. A
   commandless skill is valid only when the workflow is judgment-only.
 - Keep Claude Code and Codex on one default path; label host-specific
