@@ -50,15 +50,19 @@ The documents under [`docs/`](docs/) are authoritative; the implementation follo
 
 ```bash
 make agent-check       # real symlinks + generated Claude/Codex projections
+make tooling-check     # command surfaces + paths + shell/python syntax
 go build ./...
 go test ./...          # full suite — installation/projection tests use a temp $HOME
 gofmt -l .             # must print nothing
 go vet ./...
 ```
 
-CI runs the agent-harness projection gate, the 3-platform test matrix with `-race`, `gofmt` / `vet` / `build`, `golangci-lint`, and `govulncheck` on every push and PR, as a reusable pipeline. A release calls that **same** pipeline as a hard gate before publishing.
+See [`tools/README.md`](tools/README.md) for the internal command map and
+[`tools/tools-manifest.tsv`](tools/tools-manifest.tsv) for the enforced surface inventory.
 
-Optionally enable the repo git hooks once with `make hooks` (`git config core.hooksPath scripts/hooks`). The `pre-commit` hook is a dev aid — not part of shipped `oma` — that fails on harness projection drift, then warns when a staged `SKILL.md`/`AGENTS.md` body exceeds the content budget (default 120 non-blank lines after the frontmatter). It rides git, so it fires identically for Codex, Claude Code, and humans. Tune with `OMA_CONTENT_BUDGET_LINES=<n>`, or set `OMA_CONTENT_BUDGET_BLOCK=1` to fail the commit instead of warning.
+CI runs the agent-harness and tooling-manifest gates, the 3-platform test matrix with `-race`, `gofmt` / `vet` / `build`, `golangci-lint`, and `govulncheck` on every push and PR, as a reusable pipeline. A release calls that **same** pipeline as a hard gate before publishing.
+
+Optionally enable the repo git hooks once with `make hooks` (`git config core.hooksPath tools/git-hooks`). Existing checkouts that enabled the former `scripts/hooks` path should rerun `make hooks` once because `core.hooksPath` is checkout-local. The `pre-commit` hook is a dev aid — not part of shipped `oma` — that fails on harness or tooling-manifest drift, then warns when a staged `SKILL.md`/`AGENTS.md` body exceeds the content budget (default 120 non-blank lines after the frontmatter). It rides git, so it fires identically for Codex, Claude Code, and humans. Tune with `OMA_CONTENT_BUDGET_LINES=<n>`, or set `OMA_CONTENT_BUDGET_BLOCK=1` to fail the commit instead of warning.
 
 ## Releasing
 

@@ -112,16 +112,19 @@ jobs:
           python .agents/symlink-manager.py verify --repo .
           python tools/agent/generate-subagents.py --check
 
+      - name: Verify tooling manifest
+        run: bash tools/manifest-check.sh
+
       - name: shellcheck shell tooling
-        run: shellcheck .agents/relink-skills.sh tools/agent/worktree.sh tools/agent/hooks/*.sh scripts/hooks/pre-commit scripts/install.sh scripts/build-release.sh scripts/extract-changelog.sh scripts/test-install.sh scripts/validate-release-tag.sh scripts/test-release-tag.sh
+        run: shellcheck .agents/relink-skills.sh tools/manifest-check.sh tools/agent/worktree.sh tools/agent/hooks/*.sh tools/git-hooks/pre-commit tools/install/*.sh tools/release/*.sh scripts/install.sh
 
       - name: release tag gate smoke
-        run: bash scripts/test-release-tag.sh
+        run: bash tools/release/test-release-tag.sh
 
       # Regression for the installer's verify-before-replace + rollback contract:
       # a wrong-version artifact must not clobber a working install.
       - name: install.sh verify-before-replace smoke
-        run: bash scripts/test-install.sh
+        run: bash tools/install/test-install.sh
 
       # Static half of the install.ps1 validation bar: pwsh ships on the runner,
       # so syntax-gate the PowerShell installer here. The end-to-end smoke half
@@ -149,7 +152,7 @@ jobs:
       # 0644 artifact, the installer must chmod before version probing, and
       # wrong-version artifacts must roll back without residue.
       - name: install.sh release-download smoke
-        run: bash scripts/test-install.sh
+        run: bash tools/install/test-install.sh
 
   install-smoke:
     name: install.ps1 smoke (windows)
@@ -192,7 +195,7 @@ jobs:
       - name: Build assets
         env:
           VERSION: ${{ inputs.version }}
-        run: scripts/build-release.sh "$VERSION"
+        run: tools/release/build-release.sh "$VERSION"
 
       # The binary must report exactly the version it was stamped with, or
       # self-update's version comparison breaks (plan B11).
@@ -203,7 +206,7 @@ jobs:
           binary="dist/oma_${VERSION}_linux_amd64"
           got="$("$binary" version --json | jq -r '.version')"
           if [ "$got" != "$VERSION" ]; then
-            echo "version stamp mismatch: got '$got' want '$VERSION' (check -ldflags -X in scripts/build-release.sh)" >&2
+            echo "version stamp mismatch: got '$got' want '$VERSION' (check -ldflags -X in tools/release/build-release.sh)" >&2
             exit 1
           fi
           echo "version stamp OK: $got"

@@ -65,7 +65,8 @@ oh-my-agents/
 │   ├── architecture.md       this file
 │   ├── reference/            the authoritative spec set
 │   └── examples/
-├── scripts/                 install / release-build helpers
+├── scripts/                 stable public installers (raw download contract)
+├── tools/                   internal release/test/hooks + vendored agent harness
 └── testdata/                fixtures: conformance golden files, traversal-attack paths
 ```
 

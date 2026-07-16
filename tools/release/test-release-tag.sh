@@ -2,8 +2,8 @@
 # Regression tests for the release tag gate used by release.yml and build-release.sh.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VALIDATE="$ROOT/scripts/validate-release-tag.sh"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+VALIDATE="$ROOT/tools/release/validate-release-tag.sh"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 

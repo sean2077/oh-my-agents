@@ -54,14 +54,15 @@ Do these in order; each step points at the README for options and detail.
 - **Local gate — green before any handoff:**
   ```bash
   make agent-check
+  make tooling-check
   go build ./...
   go test ./...      # full suite
   gofmt -l .         # must print nothing
   go vet ./...
   ```
-  CI additionally runs the agent-harness projection gate, `golangci-lint`, and a
-  Windows matrix; `.gitattributes` pins `*.go` to LF so `gofmt` is byte-identical
-  across platforms.
+  CI additionally runs the agent-harness and tooling-manifest gates,
+  `golangci-lint`, and a Windows matrix; `.gitattributes` pins `*.go` to LF so
+  `gofmt` is byte-identical across platforms.
 - **Product assets and contributor harness stay separate.** Shipped `oma` skills
   remain authoritative under `assets/skills/`; `.agents/skills/` is reserved for
   repo-local contributor workflows. Never move or mirror release assets into the

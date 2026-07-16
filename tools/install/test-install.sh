@@ -5,12 +5,18 @@
 # network (the release base is a file:// fixture).
 set -euo pipefail
 
-here="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+INSTALLER="$ROOT/scripts/install.sh"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
 bindir="$work/bin"
 mkdir -p "$bindir"
+
+# Keep the fixture name platform-neutral. The public installer defaults to
+# oma.exe under Git Bash, but these shell-script fixtures exercise replacement
+# and rollback semantics rather than Windows PE naming.
+export OMA_INSTALL_BIN_NAME=oma
 
 digest() {
   if command -v sha256sum >/dev/null 2>&1; then
@@ -31,7 +37,7 @@ EOF
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
 # An existing, working install reporting v1.0.0.
-dest="$bindir/oma"
+dest="$bindir/$OMA_INSTALL_BIN_NAME"
 fake_oma "$dest" "v1.0.0"
 before="$(digest "$dest")"
 
@@ -40,7 +46,7 @@ before="$(digest "$dest")"
 bad="$work/bad-oma"
 fake_oma "$bad" "v0.0.1"
 if OMA_INSTALL_FILE="$bad" OMA_INSTALL_VERSION="v2.0.0" OMA_INSTALL_BIN_DIR="$bindir" \
-     bash "$here/install.sh" >/dev/null 2>&1; then
+     bash "$INSTALLER" >/dev/null 2>&1; then
   fail "install of a wrong-version artifact should have failed"
 fi
 [ "$(digest "$dest")" = "$before" ] \
@@ -55,7 +61,7 @@ fake_oma "$good" "v2.0.0"
 # executable bit. Local-file installs must still verify and install them.
 chmod 0644 "$good"
 OMA_INSTALL_FILE="$good" OMA_INSTALL_VERSION="v2.0.0" OMA_INSTALL_BIN_DIR="$bindir" \
-  bash "$here/install.sh" >/dev/null 2>&1 || fail "install of a matching artifact should succeed"
+  bash "$INSTALLER" >/dev/null 2>&1 || fail "install of a matching artifact should succeed"
 [ "$("$dest" version)" = '{"version":"v2.0.0"}' ] || fail "matching artifact was not installed"
 residue="$(find "$bindir" -maxdepth 1 -name '.*' -type f)"
 [ -z "$residue" ] || fail "left residue after a successful install: $residue"
@@ -88,7 +94,7 @@ if [ -n "$os" ] && [ -n "$arch" ]; then
   OMA_INSTALL_DOWNLOAD_BASE="file://$work/releases" \
   OMA_INSTALL_VERSION="v3.0.0" \
   OMA_INSTALL_BIN_DIR="$bindir" \
-    bash "$here/install.sh" >/dev/null 2>&1 || fail "release-path install of a 0644 artifact should succeed"
+    bash "$INSTALLER" >/dev/null 2>&1 || fail "release-path install of a 0644 artifact should succeed"
   [ "$("$dest" version)" = '{"version":"v3.0.0"}' ] || fail "release-path artifact was not installed"
   residue="$(find "$bindir" -maxdepth 1 -name '.*' -type f)"
   [ -z "$residue" ] || fail "left residue after release-path install: $residue"
@@ -100,7 +106,7 @@ if [ -n "$os" ] && [ -n "$arch" ]; then
   if OMA_INSTALL_DOWNLOAD_BASE="file://$work/releases" \
        OMA_INSTALL_VERSION="v4.0.0" \
        OMA_INSTALL_BIN_DIR="$bindir" \
-         bash "$here/install.sh" >/dev/null 2>&1; then
+         bash "$INSTALLER" >/dev/null 2>&1; then
     fail "release-path wrong-version artifact should have failed"
   fi
   [ "$(digest "$dest")" = "$before" ] || fail "release-path refusal modified the existing binary"
@@ -117,7 +123,7 @@ if [ -n "$os" ] && [ -n "$arch" ]; then
   if OMA_INSTALL_DOWNLOAD_BASE="file://$work/releases" \
        OMA_INSTALL_VERSION="v4.1.0" \
        OMA_INSTALL_BIN_DIR="$bindir" \
-         bash "$here/install.sh" >/dev/null 2>&1; then
+         bash "$INSTALLER" >/dev/null 2>&1; then
     fail "release-path duplicate checksum entry should have failed"
   fi
   [ "$(digest "$dest")" = "$before" ] || fail "duplicate checksum refusal modified the existing binary"
@@ -149,7 +155,7 @@ if PATH="$shim:$PATH" \
      OMA_INSTALL_FILE="$backup_good" \
      OMA_INSTALL_VERSION="v5.0.0" \
      OMA_INSTALL_BIN_DIR="$bindir" \
-       bash "$here/install.sh" >/dev/null 2>&1; then
+       bash "$INSTALLER" >/dev/null 2>&1; then
   fail "install should fail when backup creation fails"
 fi
 [ "$(digest "$dest")" = "$before" ] || fail "partial backup was restored over the existing binary"

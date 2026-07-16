@@ -9,13 +9,27 @@
 # exceeds the budget. It is NOT part of the shipped oma product; it is a repo
 # dev aid.
 #
-#   Enable once:  make hooks            (or: git config core.hooksPath scripts/hooks)
+#   Enable once:  make hooks            (or: git config core.hooksPath tools/git-hooks)
+#   Help:         tools/git-hooks/pre-commit --help
 #   Tuning:       OMA_CONTENT_BUDGET_LINES=<n>   default 120
 #                 OMA_CONTENT_BUDGET_BLOCK=1     fail the commit instead of warning
 set -eu
 
+case "${1:-}" in
+-h | --help)
+	echo "usage: tools/git-hooks/pre-commit [--help]"
+	exit 0
+	;;
+"") ;;
+*)
+	echo "usage: tools/git-hooks/pre-commit [--help]" >&2
+	exit 2
+	;;
+esac
+
 python .agents/symlink-manager.py verify --repo .
 python tools/agent/generate-subagents.py --check
+bash tools/manifest-check.sh
 
 budget=${OMA_CONTENT_BUDGET_LINES:-120}
 block=${OMA_CONTENT_BUDGET_BLOCK:-0}

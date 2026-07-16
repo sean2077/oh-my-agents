@@ -4,18 +4,26 @@
 #   oma_<version>_<os>_<arch>[.exe]  (version = v-prefixed git tag)
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 VERSION="${1:-${GITHUB_REF_NAME:-dev}}"
 COMMIT="${COMMIT:-$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo none)}"
 OUT_DIR="${OUT_DIR:-$ROOT/dist}"
 
 if [[ "$VERSION" != "dev" ]]; then
-  "$ROOT/scripts/validate-release-tag.sh" "$VERSION" >/dev/null
+  "$ROOT/tools/release/validate-release-tag.sh" "$VERSION" >/dev/null
 fi
 
-if [[ "$OUT_DIR" != /* ]]; then
-  OUT_DIR="$ROOT/$OUT_DIR"
-fi
+case "$OUT_DIR" in
+  [A-Za-z]:/*)
+    # Native Windows make exports PWD as C:/..., even when the recipe runs in
+    # Git Bash. Normalize that spelling before applying the confinement check.
+    command -v cygpath >/dev/null 2>&1 \
+      || { echo "ERR cygpath is required for Windows OUT_DIR: $OUT_DIR" >&2; exit 1; }
+    OUT_DIR="$(cygpath -u "$OUT_DIR")"
+    ;;
+  /*) ;;
+  *) OUT_DIR="$ROOT/$OUT_DIR" ;;
+esac
 if [[ "$OUT_DIR" == *..* ]]; then
   echo "ERR OUT_DIR must not contain '..': $OUT_DIR" >&2
   exit 1

@@ -15,6 +15,10 @@
 # On Windows, run from Git Bash (installs oma.exe), or use scripts/install.ps1
 # from PowerShell.
 #
+# Usage:
+#   bash scripts/install.sh
+#   bash scripts/install.sh --help
+#
 # Overrides:
 #   OMA_INSTALL_REPO=sean2077/oh-my-agents   owner/name slug
 #   OMA_INSTALL_VERSION=latest               'latest' or a tag like v0.1.0
@@ -30,6 +34,16 @@
 #                                             as the expected version; used by CI
 #                                             to smoke-test the just-built asset)
 set -euo pipefail
+
+usage() {
+  sed -n '2,/^set -euo pipefail$/p' "$0" | sed '/^set -euo pipefail$/d; s/^# \?//'
+}
+
+case "${1:-}" in
+  -h | --help) usage; exit 0 ;;
+  "") ;;
+  *) echo "usage: bash scripts/install.sh [--help]" >&2; exit 2 ;;
+esac
 
 REPO="${OMA_INSTALL_REPO:-sean2077/oh-my-agents}"
 VERSION="${OMA_INSTALL_VERSION:-latest}"
