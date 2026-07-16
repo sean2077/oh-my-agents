@@ -107,7 +107,7 @@ cmd_new() {
     git -C "$ROOT" worktree add "$WTDIR" -b "$BRANCH" "$TRUNK"
     share_dirs "$WTDIR"
     log "ready: $WTDIR  (branch $BRANCH ← $TRUNK tip)"
-    log "when done, run inside it: bash tools/agent/worktree.sh done   # merge back to $TRUNK + clean up + push"
+    log "when done, run inside it: bash .agents/tools/worktree.sh done   # merge back to $TRUNK + clean up + push"
 }
 
 cmd_release() {
@@ -119,6 +119,44 @@ cmd_release() {
     git -C "$ROOT" worktree add --detach "$WTDIR" "$REF"
     share_dirs "$WTDIR"
     log "ready: $WTDIR  (detached @ $REF) — when packaging is done: git worktree remove --force $WTDIR"
+}
+
+worktree_is_registered() {
+    local TARGET="$1" REGISTRY FIELD FOUND=1
+    REGISTRY="$(mktemp "${TMPDIR:-/tmp}/agent-scaffold-worktrees.XXXXXX")" \
+        || die "could not create temporary worktree registry file"
+    if ! git worktree list --porcelain -z >"$REGISTRY"; then
+        rm -f "$REGISTRY"
+        die "could not inspect the worktree registry after remove failed"
+    fi
+    while IFS= read -r -d '' FIELD; do
+        if [[ "$FIELD" == "worktree $TARGET" ]]; then
+            FOUND=0
+            break
+        fi
+    done <"$REGISTRY"
+    rm -f "$REGISTRY"
+    return "$FOUND"
+}
+
+remove_done_worktree() {
+    local WT="$1"
+    git worktree remove "$WT" && return 0
+
+    worktree_is_registered "$WT" \
+        && die "worktree removal failed and '$WT' remains registered; refusing force removal. Worktree and branch kept"
+
+    # Git can unregister a worktree before Windows finishes deleting its
+    # directory. Registration is the safety boundary: continue branch cleanup,
+    # but never recursively or forcibly delete residue that may contain new data.
+    log "worktree removal reported failure after '$WT' was already unregistered; continuing cleanup"
+    if [[ -d "$WT" ]]; then
+        if rmdir "$WT" 2>/dev/null; then
+            log "removed empty residual worktree directory: $WT"
+        else
+            log "WARNING: unregistered residual directory remains (no recursive delete attempted): $WT"
+        fi
+    fi
 }
 
 cmd_done() {
@@ -165,13 +203,13 @@ $(git -C "$WT" status --short | head -10)"
 Resolve origin/$TRUNK in the trunk worktree, then retry:
   git -C \"$PD\" fetch origin
   git -C \"$PD\" merge origin/$TRUNK
-  bash \"$PD/tools/agent/worktree.sh\" done --dir \"$WT\" --trunk \"$TRUNK\"$RETRY_KEEP
+  bash \"$PD/.agents/tools/worktree.sh\" done --dir \"$WT\" --trunk \"$TRUNK\"$RETRY_KEEP
 Never force-push from here — that is the user's call."
         log "pushed $TRUNK → origin"
     else
         log "not pushed (--no-push); remember to push $TRUNK later"
     fi
-    git worktree remove "$WT" 2>/dev/null || git worktree remove --force "$WT"
+    remove_done_worktree "$WT"
     [[ $KEEP -eq 1 ]] || git branch -d "$BRANCH" 2>/dev/null \
         || log "WARN: branch $BRANCH not fully merged into $TRUNK - kept; delete: git branch -D $BRANCH"
     git worktree prune

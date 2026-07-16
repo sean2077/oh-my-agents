@@ -110,13 +110,13 @@ jobs:
       - name: Verify agent harness projections
         run: |
           python .agents/symlink-manager.py verify --repo .
-          python tools/agent/generate-subagents.py --check
+          python .agents/tools/generate-subagents.py --check
 
       - name: Verify tooling manifest
         run: bash tools/manifest-check.sh
 
       - name: shellcheck shell tooling
-        run: shellcheck .agents/relink-skills.sh tools/manifest-check.sh tools/agent/worktree.sh tools/agent/hooks/*.sh tools/git-hooks/pre-commit tools/install/*.sh tools/release/*.sh scripts/install.sh
+        run: shellcheck .agents/relink-skills.sh .agents/tools/worktree.sh .agents/tools/hooks/*.sh tools/manifest-check.sh tools/git-hooks/pre-commit tools/install/*.sh tools/release/*.sh scripts/install.sh
 
       - name: release tag gate smoke
         run: bash tools/release/test-release-tag.sh

@@ -56,7 +56,7 @@ fmt-check:
 
 agent-check:
 	$(PYTHON) .agents/symlink-manager.py verify --repo .
-	$(PYTHON) tools/agent/generate-subagents.py --check
+	$(PYTHON) .agents/tools/generate-subagents.py --check
 
 tooling-check:
 	bash tools/manifest-check.sh

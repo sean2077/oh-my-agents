@@ -28,7 +28,7 @@ case "${1:-}" in
 esac
 
 python .agents/symlink-manager.py verify --repo .
-python tools/agent/generate-subagents.py --check
+python .agents/tools/generate-subagents.py --check
 bash tools/manifest-check.sh
 
 budget=${OMA_CONTENT_BUDGET_LINES:-120}
