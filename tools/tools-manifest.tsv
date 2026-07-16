@@ -1,0 +1,18 @@
+path	surface	domain	audience	entry_for	hazard	verify	notes
+scripts/install.sh	public	install	end-user	install or upgrade oma from a verified release	high(replaces-binary)	bash tools/install/test-install.sh	stable raw-download path
+scripts/install.ps1	public	install	end-user	install or upgrade oma on native Windows	high(replaces-binary)	PowerShell parse plus Windows smoke	stable raw-download path
+docs/examples/statusline-command.sh	template	docs	end-user		none	bash -n	example statusline integration, not a repository command
+tools/manifest-check.sh	public	tooling	dev	audit committed command surfaces	low	bash tools/manifest-check.sh	domain headline
+tools/agent/worktree.sh	public	contributor	dev	create and finish governed worktrees	med(merge-and-push)	bash tools/agent/worktree.sh --help	managed by agent-scaffold
+tools/agent/generate-subagents.py	public	contributor	dev	generate and verify dual-host subagent projections	low(writes-projections)	python tools/agent/generate-subagents.py --check	managed by agent-scaffold
+tools/agent/hooks/trunk_edit_guard.sh	helper	contributor	runtime		low(blocks-edit)	agent-scaffold verify	called by Claude and Codex hook configs
+tools/agent/hooks/authority_doc_budget.sh	helper	contributor	runtime		none	agent-scaffold verify	called by Claude and Codex hook configs
+tools/agent/hooks/format_on_edit.sh	helper	contributor	runtime		low(formats-files)	agent-scaffold verify	called by Claude and Codex hook configs
+tools/agent/hooks/hook-common.sh	helper	contributor	runtime		none	bash -n	shared hook library
+tools/agent/hooks/hook-paths.py	helper	contributor	runtime		none	in-memory Python compile	shared hook path parser
+tools/release/build-release.sh	helper	release	release		med(rewrites-dist)	make release VERSION=vX.Y.Z	called by Makefile and CI
+tools/release/validate-release-tag.sh	helper	release	ci		none	bash tools/release/test-release-tag.sh	shared release tag gate
+tools/release/test-release-tag.sh	helper	release	ci		none	bash tools/release/test-release-tag.sh	offline regression
+tools/release/extract-changelog.sh	helper	release	ci		none	valid and missing-section smoke	called by release workflow
+tools/install/test-install.sh	helper	install	ci		low(temp-files)	bash tools/install/test-install.sh	offline installer regression
+tools/git-hooks/pre-commit	installed	contributor	dev	run repository commit guards	low(blocks-commit)	tools/git-hooks/pre-commit --help	enabled by make hooks

@@ -105,7 +105,7 @@ func restrictedClient() *http.Client {
 	}
 }
 
-// assetName is the release naming contract (scripts/build-release.sh).
+// assetName is the release naming contract (tools/release/build-release.sh).
 func (u *Updater) assetName(tag string) string {
 	name := fmt.Sprintf("oma_%s_%s_%s", tag, u.OS, u.Arch)
 	if u.OS == "windows" {

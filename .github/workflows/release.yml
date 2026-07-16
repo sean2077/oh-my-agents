@@ -28,7 +28,7 @@ jobs:
       - name: Validate SemVer release tag
         id: validate
         run: |
-          scripts/validate-release-tag.sh "$GITHUB_REF_NAME" | tee "$RUNNER_TEMP/release-tag.env"
+          tools/release/validate-release-tag.sh "$GITHUB_REF_NAME" | tee "$RUNNER_TEMP/release-tag.env"
           cat "$RUNNER_TEMP/release-tag.env" >> "$GITHUB_OUTPUT"
 
   # Hard release gate: the same jobs ci.yml runs, on all three platforms.
@@ -54,7 +54,7 @@ jobs:
       # (the release body is sliced from CHANGELOG.md).
       - name: Extract release notes from CHANGELOG.md
         run: |
-          scripts/extract-changelog.sh "$GITHUB_REF_NAME" > "$RUNNER_TEMP/release-notes.md"
+          tools/release/extract-changelog.sh "$GITHUB_REF_NAME" > "$RUNNER_TEMP/release-notes.md"
           echo "--- release notes for $GITHUB_REF_NAME ---"
           cat "$RUNNER_TEMP/release-notes.md"
 

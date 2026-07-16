@@ -5,31 +5,34 @@
 
 ## Purpose
 
-Vendored contributor-harness mechanics installed by the `agent-scaffold` skill;
-these tools are not part of the shipped `oma` binary or release asset bundle.
+Internal repository tooling grouped by failure domain. Stable end-user installers
+remain under `scripts/`; commands here serve contributors, CI, and releases.
 
 ## Key Files
 
 | path | role |
 |---|---|
-| `agent/worktree.sh` | Worktree lifecycle and trunk integration. |
-| `agent/generate-subagents.py` | Shared-source Claude/Codex subagent generator. |
-| `agent/hooks/trunk_edit_guard.sh` | Blocks tracked-file edits on trunk. |
-| `agent/hooks/format_on_edit.sh` | Advisory format dispatcher. |
-| `agent/hooks/authority_doc_budget.sh` | Advisory `AGENTS.md` budget check. |
+| `tools-manifest.tsv` | Machine-readable command-surface source of truth. |
+| `manifest-check.sh` | Reconciles the manifest with files, syntax, and help contracts. |
+| `agent/` | Vendored dual-host contributor harness. |
+| `release/` | Release construction, tag validation, and changelog helpers. |
+| `install/` | Offline installer regression tests. |
+| `git-hooks/` | Repository-local Git hook entry points. |
 
 ## For AI Agents
 
-- Refresh these files with `agent-scaffold upgrade`; do not maintain a local
-  behavioral fork of the vendored templates.
-- Keep shell and Python files LF-only so Git Bash and CI execute identical bytes.
-- Verify the selected profile with the external skill's `verify` mode after an
-  upgrade.
+- Classify every command in `tools-manifest.tsv`; run `make tooling-check` after
+  adding, moving, or deleting a command surface.
+- Group commands by audience, state/artifact, and hazard/verification rather
+  than by file extension.
+- Keep internal moves shim-free only when no external or QA caller owns the old
+  path; stable installers remain under `scripts/`.
+- Treat `agent/` as externally managed and refresh it only through
+  `agent-scaffold upgrade`.
 
 ## Dependencies
 
-Wired by [`../.claude/settings.json`](../.claude/settings.json) and
-[`../.codex/hooks.json`](../.codex/hooks.json); sources and projections live in
-[`../.agents/`](../.agents/).
+Invoked by [`../Makefile`](../Makefile), CI under [`../.github/`](../.github/),
+and the public installers under [`../scripts/`](../scripts/) where noted.
 
 <!-- MANUAL: notes below this line are preserved on regeneration -->

@@ -11,7 +11,7 @@ LD_FLAGS := -s -w -X github.com/sean2077/oh-my-agents/internal/version.Version=$
 
 .DEFAULT_GOAL := help
 
-.PHONY: help build install test vet fmt fmt-check agent-check lint check ci release clean hooks
+.PHONY: help build install test vet fmt fmt-check agent-check tooling-check lint check ci release clean hooks
 
 help:
 	@printf '%s\n' \
@@ -23,8 +23,9 @@ help:
 		"  fmt         Format Go sources in place" \
 		"  fmt-check   Fail if Go sources need formatting" \
 		"  agent-check Verify agent-harness links and generated projections" \
+		"  tooling-check Reconcile committed command surfaces with the manifest" \
 		"  lint        Run golangci-lint" \
-		"  check       Run agent-check, fmt-check, vet, test, and build" \
+		"  check       Run agent-check, tooling-check, fmt-check, vet, test, and build" \
 		"  ci          Run check plus lint" \
 		"  release     Build release assets with VERSION=vX.Y.Z" \
 		"  clean       Remove local build outputs" \
@@ -57,6 +58,9 @@ agent-check:
 	$(PYTHON) .agents/symlink-manager.py verify --repo .
 	$(PYTHON) tools/agent/generate-subagents.py --check
 
+tooling-check:
+	bash tools/manifest-check.sh
+
 lint:
 	@command -v "$(GOLANGCI_LINT)" >/dev/null 2>&1 || { \
 		echo "missing $(GOLANGCI_LINT); install golangci-lint or set GOLANGCI_LINT=/path/to/golangci-lint" >&2; \
@@ -64,17 +68,17 @@ lint:
 	}
 	$(GOLANGCI_LINT) run
 
-check: agent-check fmt-check vet test build
+check: agent-check tooling-check fmt-check vet test build
 
 ci: check lint
 
 release:
 	@test "$(VERSION)" != "dev" || { echo "set VERSION=vX.Y.Z" >&2; exit 2; }
-	scripts/build-release.sh "$(VERSION)"
+	tools/release/build-release.sh "$(VERSION)"
 
 clean:
 	rm -rf dist $(BIN)
 
 hooks:
-	git config core.hooksPath scripts/hooks
-	@echo "git hooks enabled (scripts/hooks); harness and content guards active on commit."
+	git config core.hooksPath tools/git-hooks
+	@echo "git hooks enabled (tools/git-hooks); harness, tooling, and content guards active on commit."

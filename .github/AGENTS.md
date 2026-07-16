@@ -27,7 +27,8 @@ compatibility reports.
 
 ## Dependencies
 
-Calls scripts under [`../scripts/`](../scripts/) and enforces the contracts in
+Calls stable installers under [`../scripts/`](../scripts/) and internal
+automation under [`../tools/`](../tools/); enforces the contracts in
 [`../CONTRIBUTING.md`](../CONTRIBUTING.md) and [`../docs/reference/`](../docs/reference/).
 
 <!-- MANUAL: notes below this line are preserved on regeneration -->
