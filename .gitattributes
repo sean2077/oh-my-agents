@@ -2,3 +2,11 @@
 # matrix. Without this, Windows checkouts introduce CRLF and fail the gofmt
 # gate even though the committed files are LF.
 *.go text eol=lf
+tools/agent/*.sh text eol=lf
+tools/agent/hooks/*.sh text eol=lf
+tools/agent/*.py text eol=lf
+tools/agent/hooks/*.py text eol=lf
+.agents/relink-skills.sh text eol=lf
+.agents/*.py text eol=lf
+.husky/pre-commit text eol=lf
+scripts/hooks/* text eol=lf

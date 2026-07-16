@@ -13,3 +13,6 @@ coverage.out
 
 # agent-relay cross-review ledger (process artifact, not source)
 /.shared/
+.claude/settings.local.json
+.worktrees/
+.claude/allow-trunk-edit

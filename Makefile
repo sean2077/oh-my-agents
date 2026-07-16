@@ -1,4 +1,5 @@
 GO ?= go
+PYTHON ?= python
 GOLANGCI_LINT ?= golangci-lint
 BIN ?= oma
 VERSION ?= dev
@@ -10,7 +11,7 @@ LD_FLAGS := -s -w -X github.com/sean2077/oh-my-agents/internal/version.Version=$
 
 .DEFAULT_GOAL := help
 
-.PHONY: help build install test vet fmt fmt-check lint check ci release clean hooks
+.PHONY: help build install test vet fmt fmt-check agent-check lint check ci release clean hooks
 
 help:
 	@printf '%s\n' \
@@ -21,12 +22,13 @@ help:
 		"  vet         Run go vet" \
 		"  fmt         Format Go sources in place" \
 		"  fmt-check   Fail if Go sources need formatting" \
+		"  agent-check Verify agent-harness links and generated projections" \
 		"  lint        Run golangci-lint" \
-		"  check       Run fmt-check, vet, test, and build" \
+		"  check       Run agent-check, fmt-check, vet, test, and build" \
 		"  ci          Run check plus lint" \
 		"  release     Build release assets with VERSION=vX.Y.Z" \
 		"  clean       Remove local build outputs" \
-		"  hooks       Enable repo git hooks (content-length guard)"
+		"  hooks       Enable repo git hooks (harness + content guards)"
 
 build:
 	$(GO) build -trimpath -ldflags '$(LD_FLAGS)' -o $(BIN) ./cmd/oma
@@ -51,6 +53,10 @@ fmt-check:
 		exit 1; \
 	fi
 
+agent-check:
+	$(PYTHON) .agents/symlink-manager.py verify --repo .
+	$(PYTHON) tools/agent/generate-subagents.py --check
+
 lint:
 	@command -v "$(GOLANGCI_LINT)" >/dev/null 2>&1 || { \
 		echo "missing $(GOLANGCI_LINT); install golangci-lint or set GOLANGCI_LINT=/path/to/golangci-lint" >&2; \
@@ -58,7 +64,7 @@ lint:
 	}
 	$(GOLANGCI_LINT) run
 
-check: fmt-check vet test build
+check: agent-check fmt-check vet test build
 
 ci: check lint
 
@@ -71,4 +77,4 @@ clean:
 
 hooks:
 	git config core.hooksPath scripts/hooks
-	@echo "git hooks enabled (scripts/hooks); content-length guard active on commit."
+	@echo "git hooks enabled (scripts/hooks); harness and content guards active on commit."

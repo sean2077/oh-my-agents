@@ -49,15 +49,16 @@ The documents under [`docs/`](docs/) are authoritative; the implementation follo
 ## Building and testing
 
 ```bash
+make agent-check       # real symlinks + generated Claude/Codex projections
 go build ./...
 go test ./...          # full suite — installation/projection tests use a temp $HOME
 gofmt -l .             # must print nothing
 go vet ./...
 ```
 
-CI runs the 3-platform test matrix with `-race`, `gofmt` / `vet` / `build`, `golangci-lint`, and `govulncheck` on every push and PR, as a reusable pipeline. A release calls that **same** pipeline as a hard gate before publishing.
+CI runs the agent-harness projection gate, the 3-platform test matrix with `-race`, `gofmt` / `vet` / `build`, `golangci-lint`, and `govulncheck` on every push and PR, as a reusable pipeline. A release calls that **same** pipeline as a hard gate before publishing.
 
-Optionally enable the repo git hooks once with `make hooks` (`git config core.hooksPath scripts/hooks`). The `pre-commit` hook is a dev aid — not part of shipped `oma` — that warns when a staged `SKILL.md`/`AGENTS.md` body exceeds the content budget (default 120 non-blank lines after the frontmatter), to keep agent content lean. It rides git, so it fires identically for Codex, Claude Code, and humans. Tune with `OMA_CONTENT_BUDGET_LINES=<n>`, or set `OMA_CONTENT_BUDGET_BLOCK=1` to fail the commit instead of warning.
+Optionally enable the repo git hooks once with `make hooks` (`git config core.hooksPath scripts/hooks`). The `pre-commit` hook is a dev aid — not part of shipped `oma` — that fails on harness projection drift, then warns when a staged `SKILL.md`/`AGENTS.md` body exceeds the content budget (default 120 non-blank lines after the frontmatter). It rides git, so it fires identically for Codex, Claude Code, and humans. Tune with `OMA_CONTENT_BUDGET_LINES=<n>`, or set `OMA_CONTENT_BUDGET_BLOCK=1` to fail the commit instead of warning.
 
 ## Releasing
 

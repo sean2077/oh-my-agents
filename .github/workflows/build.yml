@@ -107,8 +107,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: shellcheck installers and release scripts
-        run: shellcheck scripts/install.sh scripts/build-release.sh scripts/extract-changelog.sh scripts/test-install.sh scripts/validate-release-tag.sh scripts/test-release-tag.sh
+      - name: Verify agent harness projections
+        run: |
+          python .agents/symlink-manager.py verify --repo .
+          python tools/agent/generate-subagents.py --check
+
+      - name: shellcheck shell tooling
+        run: shellcheck .agents/relink-skills.sh tools/agent/worktree.sh tools/agent/hooks/*.sh scripts/hooks/pre-commit scripts/install.sh scripts/build-release.sh scripts/extract-changelog.sh scripts/test-install.sh scripts/validate-release-tag.sh scripts/test-release-tag.sh
 
       - name: release tag gate smoke
         run: bash scripts/test-release-tag.sh
