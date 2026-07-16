@@ -260,13 +260,14 @@ The design documents under [`docs/`](docs/) (protocol, command tree, workflows, 
 ## Development
 
 ```bash
+make agent-check        # agent-harness links + generated projections
 go build ./...
 go test ./...           # full suite
 gofmt -l .              # must be empty
 go vet ./...
 ```
 
-CI runs the 3-platform test matrix with `-race`, `gofmt`/`vet`/`build`, `golangci-lint`, and `govulncheck` on every push and PR. Releases call the **same** pipeline as a hard gate, then promote the exact built-and-verified artifacts (no rebuild) with a checksums manifest, a strict SemVer tag gate, prerelease/latest classification checks, a build-provenance attestation, and an SBOM. The compatibility contract is [`STABILITY.md`](STABILITY.md).
+CI runs the agent-harness projection gate, the 3-platform test matrix with `-race`, `gofmt`/`vet`/`build`, `golangci-lint`, and `govulncheck` on every push and PR. Releases call the **same** pipeline as a hard gate, then promote the exact built-and-verified artifacts (no rebuild) with a checksums manifest, a strict SemVer tag gate, prerelease/latest classification checks, a build-provenance attestation, and an SBOM. The compatibility contract is [`STABILITY.md`](STABILITY.md).
 
 This project dogfoods `pair-delivery` when independent cross-agent review is useful
 and available. It is not a contribution prerequisite: local work may proceed through

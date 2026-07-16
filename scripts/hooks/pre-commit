@@ -1,16 +1,21 @@
 #!/bin/sh
-# Content-length guard — development only, agent-neutral.
+# Agent-harness consistency + content-length guard — development only,
+# agent-neutral.
 #
 # The SAME hook fires for every committer (Codex, Claude Code, or a human)
-# because it rides git, not any agent's hook system. It warns when a STAGED
-# SKILL.md or AGENTS.md body (non-blank lines after the YAML frontmatter)
-# exceeds the budget, to keep agent content lean — trim or link out rather than
-# inline. It is NOT part of the shipped oma product; it is a repo dev aid.
+# because it rides git, not any agent's hook system. It first fails on drift in
+# the shared harness links or generated subagent projections, then warns when a
+# STAGED SKILL.md or AGENTS.md body (non-blank lines after the YAML frontmatter)
+# exceeds the budget. It is NOT part of the shipped oma product; it is a repo
+# dev aid.
 #
 #   Enable once:  make hooks            (or: git config core.hooksPath scripts/hooks)
 #   Tuning:       OMA_CONTENT_BUDGET_LINES=<n>   default 120
 #                 OMA_CONTENT_BUDGET_BLOCK=1     fail the commit instead of warning
 set -eu
+
+python .agents/symlink-manager.py verify --repo .
+python tools/agent/generate-subagents.py --check
 
 budget=${OMA_CONTENT_BUDGET_LINES:-120}
 block=${OMA_CONTENT_BUDGET_BLOCK:-0}

@@ -53,13 +53,19 @@ Do these in order; each step points at the README for options and detail.
 
 - **Local gate — green before any handoff:**
   ```bash
+  make agent-check
   go build ./...
   go test ./...      # full suite
   gofmt -l .         # must print nothing
   go vet ./...
   ```
-  CI additionally runs `golangci-lint` and a Windows matrix; `.gitattributes` pins
-  `*.go` to LF so `gofmt` is byte-identical across platforms.
+  CI additionally runs the agent-harness projection gate, `golangci-lint`, and a
+  Windows matrix; `.gitattributes` pins `*.go` to LF so `gofmt` is byte-identical
+  across platforms.
+- **Product assets and contributor harness stay separate.** Shipped `oma` skills
+  remain authoritative under `assets/skills/`; `.agents/skills/` is reserved for
+  repo-local contributor workflows. Never move or mirror release assets into the
+  harness projection tree.
 - **Specs are authoritative.** [`docs/reference/`](docs/reference/) holds command-tree,
   relay-v2-protocol, schemas, adapter-conformance, config, security-contract, and
   workflows. Implementation follows the docs — change the doc together with the code.
@@ -79,3 +85,56 @@ self-update | version`. Full tree: [`docs/reference/command-tree.md`](docs/refer
 Conventions: `--json` on query commands, a global `--dry-run` that writes nothing, and
 contractual exit codes (`0` ok / `1` warn / `2` usage / `3` fail-closed / `4` gate
 failed; relay `wait` adds `10/11/12`).
+
+<!-- agent-scaffold:start — managed by the agent-scaffold skill. Edit project prose OUTSIDE these markers; `agent-scaffold upgrade` refreshes this block. -->
+## Agent Harness (Claude Code + Codex)
+
+This repo carries a vendored, dual-host agent harness. `.agents/` is the single
+source of truth (SSOT); `.claude/` and `.codex/` are wired to the **same**
+implementations under `tools/agent/`.
+
+### Worktree-per-change (hard rule)
+
+**Never edit trunk (`main`) directly** — every change, however small ("just docs"
+is NOT an exception), starts in its own worktree cut from the trunk tip:
+
+```bash
+bash tools/agent/worktree.sh new <name>   # edit inside .worktrees/<name>/  (branch feat|fix|docs|chore/<name>)
+bash tools/agent/worktree.sh done         # merge back to local trunk (--no-ff) + clean up + ff-only push
+```
+
+`tools/agent/hooks/trunk_edit_guard.sh` (PreToolUse) mechanically blocks edits to
+tracked files while on trunk. Escape hatch — only when the user explicitly
+authorizes a trunk edit: `touch .claude/allow-trunk-edit` (auto-expires in 2 h)
+or `WORKTREE_ALLOW_TRUNK_EDIT=1`.
+
+### Authority docs
+
+`AGENTS.md` (root + every subdirectory; `CLAUDE.md` is a symlink) is an **entry
+point**, not a detail dump. `tools/agent/hooks/authority_doc_budget.sh`
+(PostToolUse) advises when a contract exceeds its line budget (root 320 / nested
+120; override with `AUTHORITY_DOC_MAX_ROOT|NESTED`). Subdirectory `AGENTS.md`
+files carry `<!-- Parent: ../AGENTS.md -->` and stay subordinate to the root.
+
+### SSOT layout
+
+| Path | Role | Commit? |
+|---|---|---|
+| `.agents/skills/<name>/SKILL.md` | project skill source | ✅ |
+| `.agents/subagents/<name>/{metadata.json,instructions.md}` | subagent source | ✅ |
+| `.claude/skills/<name>` | symlink → `.agents/skills/<name>` (CC discovery; Codex reads `.agents/` directly) | ✅ |
+| `.claude/agents/*.md`, `.codex/agents/*.toml` | **generated** subagent projections — do NOT hand-edit | ✅ |
+| `tools/agent/hooks/` | shared hook impls (doc budget / format + optional trunk guard) | ✅ |
+| `tools/agent/worktree.sh` | worktree lifecycle | ✅|
+| `.claude/allow-trunk-edit` | worktree escape hatch | ❌ ignored|
+| `.claude/settings.local.json` | personal overrides | ❌ ignored |
+
+- **Add a skill**: edit `.agents/skills/` → run `bash .agents/relink-skills.sh` → commit source + symlink.
+- **Add a subagent** (needs python): edit `.agents/subagents/` → run `python tools/agent/generate-subagents.py` → commit source + generated. A pre-commit `--check` guards the two sides from drifting.
+- **Third-party skills** install separately via `npx skills`; they land as real dirs in `.claude/skills/` and the relinker leaves them untouched.
+
+**Codex trust**: project-level `.codex/` (config + hooks + agents) only loads for a
+**trusted** project; until trusted it is silently skipped. Trust once: run `codex`
+here and accept, or add `[projects."<repo abs path>"] trust_level = "trusted"` to
+`~/.codex/config.toml`.
+<!-- agent-scaffold:end -->
