@@ -26,6 +26,8 @@ the authoritative command/protocol specifications.
 - Keep navigation concise and link to one authoritative location instead of
   duplicating rules.
 - Treat examples and history as explanatory, never as overrides of `reference/`.
+- When correcting history, retain dates and decision context and link to the
+  current authoritative reference instead of rewriting the past as current.
 
 ## Dependencies
 
