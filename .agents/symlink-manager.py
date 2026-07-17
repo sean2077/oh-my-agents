@@ -9,9 +9,10 @@ exit 2 before the requested mutation starts.
 from __future__ import annotations
 
 import argparse
-import filecmp
 import os
+import secrets
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -98,30 +99,54 @@ def within_repo(repo: Path, relative: str) -> Path:
         candidate.absolute().relative_to(repo.absolute())
     except ValueError as exc:
         raise ContractError(f"projection escapes the repository: {relative}") from exc
+    try:
+        candidate.parent.resolve().relative_to(repo.resolve())
+    except ValueError as exc:
+        raise ContractError(
+            f"projection parent redirects outside the repository: {relative}"
+        ) from exc
     return candidate
 
 
-def trees_identical(left: Path, right: Path) -> bool:
-    if left.is_file() and right.is_file():
-        return filecmp.cmp(left, right, shallow=False)
-    if not left.is_dir() or not right.is_dir():
-        return False
-    comparison = filecmp.dircmp(left, right)
-    if comparison.left_only or comparison.right_only or comparison.funny_files:
-        return False
-    if any(not filecmp.cmp(left / name, right / name, shallow=False) for name in comparison.common_files):
-        return False
-    return all(trees_identical(left / name, right / name) for name in comparison.common_dirs)
+def require_real_directory(path: Path) -> None:
+    if not os.path.lexists(path):
+        return
+    if path.is_symlink():
+        raise ContractError(f"managed directory must not be a symlink: {path}")
+    if not path.is_dir():
+        raise ContractError(f"{path} exists but is not a directory")
 
 
-def safe_migration(link: Path, resolved_target: Path, target: str) -> bool:
+INSTALL_DIRECTORIES = (
+    ".agents",
+    ".agents/skills",
+    ".agents/subagents",
+    ".claude",
+    ".claude/skills",
+    ".claude/agents",
+    ".codex",
+    ".codex/agents",
+)
+SKILL_DIRECTORIES = (
+    ".agents",
+    ".agents/skills",
+    ".claude",
+    ".claude/skills",
+)
+
+
+def preflight_managed_directories(repo: Path, relatives) -> None:
+    for relative in relatives:
+        require_real_directory(within_repo(repo, relative))
+
+
+def is_target_text_placeholder(link: Path, target: str) -> bool:
     if link.is_file() and not link.is_symlink():
         try:
-            if link.read_text(encoding="utf-8").strip() == target:
-                return True
+            return link.read_text(encoding="utf-8").strip() == target
         except (OSError, UnicodeError):
-            pass
-    return trees_identical(link, resolved_target)
+            return False
+    return False
 
 
 def managed_skill_target(value: str) -> bool:
@@ -147,8 +172,8 @@ def validate_destination(
         raise ContractError(f"projection conflict: {link} is a symlink to {current!r}, expected {target!r}")
     if not link.exists():
         return "create"
-    if safe_migration(link, resolved_target, target):
-        return "migrate-copy"
+    if is_target_text_placeholder(link, target):
+        return "materialize-placeholder"
     raise ContractError(
         f"projection conflict: {link} exists and differs from the authoritative source; "
         "move or merge it manually"
@@ -158,27 +183,55 @@ def validate_destination(
 def remove_existing(path: Path) -> None:
     if path.is_symlink() or path.is_file():
         path.unlink()
-    elif path.is_dir():
-        shutil.rmtree(path)
+        return
+    raise ContractError(f"refusing to remove unexpected path type: {path}")
+
+
+def create_unique_temp_link(link: Path, resolved_target: Path, target: str):
+    for _attempt in range(32):
+        candidate = link.with_name(
+            f".{link.name}.agent-scaffold-link-{secrets.token_hex(8)}"
+        )
+        try:
+            os.symlink(
+                native_symlink_target(target),
+                candidate,
+                target_is_directory=resolved_target.is_dir(),
+            )
+        except FileExistsError:
+            continue
+        identity = os.lstat(candidate)
+        return candidate, (identity.st_dev, identity.st_ino)
+    raise ContractError(f"could not allocate a unique temporary symlink for {link}")
+
+
+def cleanup_created_temp_link(path: Path, identity) -> None:
+    try:
+        current = os.lstat(path)
+    except FileNotFoundError:
+        return
+    if (
+        stat.S_ISLNK(current.st_mode)
+        and (current.st_dev, current.st_ino) == identity
+    ):
+        path.unlink()
 
 
 def create_relative_link(link: Path, resolved_target: Path, target: str, action: str) -> bool:
     if action == "present":
         return False
     link.parent.mkdir(parents=True, exist_ok=True)
-    temp_link = link.with_name(f".{link.name}.agent-scaffold-link")
-    if temp_link.exists() or temp_link.is_symlink():
-        remove_existing(temp_link)
+    temp_link, temp_identity = create_unique_temp_link(
+        link, resolved_target, target
+    )
     try:
-        os.symlink(native_symlink_target(target), temp_link, target_is_directory=resolved_target.is_dir())
         if not temp_link.is_symlink() or read_symlink_target(temp_link) != target:
             raise ContractError(f"failed to materialize a real symlink for {link}")
         if link.exists() or link.is_symlink():
             remove_existing(link)
         os.replace(temp_link, link)
     finally:
-        if temp_link.exists() or temp_link.is_symlink():
-            remove_existing(temp_link)
+        cleanup_created_temp_link(temp_link, temp_identity)
     if not link.is_symlink() or read_symlink_target(link) != target or not link.exists():
         raise ContractError(f"projection verification failed after creating {link} -> {target}")
     return True
@@ -188,7 +241,7 @@ def ensure_contract(repo: Path) -> None:
     doctor(repo)
     link = within_repo(repo, "CLAUDE.md")
     resolved_target = within_repo(repo, "AGENTS.md")
-    if not resolved_target.is_file():
+    if resolved_target.is_symlink() or not resolved_target.is_file():
         raise ContractError("cannot link CLAUDE.md: AGENTS.md does not exist")
     action = validate_destination(
         link,
@@ -202,17 +255,27 @@ def ensure_contract(repo: Path) -> None:
 
 def skill_sources(repo: Path) -> list[Path]:
     source = within_repo(repo, ".agents/skills")
+    require_real_directory(source)
     if not source.is_dir():
         raise ContractError("missing authoritative skill directory: .agents/skills")
-    return sorted(path for path in source.iterdir() if path.is_dir() and not path.name.startswith("_"))
+    sources = []
+    for path in sorted(source.iterdir()):
+        if path.name.startswith("_"):
+            continue
+        if path.is_symlink():
+            raise ContractError(f"skill source must not be a symlink: {path}")
+        if path.is_dir():
+            sources.append(path)
+    return sources
 
 
 def preflight_install(repo: Path) -> None:
     """Reject deterministic contract and skill-projection conflicts without writing."""
+    preflight_managed_directories(repo, INSTALL_DIRECTORIES)
     agents = within_repo(repo, "AGENTS.md")
     link = within_repo(repo, "CLAUDE.md")
-    if os.path.lexists(agents) and not agents.is_file():
-        raise ContractError("AGENTS.md exists but is not a regular file")
+    if os.path.lexists(agents) and (agents.is_symlink() or not agents.is_file()):
+        raise ContractError("AGENTS.md exists but is not a regular non-symlink file")
     if link.is_symlink():
         current = read_symlink_target(link)
         if current != "AGENTS.md":
@@ -231,19 +294,11 @@ def preflight_install(repo: Path) -> None:
             )
 
     source_root = within_repo(repo, ".agents/skills")
-    for directory in (within_repo(repo, ".agents"), source_root):
-        if os.path.lexists(directory) and not directory.is_dir():
-            raise ContractError(f"{directory} exists but is not a directory")
     if not source_root.is_dir():
         return
 
     vendor = within_repo(repo, ".claude/skills")
-    for directory in (within_repo(repo, ".claude"), vendor):
-        if os.path.lexists(directory) and not directory.is_dir():
-            raise ContractError(f"{directory} exists but is not a directory")
-    for source in sorted(
-        path for path in source_root.iterdir() if path.is_dir() and not path.name.startswith("_")
-    ):
+    for source in skill_sources(repo):
         target = f"../../.agents/skills/{source.name}"
         validate_destination(
             vendor / source.name,
@@ -254,6 +309,7 @@ def preflight_install(repo: Path) -> None:
 
 
 def sync_skills(repo: Path) -> None:
+    preflight_managed_directories(repo, SKILL_DIRECTORIES)
     doctor(repo)
     sources = skill_sources(repo)
     vendor = within_repo(repo, ".claude/skills")
@@ -281,18 +337,18 @@ def sync_skills(repo: Path) -> None:
                 stale.append(link)
 
     made = 0
-    migrated = 0
+    materialized = 0
     for link in stale:
         link.unlink()
     for link, source, target, action in planned:
         if create_relative_link(link, source, target, action):
             made += 1
-            if action == "migrate-copy":
-                migrated += 1
+            if action == "materialize-placeholder":
+                materialized += 1
 
     print(
         f"relink: {len(sources)} skills · {made} link(s) (re)created · "
-        f"{len(stale)} stale pruned · {migrated} legacy copy/copies migrated"
+        f"{len(stale)} stale pruned · {materialized} target-text placeholder(s) materialized"
     )
 
 
@@ -319,6 +375,7 @@ def verify_link(repo: Path, relative: str, target: str, failures: list[str]) -> 
 
 
 def verify(repo: Path) -> int:
+    preflight_managed_directories(repo, SKILL_DIRECTORIES)
     doctor(repo)
     failures: list[str] = []
     verify_link(repo, "CLAUDE.md", "AGENTS.md", failures)
