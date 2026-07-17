@@ -129,13 +129,13 @@ point**, not a detail dump. `.agents/tools/hooks/authority_doc_budget.sh`
 | `.agents/subagents/<name>/{metadata.json,instructions.md}` | subagent source | ✅ |
 | `.claude/skills/<name>` | symlink → `.agents/skills/<name>` (CC discovery; Codex reads `.agents/` directly) | ✅ |
 | `.claude/agents/*.md`, `.codex/agents/*.toml` | **generated** subagent projections — do NOT hand-edit | ✅ |
-| `.agents/tools/hooks/` | shared hook impls (doc budget / format + optional trunk guard) | ✅ |
-| `.agents/tools/worktree.sh` | worktree lifecycle | ✅|
-| `.claude/allow-trunk-edit` | worktree escape hatch | ❌ ignored|
+| `.agents/tools/hooks/` | scaffold-managed hook runtime (doc budget + optional trunk guard) | ✅ |
+| `.agents/tools/worktree.sh` | worktree lifecycle | ✅ |
+| `.claude/allow-trunk-edit` | worktree escape hatch | ❌ ignored |
 | `.claude/settings.local.json` | personal overrides | ❌ ignored |
 
 - **Add a skill**: edit `.agents/skills/` → run `bash .agents/relink-skills.sh` → commit source + symlink.
-- **Add a subagent** (needs python): edit `.agents/subagents/` → run `python .agents/tools/generate-subagents.py` → commit source + generated. A pre-commit `--check` guards the two sides from drifting.
+- **Add a subagent** (needs python): edit `.agents/subagents/` → run `python .agents/tools/generate-subagents.py` → commit source + generated. Wire `--check` into the project's own CI or hook manager when desired.
 - **Third-party skills** install separately via `npx skills`; they land as real dirs in `.claude/skills/` and the relinker leaves them untouched.
 
 **Codex trust**: project-level `.codex/` (config + hooks + agents) only loads for a
