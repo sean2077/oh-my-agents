@@ -92,7 +92,7 @@ ci: check lint
 
 release:
 	@test "$(VERSION)" != "dev" || { echo "set VERSION=vX.Y.Z" >&2; exit 2; }
-	tools/release/build-release.sh "$(VERSION)"
+	"$(BASH)" tools/release/build-release.sh "$(VERSION)"
 
 clean:
 	rm -rf dist $(BIN)
