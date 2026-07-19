@@ -42,7 +42,7 @@ On-demand skills (install only when a task needs them — zero resident cost oth
 | **ultraqa** | Adversarial end-to-end QA as a ralph profile (hostile-scenario matrix). |
 | **skillify** | Capture a repeatable workflow into a new oma skill, gated by a four-part quality test. |
 
-The full installed catalog (with lifecycle status) is `oma asset catalog`. `oma asset audit` reports resident, description/budget, and loaded-body token estimates alongside advisory lifecycle labels; release tests separately fail when an active description exceeds its manifest budget.
+The full installed catalog (with lifecycle status) is `oma asset catalog`. `oma asset audit` reports resident, description/budget, and loaded-body token estimates alongside advisory intra-catalog labels; `ORPHAN` means no inbound asset reference, not "unused." Release tests separately fail when an active description exceeds its manifest budget.
 
 ### Which workflow?
 
@@ -164,8 +164,13 @@ in — relay / ralph / interview / autopilot, each tagged `oma`) — add to
 ```
 
 `oma statusline` supersedes the older relay-only `oma relay statusline`. Already
-have a custom statusline script? Don't replace it — call `oma statusline --json`
-from inside it and gate on `.active` (so idle windows stay clean). See
+have a custom statusline script? Don't replace it — call
+`oma statusline --active-only` once from inside it so idle windows stay clean
+while active output keeps oma's native styling; structured consumers can use
+`--json` and gate on `.active`. The CLI
+hard-bounds the complete workflow probe internally; wrappers do not need GNU
+`timeout`. The full example requires Bash and `jq`, exits without output when
+`jq` is unavailable, and supports both GNU and BSD `date`. See
 [`docs/examples/statusline-command.sh`](docs/examples/statusline-command.sh)
 for a complete working example.
 

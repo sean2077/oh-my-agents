@@ -57,6 +57,12 @@ gofmt -l .             # must print nothing
 go vet ./...
 ```
 
+On native Windows, `make tooling-check` derives Git Bash from GNU Make's
+configured POSIX `SHELL` instead of accepting the earlier `bash.exe` found on
+`PATH`, which may be the WSL launcher. Set
+`BASH="C:/path/to/bash.exe"` on the make command line when using a custom shell
+layout.
+
 See [`tools/README.md`](tools/README.md) for the internal command map and
 [`tools/tools-manifest.tsv`](tools/tools-manifest.tsv) for the enforced surface inventory.
 

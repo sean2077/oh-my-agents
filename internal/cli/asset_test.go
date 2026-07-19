@@ -54,6 +54,8 @@ func TestAssetAuditCLI(t *testing.T) {
 			DescriptionTokens       int    `json:"description_tokens"`
 			DescriptionBudgetTokens int    `json:"description_budget_tokens"`
 			BodyTokens              int    `json:"body_tokens"`
+			RefCount                int    `json:"ref_count"`
+			ReferrerCount           int    `json:"referrer_count"`
 		} `json:"audit"`
 	}
 	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
@@ -71,6 +73,9 @@ func TestAssetAuditCLI(t *testing.T) {
 	if out.Audit[0].DescriptionTokens != 2 || out.Audit[0].DescriptionBudgetTokens != 80 {
 		t.Fatalf("demo description budget = %d/%d, want 2/80", out.Audit[0].DescriptionTokens, out.Audit[0].DescriptionBudgetTokens)
 	}
+	if out.Audit[0].RefCount != 0 || out.Audit[0].ReferrerCount != 0 {
+		t.Fatalf("demo reference metrics = %d/%d, want 0/0", out.Audit[0].RefCount, out.Audit[0].ReferrerCount)
+	}
 
 	// text output is human-scannable and names the asset + label.
 	rc2 := newRootCmd()
@@ -83,7 +88,7 @@ func TestAssetAuditCLI(t *testing.T) {
 	}
 	if !bytes.Contains(buf2.Bytes(), []byte("demo")) || !bytes.Contains(buf2.Bytes(), []byte("ORPHAN")) ||
 		!bytes.Contains(buf2.Bytes(), []byte("resident=3")) || !bytes.Contains(buf2.Bytes(), []byte("desc=2  /80")) ||
-		!bytes.Contains(buf2.Bytes(), []byte("body=2")) {
+		!bytes.Contains(buf2.Bytes(), []byte("body=2")) || !bytes.Contains(buf2.Bytes(), []byte("referrers=0")) {
 		t.Fatalf("text output missing demo/ORPHAN/context metrics: %s", buf2.String())
 	}
 }

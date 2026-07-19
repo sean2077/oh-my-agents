@@ -77,6 +77,9 @@ func TestAuditLabels(t *testing.T) {
 	if e := find(entries, "keeper"); e.RefCount != 1 {
 		t.Errorf("keeper ref_count = %d, want 1", e.RefCount)
 	}
+	if got := find(entries, "lonely").Reason; got != "no inbound references from other assets — direct-use evidence is outside this audit" {
+		t.Errorf("lonely reason = %q, want a scope-bounded advisory", got)
+	}
 }
 
 func TestAuditBodyTokensExcludeYAMLFrontmatter(t *testing.T) {
@@ -105,6 +108,34 @@ func TestAuditBodyTokensExcludeYAMLFrontmatter(t *testing.T) {
 			}
 			if got := find(entries, "demo").BodyTokens; got != 2 { // 8 UTF-8 bytes under approx-b4/1
 				t.Fatalf("body_tokens = %d, want 2", got)
+			}
+		})
+	}
+}
+
+func TestAuditBodyTokensAreLineEndingInvariant(t *testing.T) {
+	root := t.TempDir()
+	writeSkill(t, root, "demo", "short", "", "", "placeholder")
+	path := filepath.Join(root, "skills", "demo", "SKILL.md")
+
+	variants := map[string]string{
+		"lf":    "---\nname: demo\ndescription: short\n---\na\nb\nc\nd\n",
+		"crlf":  "---\r\nname: demo\r\ndescription: short\r\n---\r\na\r\nb\r\nc\r\nd\r\n",
+		"mixed": "---\r\nname: demo\ndescription: short\r\n---\na\r\nb\nc\r\nd\n",
+	}
+
+	for name, raw := range variants {
+		t.Run(name, func(t *testing.T) {
+			if err := os.WriteFile(path, []byte(raw), 0o644); err != nil {
+				t.Fatal(err)
+			}
+
+			entries, err := Audit(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := find(entries, "demo").BodyTokens; got != 2 {
+				t.Fatalf("body_tokens = %d, want 2 after canonical line-ending measurement", got)
 			}
 		})
 	}
@@ -153,6 +184,25 @@ func TestAuditRefExcludesSelfAndCountsCanonical(t *testing.T) {
 	}
 	if a := find(entries, "old-alias"); a.Label != LabelRetire {
 		t.Errorf("old-alias label = %s, want RETIRE", a.Label)
+	}
+}
+
+func TestAuditReferenceMetricsDistinguishOccurrencesAndReferrers(t *testing.T) {
+	root := t.TempDir()
+	writeSkill(t, root, "target-skill", "short", "", "", "target-skill target-skill")
+	writeSkill(t, root, "noisy-referrer", "short", "", "", "target-skill, target-skill; target-skill")
+	writeSkill(t, root, "old-alias", "short", "alias", "target-skill", "body")
+
+	entries, err := Audit(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := find(entries, "target-skill")
+	if target.RefCount != 4 {
+		t.Fatalf("target-skill ref_count = %d, want 4 reference occurrences", target.RefCount)
+	}
+	if target.ReferrerCount != 2 {
+		t.Fatalf("target-skill referrer_count = %d, want 2 distinct other assets", target.ReferrerCount)
 	}
 }
 

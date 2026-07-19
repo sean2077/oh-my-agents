@@ -1,13 +1,31 @@
 GO ?= go
+GIT ?= git
 PYTHON ?= python
 GOLANGCI_LINT ?= golangci-lint
+ifneq ($(findstring .exe,$(SHELL)),)
+BASH ?= $(subst /bin/sh.exe,/bin/bash.exe,$(subst /usr/bin/sh.exe,/bin/bash.exe,$(SHELL)))
+else
+BASH ?= bash
+endif
 BIN ?= oma
 VERSION ?= dev
-GIT_VERSION := $(shell git describe --tags --always 2>/dev/null || echo dev)
-GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
-GIT_DIRTY := $(shell test -z "$$(git status --porcelain 2>/dev/null)" || echo -dirty)
-BUILD_VERSION ?= $(if $(filter dev,$(VERSION)),$(GIT_VERSION),$(VERSION))$(GIT_DIRTY)
-LD_FLAGS := -s -w -X github.com/sean2077/oh-my-agents/internal/version.Version=$(BUILD_VERSION) -X github.com/sean2077/oh-my-agents/internal/version.Commit=$(GIT_COMMIT)$(GIT_DIRTY)
+
+# GNU Make 3.81 on Windows cannot reliably run $(shell ...) when its configured
+# POSIX SHELL path contains spaces. Resolve provenance inside the recipe shell,
+# which also keeps build/install on one fail-closed stamping path.
+define stamped_go
+	@set -eu; \
+	git_version="$$($(GIT) describe --tags --always 2>/dev/null || printf '%s' dev)"; \
+	git_commit="$$($(GIT) rev-parse --short HEAD 2>/dev/null || printf '%s' none)"; \
+	git_dirty=""; \
+	if [ -n "$$($(GIT) status --porcelain 2>/dev/null)" ]; then git_dirty="-dirty"; fi; \
+	build_version="$(VERSION)"; \
+	if [ "$$build_version" = dev ]; then build_version="$$git_version"; fi; \
+	build_version="$$build_version$$git_dirty"; \
+	$(GO) $(1) -trimpath \
+		-ldflags "-s -w -X github.com/sean2077/oh-my-agents/internal/version.Version=$$build_version -X github.com/sean2077/oh-my-agents/internal/version.Commit=$$git_commit$$git_dirty" \
+		$(2) ./cmd/oma
+endef
 
 .DEFAULT_GOAL := help
 
@@ -32,10 +50,10 @@ help:
 		"  hooks       Enable repo git hooks (harness + content guards)"
 
 build:
-	$(GO) build -trimpath -ldflags '$(LD_FLAGS)' -o $(BIN) ./cmd/oma
+	$(call stamped_go,build,-o "$(BIN)")
 
 install:
-	$(GO) install -trimpath -ldflags '$(LD_FLAGS)' ./cmd/oma
+	$(call stamped_go,install,)
 
 test:
 	$(GO) test ./...
@@ -59,7 +77,7 @@ agent-check:
 	$(PYTHON) .agents/tools/generate-subagents.py --check
 
 tooling-check:
-	bash tools/manifest-check.sh
+	"$(BASH)" tools/manifest-check.sh
 
 lint:
 	@command -v "$(GOLANGCI_LINT)" >/dev/null 2>&1 || { \

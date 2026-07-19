@@ -8,12 +8,14 @@
 # oma-specific part — it calls `oma statusline --json` and shows the active core
 # workflow's state (relay/ralph/interview/autopilot), staying silent (fail-quiet,
 # exit 0) when oma isn't installed or no workflow is active. `oma` is resolved
-# from PATH, so there is no absolute path to edit.
-input=$(cat)
+# from PATH, so there is no absolute path to edit. Requires Bash and jq; a
+# missing jq produces no output rather than a malformed status line.
 
 # Never leak to stderr — Claude Code hides the whole status line if the script
 # writes anything to stderr. Keep this script fail-silent.
 exec 2>/dev/null
+jq_bin=$(command -v jq 2>/dev/null) || exit 0
+input=$(cat)
 
 # ---- colors ----
 C_PATH='\033[0;34m'; C_BRANCH='\033[0;32m'; C_DIRTY='\033[0;31m'
@@ -24,23 +26,52 @@ SEP=" ${C_DIM}\xc2\xb7${R} "          # " · "  (minor)
 BAR=" ${C_DIM}|${R} "                  # " | "  (major)
 
 # ---- extract ----
-model=$(echo "$input" | jq -r '.model.display_name // "unknown"')
+fields=()
+while IFS= read -r -d '' value; do
+    fields[${#fields[@]}]=$value
+done < <(
+    "$jq_bin" -rj '
+        [
+          (.model.display_name // "unknown"),
+          (.effort.level // ""),
+          (.workspace.current_dir // .cwd // ""),
+          (.workspace.git_worktree // ""),
+          (.worktree.branch // ""),
+          (.worktree.original_cwd // ""),
+          (.context_window.used_percentage // ""),
+          (.context_window.total_input_tokens // ""),
+          (.context_window.context_window_size // ""),
+          (.cost.total_lines_added // ""),
+          (.cost.total_lines_removed // ""),
+          (.rate_limits.five_hour.used_percentage // ""),
+          (.rate_limits.seven_day.used_percentage // ""),
+          (.rate_limits.five_hour.resets_at // ""),
+          (.rate_limits.seven_day.resets_at // "")
+        ]
+        | map(tostring)
+        | .[] + "\u0000"
+    ' <<<"$input"
+)
+[ "${#fields[@]}" -eq 15 ] || exit 0
+
+model=${fields[0]}
+effort=${fields[1]}
+cwd=${fields[2]}
+git_worktree=${fields[3]}
+wt_branch=${fields[4]}
+wt_orig_cwd=${fields[5]}
+used_pct=${fields[6]}
+total_input=${fields[7]}
+ctx_size=${fields[8]}
+lines_added=${fields[9]}
+lines_removed=${fields[10]}
+five_pct=${fields[11]}
+week_pct=${fields[12]}
+five_reset=${fields[13]}
+week_reset=${fields[14]}
+
 # compact model label: "Opus 4.8 (1M context)" -> "Opus 4.8(1M)"
 model="${model/ (/(}"; model="${model/ context)/)}"
-effort=$(echo "$input" | jq -r '.effort.level // empty')   # low|medium|high|xhigh|max
-cwd=$(echo "$input" | jq -r '.workspace.current_dir // .cwd // empty')
-git_worktree=$(echo "$input" | jq -r '.workspace.git_worktree // empty')
-wt_branch=$(echo "$input" | jq -r '.worktree.branch // empty')
-wt_orig_cwd=$(echo "$input" | jq -r '.worktree.original_cwd // empty')
-used_pct=$(echo "$input" | jq -r '.context_window.used_percentage // empty')
-total_input=$(echo "$input" | jq -r '.context_window.total_input_tokens // empty')
-ctx_size=$(echo "$input" | jq -r '.context_window.context_window_size // empty')
-lines_added=$(echo "$input" | jq -r '.cost.total_lines_added // empty')
-lines_removed=$(echo "$input" | jq -r '.cost.total_lines_removed // empty')
-five_pct=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // empty')
-week_pct=$(echo "$input" | jq -r '.rate_limits.seven_day.used_percentage // empty')
-five_reset=$(echo "$input" | jq -r '.rate_limits.five_hour.resets_at // empty')
-week_reset=$(echo "$input" | jq -r '.rate_limits.seven_day.resets_at // empty')
 
 # ---- helpers ----
 humanize() {  # tokens -> 24k  (integer-safe)
@@ -48,7 +79,10 @@ humanize() {  # tokens -> 24k  (integer-safe)
     case "$n" in ''|*[!0-9]*) return;; esac
     if [ "$n" -ge 1000 ]; then printf '%dk' "$(( (n + 500) / 1000 ))"; else printf '%d' "$n"; fi
 }
-fmt_reset() { [ -n "$1" ] && date -d "@$1" "+$2"; }
+fmt_reset() {
+    [ -n "$1" ] || return
+    date -d "@$1" "+$2" 2>/dev/null || date -r "$1" "+$2" 2>/dev/null
+}
 
 # ---- session: model + effort (most important — first) ----
 printf "${C_MODEL}%s${R}" "$model"
@@ -102,15 +136,16 @@ fi
 # ---- oma workflow segment (fail-quiet, hard-bounded) ----
 #   gate on .active, then emit oma's OWN colored line — it already renders the
 #   `oma:` source tag + workflow glyph (identical to `oma statusline`); the host
-#   script only gates and appends, no re-styling.
+#   script only gates and appends, no re-styling. oma hard-bounds its complete
+#   workflow probe internally, so this portable wrapper needs no GNU `timeout`.
 #   `oma` resolved from PATH; idle / not-installed → segment omitted, exit 0.
 oma_bin=$(command -v oma 2>/dev/null)
 if [ -n "$oma_bin" ] && [ -x "$oma_bin" ]; then
     oma_seg=$(
-        { [ -n "$cwd" ] && cd "$cwd"; } 2>/dev/null
-        if [ "$(timeout 1 "$oma_bin" statusline --json 2>/dev/null | jq -r '.active // false')" = "true" ]; then
-            timeout 1 "$oma_bin" statusline 2>/dev/null
+        if [ -n "$cwd" ]; then
+            cd "$cwd" 2>/dev/null || exit 0
         fi
+        "$oma_bin" statusline --active-only 2>/dev/null
     )
     [ -n "$oma_seg" ] && printf "${SEP}%s" "$oma_seg"
 fi

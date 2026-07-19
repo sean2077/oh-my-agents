@@ -1,15 +1,10 @@
-# Force LF for Go sources so `gofmt -l .` is byte-identical across the CI OS
-# matrix. Without this, Windows checkouts introduce CRLF and fail the gofmt
-# gate even though the committed files are LF.
+# Force LF for Go and POSIX shell sources so formatting and lint results are
+# byte-identical across the CI OS matrix. Without this, Windows checkouts can
+# introduce CRLF even though the committed files are LF.
 *.go text eol=lf
-.agents/relink-skills.sh text eol=lf
+*.sh text eol=lf
 .agents/*.py text eol=lf
 .husky/pre-commit text eol=lf
-tools/release/*.sh text eol=lf
-tools/install/*.sh text eol=lf
 tools/git-hooks/* text eol=lf
-tools/manifest-check.sh text eol=lf
-.agents/tools/*.sh text eol=lf
-.agents/tools/hooks/*.sh text eol=lf
 .agents/tools/*.py text eol=lf
 .agents/tools/hooks/*.py text eol=lf

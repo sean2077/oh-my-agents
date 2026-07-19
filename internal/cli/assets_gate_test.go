@@ -117,7 +117,22 @@ func TestRealAssetsPassReleaseGates(t *testing.T) {
 }
 
 func TestShippedSkillParallelismMatrix(t *testing.T) {
-	const parallelMarker = "> **Parallel acceleration (optional, capability-gated)**:"
+	const (
+		parallelMarker                = "> **Parallel acceleration (optional, capability-gated)**:"
+		maxParallelAccelerationTokens = 230
+	)
+	requiredParallelClauses := []string{
+		"lifecycle-controllable subagent tools",
+		"at least two",
+		"critical-path benefit",
+		"no lane waits on",
+		"shared single-writer state",
+		"stop conditions",
+		"no nested delegation",
+		"evidence, not a verdict",
+		"final verification",
+		"continue sequentially",
+	}
 	type matrixEntry struct {
 		mode        string
 		wantMarkers int
@@ -163,6 +178,27 @@ func TestShippedSkillParallelismMatrix(t *testing.T) {
 		}
 		if got := strings.Count(string(raw), parallelMarker); got != want.wantMarkers {
 			t.Errorf("skill %s mode=%s has %d exact Parallel acceleration markers, want %d", name, want.mode, got, want.wantMarkers)
+		}
+		if want.wantMarkers == 1 {
+			var block string
+			for _, line := range strings.Split(string(raw), "\n") {
+				line = strings.TrimSuffix(line, "\r")
+				if strings.HasPrefix(line, parallelMarker) {
+					block = line
+					break
+				}
+			}
+			if block == "" {
+				continue
+			}
+			if tokens := budget.Tokens(block); tokens > maxParallelAccelerationTokens {
+				t.Errorf("skill %s Parallel acceleration block is %d tokens, want <= %d", name, tokens, maxParallelAccelerationTokens)
+			}
+			for _, clause := range requiredParallelClauses {
+				if !strings.Contains(block, clause) {
+					t.Errorf("skill %s Parallel acceleration block is missing contract clause %q", name, clause)
+				}
+			}
 		}
 	}
 	for name, want := range matrix {
