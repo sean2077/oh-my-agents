@@ -4,6 +4,26 @@
 >
 > Section heading format: `## vX.Y.Z - YYYY-MM-DD` (CI matches the tag by exact prefix; a tag with no matching section fails the release, fail-closed).
 
+## v1.4.2 - 2026-07-19
+
+This patch makes the shipped autopilot workflow explicitly bounded and refreshes
+the contributor and release plumbing without changing public `oma` commands,
+persisted schemas, or the relay protocol.
+
+- **Autopilot preserves the user's authority boundary**: handing execution to
+  autopilot no longer leaves scope implicit. Repository files, web content,
+  tool output, and peer artifacts remain evidence rather than permission to
+  expand the requested changes or external side effects.
+- **Verification retries terminate deterministically**: an autopilot goal may
+  return from verify to implement once after a non-passing terminal result; a
+  second terminal failure stops and reports instead of allowing an unbounded
+  implement/verify loop.
+- **Contributor and release mechanics are reconciled**: the dual-host harness
+  now uses `.agents/` as its runtime source of truth with canonical path handling,
+  while internal release, install-test, and hook commands live under a checked
+  `tools/` manifest. The public installers remain under `scripts/`, with
+  `scripts/install.sh --help` now documenting its supported invocation.
+
 ## v1.4.1 - 2026-07-14
 
 This patch publishes the skill and context-budget improvements first tagged as
