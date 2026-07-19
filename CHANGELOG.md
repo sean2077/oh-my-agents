@@ -4,6 +4,39 @@
 >
 > Section heading format: `## vX.Y.Z - YYYY-MM-DD` (CI matches the tag by exact prefix; a tag with no matching section fails the release, fail-closed).
 
+## v1.5.1 - 2026-07-19
+
+This patch hardens the capability-gated skill rollout from v1.5.0 by reducing
+repeated context, correcting asset-audit semantics, making `pair-delivery`
+self-contained, and tightening cross-platform contributor and statusline paths.
+Existing commands and persisted state remain compatible; the new query surfaces
+are additive.
+
+- **Leaner skill contracts**: nine repeated delegation blocks are compressed
+  without changing eligibility, parent ownership, sequential fallback, or review
+  boundaries. The canonical loaded skill bodies are 3.2% smaller while the
+  resident trigger budget remains unchanged.
+- **Accurate, portable asset audits**: loaded-body estimates are invariant across
+  LF and CRLF checkouts; `ref_count` keeps its occurrence meaning while the new
+  `referrer_count` reports distinct inbound assets; and `ORPHAN` is explicitly an
+  advisory for missing static inbound references rather than evidence that an
+  asset is unused or removable.
+- **Self-contained `pair-delivery` installs**: its bounded cleanup guidance and
+  review-evidence schema now ship with the skill instead of depending on another
+  optional skill or repository-only documentation. Installed relative references
+  are also confined to the owning skill directory.
+- **Faster, bounded statusline integration**: `oma statusline --active-only`
+  emits one native active-workflow record and stays silent when idle. The example
+  wrapper now uses one `oma` call and one JSON parse under a one-second overall
+  deadline, with portable date handling and fail-silent behavior outside a repo.
+- **Stronger Windows and CI mechanics**: native Make resolves Git for Windows
+  Bash instead of a WSL launcher, build provenance works when Git lives under a
+  path containing spaces, tracked shell sources are pinned to LF and checked
+  dynamically by ShellCheck, and regression fixtures cover the new contracts.
+- **Security-fixed preferred Go toolchain**: the module keeps Go 1.25.12 as its
+  compatible minimum while preferring Go 1.26.5 for contributor and CI builds,
+  avoiding the `crypto/tls` vulnerability present in Go 1.26.4.
+
 ## v1.5.0 - 2026-07-19
 
 This release makes optional skill parallelism depend on the host's actual

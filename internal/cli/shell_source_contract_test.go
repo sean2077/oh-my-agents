@@ -25,6 +25,11 @@ func TestTrackedShellSourcesHavePortableLintContract(t *testing.T) {
 		}
 	}
 
+	makefile := mustReadRepositoryFile(t, filepath.Join(repoRoot, "Makefile"))
+	if !strings.Contains(makefile, "\t\"$(BASH)\" tools/release/build-release.sh \"$(VERSION)\"") {
+		t.Fatal("Makefile release target must invoke build-release.sh through the resolved Git Bash path")
+	}
+
 	statusline := mustReadRepositoryFile(t, filepath.Join(repoRoot, "docs", "examples", "statusline-command.sh"))
 	if !strings.Contains(statusline, `cd "$cwd" 2>/dev/null || exit 0`) {
 		t.Fatal("statusline example must omit the oma segment when its requested cwd is unavailable")
