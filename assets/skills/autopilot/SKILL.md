@@ -90,7 +90,7 @@ Subflows are bounded, never recursive: deep-interview or trace only from clarify
 2. Skipping clarify on a vague request is how "that's not what I meant" happens; when in doubt, interview.
 3. Verification failures stop the pipeline at verify; never advance to deliver around a red verifier.
 4. User escalations interrupt any phase; record where you stopped so resume is exact.
-5. The outer loop has no counter — you are it: if `verify` reaches a terminal stop twice on the same goal, stop and report rather than bouncing implement↔verify.
+5. The implement↔verify retry budget is one retry per goal: after the first non-passing terminal stop, return to implement at most once; after the second, stop and report.
 
 > **CC acceleration (optional, Claude Code only)**: plan mode may host the plan phase, and independent implement steps may fan out to subagents. Codex and other hosts execute the same phases sequentially inline — the state keys and phase contract are identical either way.
 >

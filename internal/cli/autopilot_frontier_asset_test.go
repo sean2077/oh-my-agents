@@ -86,3 +86,29 @@ func TestAutopilotAuthorityBoundary(t *testing.T) {
 		}
 	}
 }
+
+func TestAutopilotRetryBudgetIsBounded(t *testing.T) {
+	skill := readBorrowedContractFile(t, "assets", "skills", "autopilot", "SKILL.md")
+	for _, want := range []string{
+		"The implement↔verify retry budget is one retry per goal",
+		"return to implement at most once",
+		"after the second, stop and report",
+	} {
+		if !strings.Contains(skill, want) {
+			t.Fatalf("autopilot skill lost bounded retry contract %q", want)
+		}
+	}
+	if strings.Contains(skill, "outer loop has no counter") {
+		t.Fatal("autopilot skill must not describe an unbounded outer loop")
+	}
+
+	doc := readBorrowedContractFile(t, "docs", "reference", "workflows.md")
+	for _, want := range []string{
+		"implement↔verify loop is bounded to one retry per goal",
+		"a second stops and reports",
+	} {
+		if !strings.Contains(doc, want) {
+			t.Fatalf("workflow spec lost bounded autopilot retry contract %q", want)
+		}
+	}
+}
