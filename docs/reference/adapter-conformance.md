@@ -1,6 +1,6 @@
 # Adapter Capability Matrix and Conformance Spec
 
-> Defines manifest `targets` semantics, per-agent projection rules, the Codex fallback, the budget injection surface, the conformance fixture format, and the refcheck extraction rules.
+> Defines manifest `targets` semantics, per-agent projection rules, asset fallbacks, acceleration markers, the budget injection surface, the conformance fixture format, and the refcheck extraction rules.
 
 ## 1. Asset manifest (`assets/<type>/<name>/manifest.json`, schema `oma-asset/1`)
 
@@ -12,7 +12,7 @@
   "version": "tied to the repo tag, recorded at install time",
   "targets": ["claude", "codex"],           // or ["claude"] (CC-only); "shared" = canonical placement only, no projection
   "description_budget_tokens": 80,
-  "fallback": "Codex-side degradation note (required for CC-only assets)"
+  "fallback": "Codex-side asset-projection fallback note (required for CC-only assets)"
 }
 ```
 
@@ -21,7 +21,7 @@
 | Asset type | Canonical location (the file itself) | claude projection | codex projection |
 |---|---|---|---|
 | skill | `~/.agents/skills/<name>/` | platform projection `~/.claude/skills/<name>` | platform projection `~/.codex/skills/<name>`; not projected where unsupported, plus a doctor warning |
-| subagent | `~/.agents/agents/<name>.md` | platform projection `~/.claude/agents/<name>.md` | **not projected** (Codex has no subagent) plus a `manifest.fallback` note |
+| subagent | `~/.agents/agents/<name>.md` | platform projection `~/.claude/agents/<name>.md` | **not projected** (oma installable subagent-asset projection is unsupported) plus a `manifest.fallback` note |
 | hook | `~/.agents/hooks/<name>/` | **not projected** (canonical placement only) plus a skip note | **not projected** (canonical placement only) plus a skip note |
 | prompt | `~/.agents/prompts/<name>.md` | (on demand) `~/.claude/commands/` | `~/.codex/prompts/<name>.md` |
 
@@ -32,10 +32,12 @@
 
 ## 3. Dual-target consistency contract
 
-- Every core-workflow skill must have a **default path that does not depend on CC-native capabilities** (oma commands + text-driven).
+- Every core-workflow skill must have a **default path that does not depend on host-native capabilities** (oma commands + text-driven).
 - Skill text retains only the core workflow steps, decision rules, state contract, and safety boundaries; installation, PATH, platform onboarding, and other general product instructions belong in the README / docs, not in `SKILL.md`, to avoid bloating the resident prompt.
-- A CC acceleration branch must be marked explicitly (the recommended uniform marker is `> **CC acceleration**: …`), and **must not produce workflow state that Codex cannot inspect or resume via oma commands** (state lands only in `.oma/state/` and the relay ledger).
-- CC-only mechanisms (AskUserQuestion, subagent invocation, etc.) must give a corresponding fallback form in the skill text (free-text questioning, single-threaded sequential execution).
+- Runtime-native delegation and installable subagent assets are separate mechanisms. The former is a lifecycle-controllable tool exposed in the current session and may exist on any host; the latter is an oma manifest-backed asset governed by §2. Codex subagent-asset projection remaining unsupported does not imply that a Codex runtime lacks native delegation tools.
+- Runtime subagent instructions are allowed only in a blockquote headed exactly `> **Parallel acceleration (optional, capability-gated)**:`. The branch is proactive only when the conjunctive Delegation Gate in [`workflows.md`](workflows.md) §0.1 passes. It names the workflow-specific lane shape, keeps synthesis/state/final verification with the parent, and states the sequential fallback.
+- Genuinely Claude-Code-only affordances are allowed only in a blockquote headed exactly `> **CC acceleration**:`. `AskUserQuestion` belongs here and must have a free-text fallback; runtime subagent invocation does not belong here merely because one host first exposed it.
+- Neither acceleration branch may create workflow state that the neutral path cannot inspect or resume through oma commands. State remains only in `.oma/state/` and the relay ledger, and the sequential path remains behaviorally equivalent.
 
 ## 4. refcheck extraction rules (static command-reference check)
 
@@ -58,6 +60,6 @@
 
 - Location: case files at `testdata/conformance/{claude,codex}.json`. Each case carries `manifest` (an inline oma-asset/1 document), `payload_file` (+ optional `payload_content`), and `want_rel_home` (the expected projection location; empty = skip expected — the case for both hook and shared assets). Empty `want_kind` means the platform default (`symlink` on Unix-like hosts, `junction` for native-Windows skills, `copy` for native-Windows file assets).
 - Test flow: fake HOME (t.TempDir) → engine Install (narrowed to a single agent) → assert per `want_kind`: symlink and junction targets point at the canonical location, copy targets digest-match the canonical content.
-- Default-path check: for each skill, assert that the default-path text contains no reference unsupported by the target side (for example, an `AskUserQuestion` or subagent invocation appearing in a codex fixture fails; it is allowed inside an explicit CC-acceleration marker block).
-- The real-world constraint of having no codex on the machine: codex-side acceptance is judged by fixture-file assertion; a real-machine smoke test is a non-blocking Phase D follow-up.
+- Default-path check: for each skill, reject `AskUserQuestion` outside an exact CC acceleration block and runtime subagent instructions outside an exact Parallel acceleration block. Putting either affordance under the other marker also fails. Ordinary prose uses of `spawn` are not delegation by themselves. Fixtures cover both valid markers, both default-path violations, both wrong-marker combinations, and the locked parallel-enabled versus sequential skill matrix.
+- When a target host runtime is unavailable in CI or a contributor environment, fixture-file assertions remain the blocking conformance evidence. Current-host smoke tests are non-blocking, provenance-bearing behavior evidence and do not imply unrun cross-host efficacy.
 - The release fixture also requires every active shipped skill to appear as an expected label in `eval/cases/triggering.jsonl`. This keeps the closed trigger catalog synchronized; the labels and illustrative prediction files are not live-agent efficacy evidence.

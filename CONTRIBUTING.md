@@ -85,7 +85,7 @@ Beyond `go test`, CI enforces:
 
 ## Conventions
 
-- **Agent-neutral by default.** A skill's default path is plain `oma` commands plus markdown, identical for Claude Code and Codex. Host-only accelerations (CC subagents, plan mode) are clearly-marked optional branches, never the default.
+- **Agent-neutral by default.** A skill's complete default path is plain `oma` commands plus markdown, identical for Claude Code and Codex. Runtime delegation uses the exact capability-gated Parallel marker and [`docs/reference/workflows.md`](docs/reference/workflows.md) §0.1; genuinely Claude-Code-only affordances use the separate CC marker. Installable subagent projection is not evidence for or against a host's runtime tools.
 - **Mechanical logic belongs in the binary, judgment in the skill.** If something can be counted, validated, or persisted, it goes in Go — testable and fail-closed — not in a prompt.
 - **Minimal resident footprint.** Skills cost context on every turn; keep them small and installable on demand.
 

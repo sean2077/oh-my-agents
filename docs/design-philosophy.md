@@ -40,9 +40,17 @@ Two payoffs:
 
 Don't make anything resident if it doesn't have to be; an on-demand skill costs **zero** when not installed. `oma doctor budget` turns "resident footprint" into a **measured number** rather than a feeling — the enforcement gate for this principle. `oma asset audit` also exposes loaded body size so authors can move rare branches behind one-hop references without pretending every long workflow needs an arbitrary hard limit. The target isn't merely "few skills," but "exactly the skills relevant to the current task": **relevance** is the real quantity to minimize.
 
-### 3.2 Agent-neutral by default; host acceleration is an optional branch
+### 3.2 Agent-neutral by default; acceleration is an optional branch
 
-The default path is plain `oma` commands + markdown, running under the **same contract** on Claude Code and Codex. Host-only features (CC subagents, plan mode, structured pickers) are **clearly-marked optional branches**, never the default. This is also a *cleanliness* argument: a skill thick with per-host conditionals is noisier. Corollary: oma is a **CLI + skills, deliberately not a Claude Code plugin** — a plugin is a CC-only concept, at odds with neutrality.
+The default path is plain `oma` commands + markdown, running under the **same
+contract** on Claude Code and Codex. When the current runtime exposes controlled
+subagent tools, a clearly marked branch may proactively parallelize independent,
+bounded lanes under the shared Delegation Gate; this capability is detected at
+runtime rather than inferred from the host name or asset projection support.
+Genuinely host-only features such as a structured picker remain separate optional
+branches. This is also a *cleanliness* argument: a skill thick with per-host
+conditionals is noisier. Corollary: oma is a **CLI + skills, deliberately not a
+Claude Code plugin** — a plugin is a CC-only concept, at odds with neutrality.
 
 ### 3.3 Zero host-config mutation; document, don't command
 

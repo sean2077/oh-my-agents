@@ -5,8 +5,8 @@ to a delivered, cross-reviewed change and back to a clean machine. It stitches
 the isolated snippets elsewhere into one runnable sequence.
 
 The default path is plain `oma` commands that behave **identically on Claude
-Code and Codex**. Steps marked _(optional, host-specific)_ are accelerations you
-can skip without changing any outcome.
+Code and Codex**. Steps marked optional acceleration are capability-gated or
+host-specific branches you can skip without changing any outcome.
 
 Conventions used below:
 
@@ -225,9 +225,12 @@ deep-interview (stage 3), `verify` may invoke ralph (stage 5), and `deliver` may
 hand off to pair-delivery (stage 6). The phase contract and resume rules are in
 [reference/workflows.md](reference/workflows.md) §3.
 
-> _(Optional, host-specific)_ On Claude Code the `plan` phase can run in plan
-> mode and independent `implement` steps can fan out to subagents. Codex runs the
-> same phases inline — the state keys are identical either way.
+> _(Optional, capability-gated)_ If the current runtime exposes controlled
+> subagent tools and the Delegation Gate passes, independent ready `implement`
+> slices with exclusive touches can fan out on either Claude Code or Codex. The
+> parent remains the only plan/state writer and performs integration and final
+> verification; otherwise it runs the same phases sequentially. See
+> [reference/workflows.md](reference/workflows.md) §0.1.
 
 ---
 

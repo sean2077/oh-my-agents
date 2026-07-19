@@ -116,6 +116,62 @@ func TestRealAssetsPassReleaseGates(t *testing.T) {
 	t.Logf("core4 resident budget: %d tokens, all members present", rep.Total)
 }
 
+func TestShippedSkillParallelismMatrix(t *testing.T) {
+	const parallelMarker = "> **Parallel acceleration (optional, capability-gated)**:"
+	type matrixEntry struct {
+		mode        string
+		wantMarkers int
+	}
+
+	matrix := make(map[string]matrixEntry)
+	add := func(mode string, wantMarkers int, names ...string) {
+		t.Helper()
+		for _, name := range names {
+			if _, exists := matrix[name]; exists {
+				t.Fatalf("skill %s appears more than once in parallelism matrix", name)
+			}
+			matrix[name] = matrixEntry{mode: mode, wantMarkers: wantMarkers}
+		}
+	}
+	add("proactive-parallel", 1,
+		"analyze", "trace", "deep-interview", "best-practice-research",
+		"code-review", "autopilot", "ultraqa", "skillify")
+	add("read-only-inventory-parallel", 1, "ai-slop-cleaner")
+	add("sequential", 0, "ralph", "research-mission", "prototype", "pair-delivery")
+
+	repoAssets := filepath.Join("..", "..", "assets", "skills")
+	entries, err := os.ReadDir(repoAssets)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := make(map[string]bool)
+	for _, ent := range entries {
+		if !ent.IsDir() {
+			continue
+		}
+		name := ent.Name()
+		want, ok := matrix[name]
+		if !ok {
+			t.Errorf("shipped skill %s is missing from the 8+1+4 parallelism matrix", name)
+			continue
+		}
+		seen[name] = true
+		raw, err := os.ReadFile(filepath.Join(repoAssets, name, "SKILL.md"))
+		if err != nil {
+			t.Errorf("read skill %s: %v", name, err)
+			continue
+		}
+		if got := strings.Count(string(raw), parallelMarker); got != want.wantMarkers {
+			t.Errorf("skill %s mode=%s has %d exact Parallel acceleration markers, want %d", name, want.mode, got, want.wantMarkers)
+		}
+	}
+	for name, want := range matrix {
+		if !seen[name] {
+			t.Errorf("parallelism matrix skill %s mode=%s is not shipped", name, want.mode)
+		}
+	}
+}
+
 func assertTriggerEvalCoversActiveSkills(t *testing.T, repoAssets string, entries []os.DirEntry) {
 	t.Helper()
 

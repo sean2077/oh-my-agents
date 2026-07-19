@@ -25,41 +25,154 @@ func writeSkill(t *testing.T, root, name, targets, body string) {
 func TestDefaultPathConformance(t *testing.T) {
 	root := t.TempDir()
 
-	// codex-targeted, Claude-only affordance on the default path → violations.
-	writeSkill(t, root, "bad-ask", `"claude","codex"`,
-		"# bad\n\nAsk the user via AskUserQuestion with 2-4 options.\n")
-	writeSkill(t, root, "bad-sub", `"codex"`,
-		"# bad\n\nFan out a subagent per subsystem and synthesize the results.\n")
-
-	// codex-targeted but the affordance is inside a CC-acceleration block → ok.
-	writeSkill(t, root, "ok-accel", `"claude","codex"`,
-		"# ok\n\nDefault path is plain markdown.\n\n> **CC acceleration (optional, Claude Code only)**: present options through AskUserQuestion and fan out subagents.\n")
+	writeSkill(t, root, "bad-wrong-block", `"claude","codex"`,
+		"# bad\n\n> **CC acceleration**: fan out subagents.\n")
 
 	// claude-only skill may use the affordance on its default path → exempt.
 	writeSkill(t, root, "ok-claude-only", `"claude"`,
 		"# ok\n\nUse AskUserQuestion and a subagent freely.\n")
 
-	// clean codex skill → ok. "do not spawn" is generic, not a subagent ref.
 	writeSkill(t, root, "ok-clean", `"codex"`,
-		"# ok\n\nPlain `oma` commands and markdown only; do not spawn a nested loop.\n")
+		"# ok\n\n> **CC acceleration**: ask with AskUserQuestion.\n\n> **Parallel acceleration (optional, capability-gated)**: delegate to subagents.\n")
 
-	flagged := map[string]int{}
-	for _, f := range DefaultPathConformance(root) {
+	findings := DefaultPathConformance(root)
+	if len(findings) != 1 {
+		t.Fatalf("findings = %+v, want one wrong-block finding", findings)
+	}
+	f := findings[0]
+	if f.Level != LevelFail {
+		t.Errorf("finding level = %q, want fail: %s", f.Level, f.Message)
+	}
+	for _, want := range []string{
+		"bad-wrong-block SKILL.md:3",
+		`references "subagent" in a CC acceleration block`,
+		"`> **Parallel acceleration (optional, capability-gated)**:`",
+	} {
+		if !strings.Contains(f.Message, want) {
+			t.Errorf("message %q does not contain %q", f.Message, want)
+		}
+	}
+}
+
+func TestDefaultPathViolationsSeparateExactMarkers(t *testing.T) {
+	tests := []struct {
+		name        string
+		body        string
+		wantMarker  string
+		wantBlock   accelerationBlock
+		wantAllowed accelerationBlock
+		wantLine    int
+	}{
+		{
+			name:        "AskUserQuestion on default path",
+			body:        "# bad\nAsk via AskUserQuestion.\n",
+			wantMarker:  "AskUserQuestion",
+			wantAllowed: ccBlock,
+			wantLine:    2,
+		},
+		{
+			name:        "subagent on default path",
+			body:        "# bad\nDelegate to a subagent.\n",
+			wantMarker:  "subagent",
+			wantAllowed: parallelBlock,
+			wantLine:    2,
+		},
+		{
+			name:        "spawn_agent tool on default path",
+			body:        "# bad\nCall spawn_agent for each subsystem.\n",
+			wantMarker:  "subagent",
+			wantAllowed: parallelBlock,
+			wantLine:    2,
+		},
+		{
+			name:        "hyphenated sub-agent on default path",
+			body:        "# bad\nSpawn a sub-agent for each subsystem.\n",
+			wantMarker:  "subagent",
+			wantAllowed: parallelBlock,
+			wantLine:    2,
+		},
+		{
+			name:        "AskUserQuestion under Parallel marker",
+			body:        "> **Parallel acceleration (optional, capability-gated)**: ask via AskUserQuestion.\n",
+			wantMarker:  "AskUserQuestion",
+			wantBlock:   parallelBlock,
+			wantAllowed: ccBlock,
+			wantLine:    1,
+		},
+		{
+			name:        "subagent under CC marker",
+			body:        "> **CC acceleration**: delegate to subagents.\n",
+			wantMarker:  "subagent",
+			wantBlock:   ccBlock,
+			wantAllowed: parallelBlock,
+			wantLine:    1,
+		},
+		{
+			name:        "old parenthetical CC marker is stale",
+			body:        "> **CC acceleration (optional, Claude Code only)**: ask via AskUserQuestion.\n",
+			wantMarker:  "AskUserQuestion",
+			wantAllowed: ccBlock,
+			wantLine:    1,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := defaultPathViolations(tc.body)
+			if len(got) != 1 {
+				t.Fatalf("violations = %+v, want one", got)
+			}
+			if got[0].marker != tc.wantMarker || got[0].block != tc.wantBlock || got[0].allowed != tc.wantAllowed || got[0].line != tc.wantLine {
+				t.Fatalf("violation = %+v, want marker=%q block=%q allowed=%q line=%d", got[0], tc.wantMarker, tc.wantBlock, tc.wantAllowed, tc.wantLine)
+			}
+		})
+	}
+}
+
+func TestDefaultPathViolationsAllowExactBlocksAndOrdinarySpawn(t *testing.T) {
+	body := strings.Join([]string{
+		"# ok",
+		"Plain markdown may spawn a process or say do not spawn a nested loop.",
+		"> **CC acceleration**: ask through AskUserQuestion.",
+		">",
+		"> Continue to use AskUserQuestion in this quoted paragraph.",
+		"",
+		"> **Parallel acceleration (optional, capability-gated)**: delegate bounded lanes.",
+		">",
+		"> A subagent returns evidence to the parent.",
+		"",
+	}, "\n")
+	if got := defaultPathViolations(body); len(got) != 0 {
+		t.Fatalf("violations = %+v, want none", got)
+	}
+}
+
+func TestDefaultPathConformanceMissingRoot(t *testing.T) {
+	if findings := DefaultPathConformance(filepath.Join(t.TempDir(), "missing")); len(findings) != 0 {
+		t.Fatalf("findings = %+v, want none", findings)
+	}
+}
+
+func TestDefaultPathConformanceReportsEveryGovernedAffordance(t *testing.T) {
+	root := t.TempDir()
+	writeSkill(t, root, "bad", `"codex"`,
+		"# bad\n\nUse AskUserQuestion and a subagent.\n")
+	findings := DefaultPathConformance(root)
+	if len(findings) != 2 {
+		t.Fatalf("findings = %+v, want two", findings)
+	}
+	flagged := map[string]bool{}
+	for _, f := range findings {
 		if f.Level != LevelFail {
 			t.Errorf("finding level = %q, want fail: %s", f.Level, f.Message)
 		}
-		flagged[strings.SplitN(f.Message, " ", 2)[0]]++
-	}
-
-	if flagged["bad-ask"] == 0 {
-		t.Errorf("AskUserQuestion in codex default-path must be flagged; flagged=%v", flagged)
-	}
-	if flagged["bad-sub"] == 0 {
-		t.Errorf("subagent in codex default-path must be flagged; flagged=%v", flagged)
-	}
-	for _, ok := range []string{"ok-accel", "ok-claude-only", "ok-clean"} {
-		if flagged[ok] != 0 {
-			t.Errorf("%s must not be flagged; flagged=%v", ok, flagged)
+		for _, marker := range []string{"AskUserQuestion", "subagent"} {
+			if strings.Contains(f.Message, `"`+marker+`"`) {
+				flagged[marker] = true
+			}
 		}
+	}
+	if !flagged["AskUserQuestion"] || !flagged["subagent"] {
+		t.Errorf("governed affordances = %v, want both", flagged)
 	}
 }

@@ -71,6 +71,4 @@ The CLI keeps the strict-best (`best_round`/`best_score`) and stops with the `pl
 3. A stop verdict (exit 4) ends the loop NOW; renegotiating it is the user's call, not yours.
 4. The goal text is the contract: if the work drifts somewhere else, abort and restart with the real goal.
 
-> **CC acceleration (optional, Claude Code only)**: long verifier runs may go through a background shell task while you prepare the next change. Codex and other hosts run the verifier in the foreground — the recorded exit codes and signatures are identical either way.
->
 > **`/goal` driver (optional, host-native)**: on hosts shipping a native Ralph loop — `/goal` (Claude Code ≥2.1.139, Codex ≥0.128.0, both experimental) — you may let the host auto-continue rounds instead of re-prompting each one. Keep the stop judgment in oma: phrase the goal so the host's evaluator only has to confirm oma's verdict, e.g. `/goal advance one ralph round each turn until 'oma ralph status --json' reports a terminal state (passed/exhausted/stalled/plateaued); print that JSON every turn`. The round count, exhaustion bound, stall detection and terminal persistence still come from `oma ralph` — deterministic and identical across hosts — and no Stop-hook wiring is needed to keep the loop alive.

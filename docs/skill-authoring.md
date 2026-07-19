@@ -117,10 +117,27 @@ Order content by when the agent needs it:
 1. **Metadata** — the trigger and boundary in `description`.
 2. **Main path** — the shortest successful workflow and its invariants.
 3. **Branches and stops** — exceptions, failure handling, and host-neutral alternatives.
-4. **Optional acceleration** — host-specific shortcuts after the canonical path.
+4. **Optional acceleration** — capability-gated parallel or host-specific shortcuts after the canonical path.
 5. **References** — detailed schemas, examples, and troubleshooting loaded only when needed.
 
 This is progressive disclosure: the default task should not load detail for variants it never uses. Keep references one hop from `SKILL.md`, link each one from the exact decision that needs it, and say when to read it. Do not split a short workflow merely to look modular, and do not duplicate the same rule in both the body and a reference.
+
+### Mark acceleration precisely
+
+Keep the sequential path complete, then mark each optional branch with the
+appropriate exact marker defined by
+[`reference/adapter-conformance.md`](reference/adapter-conformance.md) §3. Both
+markers may coexist when a skill has distinct runtime-parallel and CC-only
+branches:
+
+- `Parallel acceleration (optional, capability-gated)` is for runtime-native
+  subagent delegation on any host. Name the workflow-specific bounded lanes,
+  parent-only synthesis and verification, and sequential fallback; the shared
+  Delegation Gate is normative in
+  [`reference/workflows.md`](reference/workflows.md) §0.1.
+- `CC acceleration` is only for genuinely Claude-Code-only affordances such as
+  `AskUserQuestion`, with a neutral fallback. Do not put runtime delegation
+  here or infer runtime capabilities from installable subagent projection.
 
 ## 7. Prune no-op text and duplication
 
@@ -150,7 +167,8 @@ Use `skillify`'s optional efficacy gate when a discipline skill targets a repeat
 - The form matches the failure: recipe for shape, prohibition or STOP gate for discipline.
 - Desired behavior comes first; every prohibition closes a hard boundary and names the concrete alternative or recovery action.
 - Discipline skills name likely rationalizations and block them.
-- Agent-neutral behavior is the default; host-specific acceleration is clearly optional.
+- Agent-neutral behavior is the complete default; acceleration uses the exact Parallel or CC marker appropriate to the capability.
+- A Parallel branch names bounded lanes, parent-only duties, and sequential fallback and obeys the shared Delegation Gate.
 - Installation, platform setup, troubleshooting, and long examples live in docs, not resident skill text.
 - Headings and steps put the controlling action or branch first.
 - The main path appears before exceptions; optional references are one hop away and loaded only when needed.

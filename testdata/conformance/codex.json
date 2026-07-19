@@ -7,7 +7,7 @@
       "want_rel_home": ".codex/skills/sample-skill"
     },
     {
-      "manifest": {"schema": "oma-asset/1", "name": "sample-agent", "type": "subagent", "targets": ["claude"], "fallback": "codex runs inline"},
+      "manifest": {"schema": "oma-asset/1", "name": "sample-agent", "type": "subagent", "targets": ["claude"], "fallback": "oma does not project this subagent asset to codex; use runtime-native delegation when available or run inline"},
       "payload_file": "sample-agent.md",
       "want_rel_home": ""
     },
