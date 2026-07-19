@@ -19,7 +19,7 @@ import (
 // Audit labels.
 const (
 	LabelKeep      = "KEEP"      // active, referenced, within budget
-	LabelOrphan    = "ORPHAN"    // active but no other asset references it
+	LabelOrphan    = "ORPHAN"    // active with no inbound asset refs; direct use is out of scope
 	LabelOversized = "OVERSIZED" // active but description exceeds its manifest budget
 	LabelRetire    = "RETIRE"    // deprecated / merged / alias — slated for removal
 )
@@ -40,6 +40,7 @@ type AuditEntry struct {
 	DescriptionBudgetTokens int    `json:"description_budget_tokens"`
 	BodyTokens              int    `json:"body_tokens"`
 	RefCount                int    `json:"ref_count"`
+	ReferrerCount           int    `json:"referrer_count"`
 	Label                   string `json:"label"`
 	Reason                  string `json:"reason"`
 }
@@ -61,13 +62,13 @@ func Audit(root string) ([]AuditEntry, error) {
 		description := descriptionTokens(root, e.Type, e.Name)
 		body := bodyTokens(root, e.Type, e.Name)
 		budgetTok := manifestBudget(root, e.Type, e.Name)
-		refs := refCount(root, cat, e.Name)
-		label, reason := classify(e, description, refs, budgetTok)
+		refs, referrers := referenceCounts(root, cat, e.Name)
+		label, reason := classify(e, description, referrers, budgetTok)
 		out = append(out, AuditEntry{
 			Name: e.Name, Type: e.Type, Status: e.Status,
 			LOC: loc, ResidentTokens: resident, DescriptionTokens: description,
 			DescriptionBudgetTokens: budgetTok, BodyTokens: body, RefCount: refs,
-			Label: label, Reason: reason,
+			ReferrerCount: referrers, Label: label, Reason: reason,
 		})
 	}
 	return out, nil // Catalog already sorts by name
@@ -150,12 +151,13 @@ func bodyTokens(root, typ, name string) int {
 	if err != nil {
 		return 0
 	}
-	return budget.Tokens(string(withoutYAMLFrontmatter(raw)))
+	body := withoutYAMLFrontmatter(raw)
+	return budget.Tokens(string(canonicalTextLineEndings(body)))
 }
 
 // withoutYAMLFrontmatter returns raw unchanged when it has no complete leading
-// frontmatter block. It recognizes both LF and CRLF without normalizing the
-// body bytes that the approximate tokenizer measures.
+// frontmatter block. It recognizes both LF and CRLF; bodyTokens canonicalizes
+// the remaining Markdown separately before measuring it.
 func withoutYAMLFrontmatter(raw []byte) []byte {
 	firstEnd := bytes.IndexByte(raw, '\n')
 	if firstEnd < 0 || !isYAMLDelimiter(raw[:firstEnd]) {
@@ -178,6 +180,14 @@ func withoutYAMLFrontmatter(raw []byte) []byte {
 		start = next
 	}
 	return raw
+}
+
+// canonicalTextLineEndings makes the advisory loaded-body estimate independent
+// of Git checkout policy. CommonMark treats CRLF, CR, and LF as line endings, so
+// measuring their canonical LF form compares the same Markdown across hosts.
+func canonicalTextLineEndings(raw []byte) []byte {
+	raw = bytes.ReplaceAll(raw, []byte("\r\n"), []byte("\n"))
+	return bytes.ReplaceAll(raw, []byte("\r"), []byte("\n"))
 }
 
 // isYAMLDelimiter mirrors budget.ReadFrontmatterFile: Scanner removes the line
@@ -215,37 +225,42 @@ func countLines(path string) int {
 	return n
 }
 
-// refCount counts how many OTHER assets reference this one: exact case-sensitive
-// name tokens (boundaries excluding [A-Za-z0-9_-]) in their main files, plus any
-// non-self manifest canonical edge pointing at it (codex gate-1 #1/#5). Self
-// references are excluded; docs/ is intentionally NOT scanned (historical plans
-// would mask real orphans).
-func refCount(root string, cat []asset.CatalogEntry, target string) int {
+// referenceCounts returns both reference occurrences and distinct OTHER assets
+// that refer to target. Text references are exact case-sensitive name tokens
+// (boundaries excluding [A-Za-z0-9_-]); a manifest canonical edge contributes
+// one occurrence but never a second referrer for the same asset. Self references
+// are excluded; docs/ is intentionally NOT scanned (historical plans would mask
+// real orphans).
+func referenceCounts(root string, cat []asset.CatalogEntry, target string) (occurrences, referrers int) {
 	re := regexp.MustCompile(`(?:^|[^A-Za-z0-9_-])` + regexp.QuoteMeta(target) + `(?:$|[^A-Za-z0-9_-])`)
-	n := 0
 	for i := range cat {
 		e := cat[i]
 		if e.Name == target {
 			continue // exclude self
 		}
+		fromAsset := 0
 		if data, err := os.ReadFile(mainFilePath(root, e.Type, e.Name)); err == nil {
-			n += len(re.FindAllString(string(data), -1))
+			fromAsset += len(re.FindAllString(string(data), -1))
 		}
 		if e.Canonical == target { // merged/alias successor edge
-			n++
+			fromAsset++
+		}
+		occurrences += fromAsset
+		if fromAsset > 0 {
+			referrers++
 		}
 	}
-	return n
+	return occurrences, referrers
 }
 
 // classify maps status + metrics to an advisory label (deterministic).
-func classify(e asset.CatalogEntry, descriptionTokens, refCount, budgetTok int) (label, reason string) {
+func classify(e asset.CatalogEntry, descriptionTokens, referrerCount, budgetTok int) (label, reason string) {
 	switch e.Status {
 	case asset.StatusDeprecated, asset.StatusMerged, asset.StatusAlias:
 		return LabelRetire, "status " + e.Status + " — slated for removal/consolidation"
 	}
-	if refCount == 0 {
-		return LabelOrphan, "no references from other assets — consolidate or deprecate"
+	if referrerCount == 0 {
+		return LabelOrphan, "no inbound references from other assets — direct-use evidence is outside this audit"
 	}
 	if descriptionTokens > budgetTok {
 		return LabelOversized, "description exceeds its manifest token budget — streamline"

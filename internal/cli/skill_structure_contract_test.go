@@ -49,7 +49,7 @@ func TestShippedSkillsKeepWorkflowHeadingOrder(t *testing.T) {
 			skill: "pair-delivery",
 			want: []string{
 				"## Every turn: orient, then act",
-				"## Delivery gates (docs/reference/workflows.md §4)",
+				"## Delivery gates",
 				"## Publishing a turn",
 				"## Continuing after handoff",
 			},
@@ -132,8 +132,8 @@ func TestSkillStructureContractRejectsMutations(t *testing.T) {
 
 	t.Run("valid one-hop reference", func(t *testing.T) {
 		dir := writeFixture(t,
-			"See the ordinary [workflow docs](../../docs/workflows.md).\n\nLoad [detail](references/detail.md) only when needed.\n",
-			"# Detail\n\nSee the ordinary [schema docs](../../../docs/schemas.md).\n",
+			"See the ordinary [workflow docs](https://example.com/workflows).\n\nLoad [detail](references/detail.md) only when needed.\n",
+			"# Detail\n\nSee the ordinary [schema docs](https://example.com/schemas).\n",
 		)
 		if violations := skillReferenceViolations(dir); len(violations) != 0 {
 			t.Fatalf("valid fixture violations: %v", violations)
@@ -161,6 +161,14 @@ func TestSkillStructureContractRejectsMutations(t *testing.T) {
 	t.Run("reference link must exist", func(t *testing.T) {
 		dir := writeFixture(t, "Load [missing](references/missing.md) only when needed.\n", "# Detail\n")
 		assertViolationContains(t, skillReferenceViolations(dir), "links to missing reference")
+	})
+
+	t.Run("relative link cannot escape independently installed skill", func(t *testing.T) {
+		dir := writeFixture(t,
+			"Load [detail](references/detail.md) only when needed.\n\nUse [guide](../../../docs/guide.md).\n",
+			"# Detail\n",
+		)
+		assertViolationContains(t, skillReferenceViolations(dir), "escapes the independently installed skill asset")
 	})
 }
 
@@ -211,6 +219,10 @@ func skillReferenceViolations(skillDir string) []string {
 	var violations []string
 	for _, paragraph := range markdownParagraphs(string(raw)) {
 		for _, destination := range markdownDestinations(paragraph) {
+			if relativeLinkEscapesSkillAsset(skillDir, filepath.Dir(skillPath), destination) {
+				violations = append(violations, fmt.Sprintf("%s relative link %q escapes the independently installed skill asset", filepath.ToSlash(skillPath), destination))
+				continue
+			}
 			rel, ok := referencesRelativePath(destination)
 			if !ok {
 				continue
@@ -260,6 +272,10 @@ func skillReferenceViolations(skillDir string) []string {
 		}
 		for _, paragraph := range markdownParagraphs(string(refRaw)) {
 			for _, destination := range markdownDestinations(paragraph) {
+				if relativeLinkEscapesSkillAsset(skillDir, filepath.Dir(path), destination) {
+					violations = append(violations, fmt.Sprintf("reference %s relative link %q escapes the independently installed skill asset", rel, destination))
+					continue
+				}
 				if referenceTargetIsInside(referencesRoot, filepath.Dir(path), destination) {
 					violations = append(violations, fmt.Sprintf("reference %s links to another references path %q; references must stay one hop from SKILL.md", rel, destination))
 				}
@@ -338,6 +354,16 @@ func cleanMarkdownDestination(destination string) string {
 		destination = destination[:cut]
 	}
 	return strings.TrimSpace(destination)
+}
+
+func relativeLinkEscapesSkillAsset(skillDir, sourceDir, destination string) bool {
+	target := cleanMarkdownDestination(destination)
+	if target == "" || strings.HasPrefix(target, "#") || destinationSchemePattern.MatchString(target) || strings.HasPrefix(target, "/") || filepath.IsAbs(filepath.FromSlash(target)) {
+		return false
+	}
+	resolved := filepath.Clean(filepath.Join(sourceDir, filepath.FromSlash(target)))
+	rel, err := filepath.Rel(skillDir, resolved)
+	return err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 func hasExplicitLoadPredicate(paragraph string) bool {

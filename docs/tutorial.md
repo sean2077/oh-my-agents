@@ -278,10 +278,11 @@ oma ralph status --json     # current round, history, terminal state (read-only)
 the optional `score_improvement` keep-policy (stop on a score *plateau* instead
 of a pass) are in [reference/workflows.md](reference/workflows.md) §2.
 
-> _(Optional, host-specific)_ On hosts with a native `/goal` loop you can let the
-> host auto-continue rounds; the round count and stop judgment still come from
-> `oma ralph`, deterministic and identical across hosts (see the ralph skill's
-> `/goal` note).
+> _(Optional, host-specific)_ When the current interactive surface actually
+> exposes a native `/goal` loop, you can let the host auto-continue rounds; do
+> not infer availability from a host version. The round count and stop judgment
+> still come from `oma ralph`, deterministic and identical across hosts (see the
+> ralph skill's `/goal` note).
 
 ---
 

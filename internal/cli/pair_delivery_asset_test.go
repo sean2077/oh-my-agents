@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/sean2077/oh-my-agents/internal/relay"
 )
 
 func readPairDeliverySkill(t *testing.T) string {
@@ -19,6 +21,15 @@ func readPairDeliverySkill(t *testing.T) string {
 func readPairDeliveryContinuationReference(t *testing.T) string {
 	t.Helper()
 	raw, err := os.ReadFile(filepath.Join("..", "..", "assets", "skills", "pair-delivery", "references", "continuation-and-recovery.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(raw)
+}
+
+func readPairDeliveryReviewEvidenceReference(t *testing.T) string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("..", "..", "assets", "skills", "pair-delivery", "references", "review-evidence-schema.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,5 +162,69 @@ func TestPairDeliverySkillFreshEvidenceCompletionGate(t *testing.T) {
 		if !strings.Contains(text, want) {
 			t.Fatalf("pair-delivery skill lost fresh-evidence completion guardrail %q", want)
 		}
+	}
+}
+
+func TestPairDeliveryImplementationGateIsIndependentlyInstallable(t *testing.T) {
+	text := readPairDeliverySkill(t)
+	if strings.Contains(text, "an `ai-slop-cleaner` pass") {
+		t.Fatal("pair-delivery core workflow must not require an on-demand skill that core4 does not install")
+	}
+	for _, want := range []string{
+		"bounded behavior-preserving cleanup review",
+		"duplication, dead code, needless abstraction, and boundary leaks",
+		"re-verify after any cleanup edit",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("pair-delivery standalone implementation gate lost %q", want)
+		}
+	}
+}
+
+func TestPairDeliveryRoutesReviewEvidenceSchemaInsideInstalledAsset(t *testing.T) {
+	skill := readPairDeliverySkill(t)
+	for _, want := range []string{
+		"references/review-evidence-schema.md",
+		"only when drafting your first review",
+		"schema-related publish rejection",
+	} {
+		if !strings.Contains(skill, want) {
+			t.Fatalf("pair-delivery skill lost conditional review-evidence route %q", want)
+		}
+	}
+	for _, unavailable := range []string{
+		"docs/reference/relay-v2-protocol.md",
+		"docs/reference/schemas.md",
+	} {
+		if strings.Contains(skill, unavailable) {
+			t.Fatalf("independently installed pair-delivery skill requires unavailable repo document %q", unavailable)
+		}
+	}
+
+	ref := readPairDeliveryReviewEvidenceReference(t)
+	for _, want := range []string{
+		relay.EvidenceSchema,
+		strings.Join(relay.Severities, "|"),
+		strings.Join(relay.Confidences, "|"),
+		strings.Join(relay.RefTypes, "|"),
+		"path:line[-line]",
+		"basis_refs",
+		"commands_run",
+		"limitations",
+		"approve-with-changes",
+	} {
+		if !strings.Contains(ref, want) {
+			t.Fatalf("pair-delivery review-evidence reference lost schema guardrail %q", want)
+		}
+	}
+	if strings.Contains(ref, "](") {
+		t.Fatal("pair-delivery review-evidence reference must remain one hop from SKILL.md")
+	}
+	evidence, err := relay.ParseEvidence(ref)
+	if err != nil {
+		t.Fatalf("installed review-evidence example must parse under the implementation contract: %v", err)
+	}
+	if err := relay.ValidateEvidence(evidence, relay.VerdictApprove); err != nil {
+		t.Fatalf("installed review-evidence example must be a valid approve payload: %v", err)
 	}
 }

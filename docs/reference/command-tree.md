@@ -24,7 +24,7 @@ oma asset audit [--from <root>] [--json]        # advisory audit: LOC/resident/d
 - Overwrite semantics: target already exists and is not oma-managed → refuse; `--force` backs up first, then overwrites (see security-contract.md §2).
 - `rollback`: restores from `~/.config/oma/backups/`; when `--to` is omitted, the most recent backup is used.
 - `catalog`: scans `<root>/{skills,agents,hooks,prompts}/*/manifest.json` to produce a name-sorted catalog (name/type/status/targets/canonical), defaulting to `--from ./assets`; it shares its source with install/registry and introduces no second source of truth; a duplicate name, or a name that disagrees with its directory, is fail-closed. A manifest may optionally carry `status(active|deprecated|merged|alias)` plus `canonical`.
-- `audit`: adds deterministic `resident_tokens`, `description_tokens`, `description_budget_tokens`, `body_tokens`, LOC, reference count, and lifecycle labels to that catalog view. For a skill, `body_tokens` measures `SKILL.md` after its YAML frontmatter and excludes separate one-hop references. Labels remain advisory and never delete; the release fixture separately rejects active descriptions over their manifest budget.
+- `audit`: adds deterministic `resident_tokens`, `description_tokens`, `description_budget_tokens`, `body_tokens`, LOC, reference metrics, and lifecycle labels to that catalog view. `ref_count` is the backward-compatible count of exact name-token occurrences plus canonical-manifest edges; `referrer_count` is the number of distinct other assets responsible for those references. `ORPHAN` means only that `referrer_count == 0` inside the scanned asset catalog; the audit has no direct-invocation, trigger-efficacy, or usage evidence, so that label alone never justifies retirement. For a skill, `body_tokens` measures `SKILL.md` after its YAML frontmatter, canonicalizes CRLF/CR/LF line endings to LF before applying the byte approximation, and excludes separate one-hop references. Labels remain advisory and never delete; the release fixture separately rejects active descriptions over their manifest budget.
 
 ## 3. `oma state` — general project-level state
 
@@ -124,8 +124,8 @@ oma relay close --outcome <approve|reject|abandon> --reason <text> [--pair <slug
 ## 7. Other
 
 ```
-oma statusline [--json] [--watch] [--no-color] [--preset minimal|focused|full] [--pair <slug>] [--root <path>]
-                               # compact one-line state of the active core workflow (relay/ralph/interview/autopilot), each tagged `oma`; pure-read + fail-soft (never errors into the host bar); --json schema oma-statusline/1, gate a custom script on .active; supersedes `oma relay statusline`
+oma statusline [--json | --active-only] [--watch] [--no-color] [--preset minimal|focused|full] [--pair <slug>] [--root <path>]
+                               # compact one-line state of the active core workflow (relay/ralph/interview/autopilot), each tagged `oma`; pure-read + fail-soft + a one-second whole-probe deadline (never errors into or stalls the host bar); --json schema oma-statusline/1; --active-only keeps native text/color but emits nothing when idle (and is mutually exclusive with --json/--watch); supersedes `oma relay statusline`
 oma config show [--json]       # prints the effective config + per-key source (flag/env/project/user/default); read-only
 oma config path [--json]       # prints the resolved user/project config file locations; read-only
 oma self-update [--check] [--channel stable|prerelease] [--version <tag>] [--allow-downgrade]

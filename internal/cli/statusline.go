@@ -18,6 +18,14 @@ import (
 // unifiedStatuslineSchema versions the --json shape.
 const unifiedStatuslineSchema = "oma-statusline/1"
 
+// The host invokes statusline frequently, so one stalled filesystem probe must
+// neither block the bar nor accumulate a goroutine on every --watch repaint.
+// One-shot commands exit after the deadline; watch mode admits at most one
+// still-running probe and renders idle until it returns.
+const unifiedStatuslineDeadline = time.Second
+
+var unifiedStatuslineProbeSlot = make(chan struct{}, 1)
+
 // wfSegment is one core workflow's compact statusline contribution. Only an
 // ACTIVE (in-flight, non-terminal) workflow produces a segment; the renderer
 // shows the single most-recently-active one — "the workflow you are in" — each
@@ -38,7 +46,7 @@ type wfSegment struct {
 // line and exit 0 — a statusline must never error into the host's status bar.
 func newStatuslineCmd() *cobra.Command {
 	var rootFlag, pairOverride, preset string
-	var asJSON, watch, noColor bool
+	var asJSON, watch, noColor, activeOnly bool
 	var interval int
 
 	cmd := &cobra.Command{
@@ -49,9 +57,12 @@ func newStatuslineCmd() *cobra.Command {
 			if watch {
 				return watchUnifiedStatusline(cmd, rootFlag, pairOverride, preset, noColor, time.Duration(interval)*time.Second)
 			}
-			seg := activeSegment(rootFlag, pairOverride, preset)
+			seg := boundedActiveSegment(rootFlag, pairOverride, preset)
 			if asJSON {
 				return printJSON(cmd, unifiedJSON(seg))
+			}
+			if activeOnly && seg == nil {
+				return nil
 			}
 			color := !noColor && os.Getenv("NO_COLOR") == ""
 			_, _ = fmt.Fprintln(cmd.OutOrStdout(), renderUnified(seg, color))
@@ -63,9 +74,41 @@ func newStatuslineCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable output")
 	cmd.Flags().BoolVar(&watch, "watch", false, "repaint a live line until Ctrl-C")
 	cmd.Flags().BoolVar(&noColor, "no-color", false, "disable ANSI styling")
+	cmd.Flags().BoolVar(&activeOnly, "active-only", false, "emit no text when no workflow is active")
 	cmd.Flags().IntVar(&interval, "interval", 2, "watch repaint interval in seconds")
 	cmd.Flags().StringVar(&preset, "preset", "", "relay verbosity: minimal|focused|full (default focused)")
+	cmd.MarkFlagsMutuallyExclusive("json", "active-only")
+	cmd.MarkFlagsMutuallyExclusive("watch", "active-only")
 	return cmd
+}
+
+func boundedActiveSegment(rootFlag, pairOverride, preset string) *wfSegment {
+	return statuslineSegmentWithin(unifiedStatuslineProbeSlot, unifiedStatuslineDeadline, func() *wfSegment {
+		return activeSegment(rootFlag, pairOverride, preset)
+	})
+}
+
+func statuslineSegmentWithin(slot chan struct{}, deadline time.Duration, probe func() *wfSegment) *wfSegment {
+	select {
+	case slot <- struct{}{}:
+	default:
+		return nil
+	}
+
+	result := make(chan *wfSegment, 1)
+	go func() {
+		defer func() { <-slot }()
+		result <- probe()
+	}()
+
+	timer := time.NewTimer(deadline)
+	defer timer.Stop()
+	select {
+	case seg := <-result:
+		return seg
+	case <-timer.C:
+		return nil
+	}
 }
 
 // activeSegment probes every core workflow and returns the most-recently-active
@@ -221,7 +264,7 @@ func watchUnifiedStatusline(cmd *cobra.Command, rootFlag, pairOverride, preset s
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	paint := func() {
-		line := renderUnified(activeSegment(rootFlag, pairOverride, preset), color)
+		line := renderUnified(boundedActiveSegment(rootFlag, pairOverride, preset), color)
 		if color {
 			// In-place repaint only when styling is on; under --no-color /
 			// NO_COLOR (or a piped, non-TTY sink) emit clean newline-terminated

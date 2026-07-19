@@ -228,6 +228,9 @@ func TestStatuslineCLI(t *testing.T) {
 	if code, out := runRelay(t, "statusline", "--root", ledger); code != ExitOK {
 		t.Fatalf("uninitialized statusline exit %d: %s", code, out)
 	}
+	if code, out := runRelay(t, "statusline", "--root", ledger, "--active-only"); code != ExitOK || strings.TrimSpace(out) != "" {
+		t.Fatalf("idle statusline --active-only exit %d output %q, want silent success", code, out)
+	}
 	if code, out := runRelay(t, "relay", "init", "--ledger-root", ledger); code != ExitOK {
 		t.Fatalf("init %d: %s", code, out)
 	}
@@ -240,9 +243,18 @@ func TestStatuslineCLI(t *testing.T) {
 	if code != ExitOK || !strings.Contains(out, "oma") || !strings.Contains(out, "relay") || !strings.Contains(out, "demo") {
 		t.Fatalf("statusline exit %d: %s", code, out)
 	}
+	if code, out := runRelay(t, "statusline", "--root", ledger, "--active-only", "--no-color"); code != ExitOK || !strings.Contains(out, "oma:relay") {
+		t.Fatalf("active statusline --active-only exit %d: %s", code, out)
+	}
 	if code, out := runRelay(t, "statusline", "--root", ledger, "--json"); code != ExitOK ||
 		!strings.Contains(out, `"oma-statusline/1"`) || !strings.Contains(out, `"workflow": "relay"`) {
 		t.Fatalf("statusline --json exit %d: %s", code, out)
+	}
+	if code, _ := runRelay(t, "statusline", "--root", ledger, "--json", "--active-only"); code != ExitUsage {
+		t.Fatalf("statusline --json --active-only exit %d, want usage %d", code, ExitUsage)
+	}
+	if code, _ := runRelay(t, "statusline", "--root", ledger, "--watch", "--active-only"); code != ExitUsage {
+		t.Fatalf("statusline --watch --active-only exit %d, want usage %d", code, ExitUsage)
 	}
 }
 

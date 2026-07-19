@@ -16,9 +16,9 @@ schemas, and asset target paths are unchanged.
   coordination cost, no lane waits on another lane or an unresolved user choice,
   write boundaries are disjoint, and the parent can synthesize and verify the
   result. The parent retains user interaction, shared `.oma` state, integration,
-  final verification, and completion claims; fan-out is capped at three lanes,
-  recursive delegation is forbidden, and conflict or lane failure falls back to
-  the sequential path.
+  final verification, and completion claims; fan-out is normally no more than
+  three lanes, recursive delegation is forbidden, and conflict or lane failure
+  falls back to the sequential path.
 - **Explicit workflow coverage**: `analyze`, `trace`, `deep-interview`,
   `best-practice-research`, `code-review`, `autopilot`, `ultraqa`, and `skillify`
   can actively parallelize; `ai-slop-cleaner` may parallelize read-only inventory

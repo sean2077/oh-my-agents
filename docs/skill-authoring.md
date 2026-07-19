@@ -172,6 +172,7 @@ Use `skillify`'s optional efficacy gate when a discipline skill targets a repeat
 - Installation, platform setup, troubleshooting, and long examples live in docs, not resident skill text.
 - Headings and steps put the controlling action or branch first.
 - The main path appears before exceptions; optional references are one hop away and loaded only when needed.
+- Relative Markdown links stay inside the independently installed skill directory; mention repository docs conditionally or link to an absolute web URL.
 - Every paragraph changes an observable behavior; duplicated and no-op wording has been pruned.
 - Deterministic checks cover the falsifiable mechanics; any model-behavior claim names its actual evidence, while lack of a live-agent eval does not block bounded non-efficacy work.
 - Every active shipped skill has an expected case in `eval/cases/triggering.jsonl`; add its nearest confusing boundary when one exists, without presenting fixture labels as observed model behavior.

@@ -51,13 +51,13 @@ oma relay pair new <topic-slug>
 
 The peer binds with `oma relay pair join <slug>`.
 
-## Delivery gates (docs/reference/workflows.md §4)
+## Delivery gates
 
 Every delivery moves through these gates, each gate being one or more artifact exchanges:
 
 1. **plan** — lead publishes `kind: plan`: scope, approach, acceptance criteria.
 2. **plan review** — auxiliary publishes `kind: review` carrying a typed verdict: `--verdict approve|approve-with-changes|revise` (and `--review-target <plan-seq>`, default the draft's `--in-reply-to`). On `revise`, the lead fixes and republishes; count these rounds. **Only `approve` satisfies the final close gate — `approve-with-changes` does not.**
-3. **implement** — lead does the work, then clears a concrete exit bar before handing off: targeted verification green → an `ai-slop-cleaner` pass over the touched files → re-verify. Publishes `kind: fix` (or `note` for a progress slice) listing every changed file via `--touched`, and records that verification evidence so the review attests to facts, not impressions.
+3. **implement** — lead does the work, then clears a concrete exit bar before handing off: targeted verification green → a bounded behavior-preserving cleanup review of touched files for duplication, dead code, needless abstraction, and boundary leaks → re-verify after any cleanup edit. Publishes `kind: fix` (or `note` for a progress slice) listing every changed file via `--touched`, and records that verification evidence so the review attests to facts, not impressions.
 4. **code review** — auxiliary reviews the actual changes under the reviewer contract below and publishes `kind: review` with `--verdict …` (same set). Findings → lead follows review-reception discipline: verifies each independently, fixes what holds, publishes `kind: fix` with per-finding dispositions.
 5. **decision** — when both sides agree the work is done, the lead clears the fresh-evidence completion gate below, then publishes `kind: decision`. The CLI auto-stamps a **completion receipt** onto it, binding the approved plan + the non-lead `approve` review + the ledger head by content hash. Then `oma relay close --outcome approve --reason "<what concluded>"` (ask the user before closing). **The approve close is fail-closed**: it refuses unless a lead `kind: decision` with a valid receipt over a non-lead `approve` review exists — so a review must have been published with `--verdict approve`. If the pair is being dropped instead, close with `--outcome reject|abandon` (no receipt required). **Sequencing rule:** the `approve` review must target the LAST substantive artifact — if you publish any `kind: fix`/`note` after the auxiliary's approve, the close gate re-opens (it refuses to certify work published after the reviewed head) and you need a fresh `approve` review before `close`.
 
@@ -119,12 +119,7 @@ No completion claim without fresh evidence run in this message. Before saying th
 
 ### Review bodies carry a machine-checked evidence block (fail-closed)
 
-A `kind: review` body MUST embed exactly one fenced ` ```oma-review-evidence/1 ` JSON block, or `oma relay publish` rejects it — there is no prose-only review. Minimum shape per verdict:
-
-- **approve** — non-empty `basis_refs` (what you checked, as `path:line`), `commands_run` (validation you actually ran, or a stated non-execution reason), and `limitations` (what you did NOT check). `findings` may be empty.
-- **revise / approve-with-changes** — at least one `finding` (with `severity` / `confidence` from the closed enums), plus the same evidence fields.
-
-Placeholders (`todo`, `tbd`, `stub`, "fake pass") are refused. The full schema and enums live in `docs/reference/relay-v2-protocol.md` and `docs/reference/schemas.md` — read them before your first review so the publish doesn't bounce.
+A `kind: review` body MUST embed exactly one fenced ` ```oma-review-evidence/1 ` JSON block, or `oma relay publish` rejects it — there is no prose-only review. Load the installed [review-evidence schema](references/review-evidence-schema.md) only when drafting your first review in a pair or handling a schema-related publish rejection; it contains the verdict rules, closed enums, and a validated example. Do not load it on other turns.
 
 ### prompt_for_next is a compact delta contract
 

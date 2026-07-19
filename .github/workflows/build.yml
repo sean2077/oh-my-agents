@@ -116,7 +116,9 @@ jobs:
         run: bash tools/manifest-check.sh
 
       - name: shellcheck shell tooling
-        run: shellcheck .agents/relink-skills.sh .agents/tools/worktree.sh .agents/tools/hooks/*.sh tools/manifest-check.sh tools/git-hooks/pre-commit tools/install/*.sh tools/release/*.sh scripts/install.sh
+        run: |
+          git ls-files -z -- '*.sh' tools/git-hooks/pre-commit \
+            | xargs -0 shellcheck
 
       - name: release tag gate smoke
         run: bash tools/release/test-release-tag.sh
