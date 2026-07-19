@@ -84,5 +84,3 @@ Append one row per attempt to a skill-owned ledger (`<work>/candidates.md` or th
 3. One `check` per real attempt; `--score` finite and honest.
 4. A stop verdict (exit 4) ends the loop NOW — renegotiating it is the user's call.
 5. The candidate ledger lives in the mission/skill files, never in oma state.
-
-> **CC acceleration (optional, Claude Code only)**: a long evaluator run may go through a background shell task while you draft the next hypothesis. Other hosts run it in the foreground — the recorded scores are identical.

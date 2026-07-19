@@ -220,7 +220,7 @@ func TestSubagentFileLayout(t *testing.T) {
 	e := newTestEngine(t)
 	dir := t.TempDir()
 	manifest := `{"schema": "oma-asset/1", "name": "explorer", "type": "subagent",
-		"targets": ["claude"], "fallback": "codex explores inline"}`
+		"targets": ["claude"], "fallback": "use runtime-native delegation when available or explore inline"}`
 	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(manifest), 0o600); err != nil {
 		t.Fatal(err)
 	}

@@ -56,7 +56,7 @@ func For(home, agent, assetType, assetName string) (Target, bool, string) {
 		case "prompt":
 			return t(agent, home, projectionKind(assetType), ".codex", "prompts", assetName+".md"), true, ""
 		case "subagent":
-			return Target{}, false, "codex has no subagent mechanism (manifest fallback applies)"
+			return Target{}, false, "oma subagent asset projection to codex is unsupported"
 		case "hook":
 			return Target{}, false, "hook assets are placed canonically only; wire them into ~/.codex/hooks.json by hand (docs/reference/adapter-conformance.md §2)"
 		}

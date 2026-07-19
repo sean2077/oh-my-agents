@@ -46,6 +46,17 @@ func (e *Engine) planProjections(m *Manifest, canonical, managedDigest string, r
 		if agent != agentClaude && agent != agentCodex {
 			return nil, nil, fmt.Errorf("%w: unknown agent %q", ErrInvalid, agent)
 		}
+		// Runtime-native delegation and installable subagent projection are
+		// separate capabilities. Prefer the precise unsupported-projection
+		// reason for Codex even when the manifest is intentionally Claude-only.
+		if agent == agentCodex && m.Type == TypeSubagent && !m.HasTarget(agentCodex) && m.HasTarget(agentClaude) {
+			_, _, reason := agentdir.For(e.Layout.Home, agent, m.Type, m.Name)
+			if fallback := strings.TrimSpace(m.Fallback); fallback != "" {
+				reason += "; fallback: " + fallback
+			}
+			skips = append(skips, Skip{Agent: agent, Reason: reason})
+			continue
+		}
 		if !m.HasTarget(agent) {
 			skips = append(skips, Skip{Agent: agent, Reason: fmt.Sprintf("manifest targets %v do not include %s", m.Targets, agent)})
 			continue

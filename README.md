@@ -12,8 +12,8 @@ The trigger for this project was a concrete pain point in oh-my-claudecode (OMC)
 
 - **You decide what is installed.** Skills are explicit assets you install and remove. Nothing is resident unless you put it there. The four core skills currently cost **169 tokens** of resident surface (name + description), versus OMC's 15-20k, about 1%; the release ceiling is 400 and every asset is independently installable.
 - **Mechanical logic belongs in a binary, not a prompt.** Sequence numbers, ambiguity math, threshold gates, stall detection, atomic file writes, and integrity checks are deterministic. They live in `oma`, where they are testable and fail-closed, not re-derived by the model each turn.
-- **Skills stay agent-neutral.** A skill's default path is plain `oma` commands plus markdown, so Claude Code and Codex follow the *same* contract. Host-only accelerations (Claude Code's structured option picker, subagents, plan mode) are clearly-marked optional branches, never the default.
-- **One asset model, two agents.** Assets live in canonical `~/.agents/` and are projected into both `~/.claude/` and `~/.codex/` (symlink on Unix-like hosts; directory junction for skills on native Windows, with managed copy fallback). Install once, available to both. (Hook assets are placed canonically only — oma never writes your host config; you wire hooks into `settings.json`/`hooks.json` by hand, see [`docs/reference/relay-v2-protocol.md`](docs/reference/relay-v2-protocol.md) §12.4.)
+- **Skills stay agent-neutral.** A skill's complete default path is plain `oma` commands plus markdown, so Claude Code and Codex follow the *same* contract. A clearly marked capability-gated branch may proactively delegate independent bounded lanes when the current runtime exposes controlled subagent tools; genuinely host-only affordances use a separate optional marker. The shared gate and marker contracts are in [`docs/reference/workflows.md`](docs/reference/workflows.md) §0.1 and [`docs/reference/adapter-conformance.md`](docs/reference/adapter-conformance.md) §3.
+- **One asset model, two agents.** Assets live in canonical `~/.agents/` and each supported target projection lands under `~/.claude/` or `~/.codex/` (symlink on Unix-like hosts; directory junction for skills on native Windows, with managed copy fallback). Install once, available wherever that asset type is supported. (Hook assets are placed canonically only — oma never writes your host config; you wire hooks into `settings.json`/`hooks.json` by hand, see [`docs/reference/relay-v2-protocol.md`](docs/reference/relay-v2-protocol.md) §12.4.)
 
 This is CLI + agent-neutral skills, deliberately **not a Claude-only workflow**. The minimal [`.claude-plugin/plugin.json`](.claude-plugin/plugin.json) is installer compatibility metadata: `npx skills` uses it to group the installed skills under **Oh My Agents**, while the canonical asset model and runtime contract remain shared by Claude Code and Codex.
 
@@ -243,7 +243,7 @@ Conventions: `--json` on every query command; `--dry-run` is a global flag that 
 ```text
 ~/.agents/                      canonical asset store (shared with the npx-skills ecosystem)
   skills/<name>/                skill body
-  agents/<name>.md              subagent
+  agents/<name>.md              installable subagent asset
   hooks/<name>/                 hook (manifest + fragment; canonical-only, wire by hand)
   prompts/<name>.md             prompt
         |  projection (symlink on Unix; junction/copy on native Windows; hooks are canonical-only)
@@ -252,6 +252,7 @@ Conventions: `--json` on every query command; `--dry-run` is a global flag that 
 ```
 
 - **Assets** are described by a `manifest.json` (`oma-asset/1`) declaring type and target agents. Install places the body in `~/.agents/` and projects it to each target; a registry under `~/.config/oma/` tracks ownership so removal and rollback never touch foreign files.
+- **Runtime-native subagents are not installable subagent assets.** Codex projection of the latter is unsupported today, while a Codex session may still expose its own runtime delegation tools; skills decide from capabilities actually present in the session.
 - **relay v2** is a fresh protocol (it does not read or write the legacy agent-ledger `.shared/` tree) that keeps the proven principles: append-only ledger, sidecar integrity markers, fail-closed identity, platform-signal authorship. The ledger lives at `<repo>/.oma/relay/`.
 - **Security is fail-closed throughout**: unmanaged-target refusal with backup on `--force`, trusted-root escape checks, POSIX world-writable refusal, duplicate-JSON-key rejection on host configs, mandatory secret scanning before publish, and a checksum-verified self-update trust chain. Details in [`docs/reference/security-contract.md`](docs/reference/security-contract.md).
 

@@ -72,7 +72,7 @@ func TestClaudeOnlyRequiresFallback(t *testing.T) {
 		t.Fatalf("claude-only without fallback: err = %v, want ErrInvalid", err)
 	}
 	withFallback := `{"schema": "oma-asset/1", "name": "explorer", "type": "subagent",
-		"targets": ["claude"], "fallback": "codex runs the exploration inline, single-threaded"}`
+		"targets": ["claude"], "fallback": "oma does not project this subagent asset to codex; use runtime-native delegation when available or explore inline"}`
 	if _, err := ParseManifest([]byte(withFallback)); err != nil {
 		t.Fatalf("claude-only with fallback rejected: %v", err)
 	}

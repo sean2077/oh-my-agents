@@ -14,7 +14,7 @@ func TestAutopilotLargePlanCarriesDurableSliceProgress(t *testing.T) {
 		"More than one ready `pending` slice is valid",
 		"select the first `pending` slice in plan order whose blockers are all `done`",
 		"Do not invent a dependency merely to force a unique frontier",
-		"Explicit parallel acceleration may work independent ready slices concurrently",
+		"When the Delegation Gate passes, capability-gated parallel acceleration may work independent ready slices with exclusive touches concurrently",
 		"set the selected slice to `in_progress`",
 		"On resume, continue recorded `in_progress` work rather than rediscovering it",
 		"write the observed result into `Result/Evidence`",
@@ -51,7 +51,7 @@ func TestAutopilotWorkflowSpecMirrorsDurableFrontier(t *testing.T) {
 		"More than one ready `pending` slice is valid",
 		"selects the first ready slice in plan order",
 		"never invents a dependency merely to force uniqueness",
-		"Explicit parallel acceleration may work independent ready slices concurrently",
+		"capability-gated parallel acceleration may work independent ready slices with exclusive touches concurrently",
 		"carries its own verifier result in `Result/Evidence`",
 		"plan-file discipline, not new oma state, command, or schema",
 	} {

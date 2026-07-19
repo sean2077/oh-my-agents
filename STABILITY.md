@@ -81,9 +81,10 @@ freezes the *contract*, those files describe the *surface*.
   core4↔CLI contract above is frozen.
 - **Advisory `oma doctor` checks and `oma asset audit`** — heuristics and
   thresholds may change; they are advisory, never load-bearing.
-- **Optional host accelerations** — Claude Code subagents, plan mode, structured
-  pickers. These are clearly-marked optional branches; the agent-neutral default
-  path is the contract, the accelerations are not.
+- **Optional host accelerations** — capability-gated runtime subagent delegation,
+  plan mode, and host-specific structured pickers. These are clearly-marked
+  optional branches; the agent-neutral default path is the contract, the
+  accelerations are not.
 - **New backward-compatible JSON fields** and **new experimental command groups**
   (explicitly documented as experimental until promoted).
 - **The approximate tokenizer / budget model** (`approx-b4/1`) — a pinned

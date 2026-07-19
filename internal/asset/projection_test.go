@@ -83,7 +83,7 @@ func TestClaudeOnlySubagentSkipsCodexWithReason(t *testing.T) {
 	e := newTestEngine(t)
 	dir := t.TempDir()
 	manifest := `{"schema": "oma-asset/1", "name": "explorer", "type": "subagent",
-		"targets": ["claude"], "fallback": "codex explores inline"}`
+		"targets": ["claude"], "fallback": "use runtime-native delegation when available or explore inline"}`
 	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(manifest), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -93,6 +93,10 @@ func TestClaudeOnlySubagentSkipsCodexWithReason(t *testing.T) {
 	rep := mustInstall(t, e, dir, Options{})
 	if len(rep.Skips) != 1 || rep.Skips[0].Agent != "codex" {
 		t.Fatalf("want one codex skip, got %+v", rep.Skips)
+	}
+	const wantReason = "oma subagent asset projection to codex is unsupported; fallback: use runtime-native delegation when available or explore inline"
+	if rep.Skips[0].Reason != wantReason {
+		t.Fatalf("codex skip reason = %q, want %q", rep.Skips[0].Reason, wantReason)
 	}
 	entries, _ := e.List()
 	if len(entries[0].Projections) != 1 {
