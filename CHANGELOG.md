@@ -4,6 +4,38 @@
 >
 > Section heading format: `## vX.Y.Z - YYYY-MM-DD` (CI matches the tag by exact prefix; a tag with no matching section fails the release, fail-closed).
 
+## v1.5.0 - 2026-07-19
+
+This release makes optional skill parallelism depend on the host's actual
+runtime capabilities and a shared delegation gate. Sequential execution remains
+the complete fallback, and public CLI commands, exit codes, manifests, persisted
+schemas, and asset target paths are unchanged.
+
+- **Host-neutral delegation contract**: a capable agent may delegate only when
+  there are at least two independent bounded lanes, the expected benefit exceeds
+  coordination cost, no lane waits on another lane or an unresolved user choice,
+  write boundaries are disjoint, and the parent can synthesize and verify the
+  result. The parent retains user interaction, shared `.oma` state, integration,
+  final verification, and completion claims; fan-out is capped at three lanes,
+  recursive delegation is forbidden, and conflict or lane failure falls back to
+  the sequential path.
+- **Explicit workflow coverage**: `analyze`, `trace`, `deep-interview`,
+  `best-practice-research`, `code-review`, `autopilot`, `ultraqa`, and `skillify`
+  can actively parallelize; `ai-slop-cleaner` may parallelize read-only inventory
+  only; `ralph`, `research-mission`, `prototype`, and `pair-delivery` remain
+  sequential. Same-host subagents cannot be represented as independent
+  cross-host review evidence.
+- **Fail-closed adapter conformance**: skills now use the exact
+  `Parallel acceleration (optional, capability-gated)` marker for portable
+  delegation, while `CC acceleration` is reserved for Claude Code-only features
+  such as `AskUserQuestion`. The checker rejects subagent instructions outside
+  the parallel block, Claude-only interaction outside the CC block, malformed
+  marker combinations, and default-path leaks.
+- **Accurate Codex capability messaging**: Codex remains unsupported only for
+  OMA subagent asset projection; runtime subagent tools are no longer incorrectly
+  treated as unavailable. Parallel and sequential paths keep identical workflow
+  state, output contracts, and acceptance criteria.
+
 ## v1.4.2 - 2026-07-19
 
 This patch makes the shipped autopilot workflow explicitly bounded and refreshes
