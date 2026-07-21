@@ -1,7 +1,0 @@
-{
-  "schema": "oma-asset/1",
-  "name": "privacy-safe-deploy",
-  "type": "skill",
-  "targets": ["claude", "codex"],
-  "description_budget_tokens": 80
-}
