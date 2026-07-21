@@ -152,7 +152,8 @@ func TestShippedSkillParallelismMatrix(t *testing.T) {
 		"analyze", "trace", "deep-interview", "best-practice-research",
 		"code-review", "autopilot", "ultraqa", "skillify")
 	add("read-only-inventory-parallel", 1, "ai-slop-cleaner")
-	add("sequential", 0, "ralph", "research-mission", "prototype", "pair-delivery")
+	add("sequential", 0,
+		"ralph", "research-mission", "prototype", "pair-delivery", "privacy-safe-deploy")
 
 	repoAssets := filepath.Join("..", "..", "assets", "skills")
 	entries, err := os.ReadDir(repoAssets)
@@ -167,7 +168,7 @@ func TestShippedSkillParallelismMatrix(t *testing.T) {
 		name := ent.Name()
 		want, ok := matrix[name]
 		if !ok {
-			t.Errorf("shipped skill %s is missing from the 8+1+4 parallelism matrix", name)
+			t.Errorf("shipped skill %s is missing from the parallelism matrix", name)
 			continue
 		}
 		seen[name] = true
